@@ -1,0 +1,14 @@
+{
+  "name": "@fe/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/main.ts",
+  "dependencies": {
+    "@fe/defs": "*",
+    "@fe/protocol": "*",
+    "@fe/sim": "*",
+    "ws": "^8.18.0",
+    "msgpackr": "^1.11.2"
+  }
+}

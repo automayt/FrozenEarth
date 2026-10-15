@@ -1,0 +1,211 @@
+import { BUILDINGS, ITEMS, PLANTS, TERRAINS } from '@fe/defs';
+import { RARE_TICK, TICKS_PER_DAY } from './constants';
+import { endJob } from './pawns';
+import type { Building, Item, Pawn, Plant, Room } from './types';
+import { NEIGHBORS4, type World } from './world';
+
+/** Enclosed regions larger than this count as outdoors. */
+const MAX_ROOM_CELLS = 1600;
+
+export function rareTick(w: World): void {
+  const t = w.tick;
+  for (const id of w.kinds.pawn) {
+    if ((t + id) % RARE_TICK === 0) needsTick(w, w.get<Pawn>(id)!);
+  }
+  if (t % RARE_TICK !== 0) return;
+  if (w.map.roomsDirty) rebuildRooms(w);
+  roomTemps(w);
+  plantsTick(w);
+  rotTick(w);
+  conditionsTick(w);
+}
+
+// ---------------------------------------------------------------- needs & mood
+
+function needsTick(w: World, p: Pawn): void {
+  const n = p.needs;
+  const cell = w.cellOf(p);
+  n.food = Math.max(0, n.food - RARE_TICK / (p.asleep ? 90_000 : 45_000));
+  if (p.asleep) {
+    const inBed = p.bed && p.job?.type === 'sleep' && p.job.bed === p.bed;
+    n.rest = Math.min(1, n.rest + (RARE_TICK * (inBed ? 1 : 0.6)) / 9000);
+  } else {
+    n.rest = Math.max(0, n.rest - RARE_TICK / 24_000);
+  }
+
+  const thoughts: string[] = [];
+  let target = 0.55;
+  const add = (label: string, v: number) => {
+    thoughts.push(`${label} ${v > 0 ? '+' : ''}${Math.round(v * 100)}`);
+    target += v;
+  };
+  if (n.food <= 0) add('Starving', -0.35);
+  else if (n.food < 0.25) add('Hungry', -0.12);
+  if (n.rest < 0.2) add('Exhausted', -0.1);
+  if (!p.bed) add('No bed', -0.06);
+  const temp = w.tempAt(cell);
+  if (temp < -10) add('Freezing', -0.25);
+  else if (temp < 5) add('Cold', -0.1);
+  else if (temp > 38) add('Overheated', -0.15);
+  if (w.map.roomAt[cell]) add('Sheltered', 0.05);
+  if (p.sickUntil > w.tick) add('Sick', -0.15);
+  else if (p.sickUntil) p.sickUntil = 0;
+  if (w.hasCondition('aurora')) add('Saw the aurora', 0.15);
+  n.mood += (Math.max(0, Math.min(1, target)) - n.mood) * 0.2;
+  p.thoughts = thoughts;
+
+  // Urgent needs interrupt work.
+  const jt = p.job?.type;
+  if (jt && jt !== 'eat' && jt !== 'sleep' && (n.food < 0.12 || n.rest < 0.08)) endJob(w, p);
+  w.markDirty(p);
+}
+
+// ---------------------------------------------------------------- plants
+
+function plantsTick(w: World): void {
+  const m = w.map;
+  const light = w.daylight();
+  const outdoor = w.outdoorTemp();
+  // Plants only grow in daylight (~14 h/day), so scale up to keep growDays honest.
+  const lightFactor = light > 0.3 ? 24 / 14 : 0;
+  const killed = new Map<number, number>();
+  for (const id of [...w.kinds.plant]) {
+    const p = w.get<Plant>(id)!;
+    const def = PLANTS[p.def];
+    const cell = w.cellOf(p);
+    const temp = m.roomAt[cell] ? w.tempAt(cell) : outdoor;
+    if (p.blighted) {
+      p.growth -= 0.08;
+      w.markDirty(p);
+      if (p.growth <= 0) w.despawn(id);
+      continue;
+    }
+    if (def.sowable && temp < -6) {
+      const z = w.zoneAt(cell);
+      if (z) killed.set(z.faction, (killed.get(z.faction) ?? 0) + 1);
+      w.despawn(id);
+      continue;
+    }
+    if (p.growth >= 1) continue;
+    const fert = TERRAINS[m.terrain[cell]].fertility;
+    if (fert < def.minFertility) continue;
+    const tempFactor = temp < 0 || temp > 45 ? 0 : temp < 10 ? temp / 10 : 1;
+    const before = p.growth;
+    p.growth = Math.min(1, p.growth + (RARE_TICK / (def.growDays * TICKS_PER_DAY)) * fert * tempFactor * lightFactor);
+    if (Math.floor(before * 20) !== Math.floor(p.growth * 20)) w.markDirty(p);
+  }
+  for (const [faction, n] of killed) w.message(faction, `${n} crops froze to death.`, 'bad');
+
+  // Wild plants slowly reseed so wood stays renewable.
+  if (outdoor > 5 && w.rng.chance(0.5)) {
+    const c = w.rng.int(m.n);
+    if (!m.plantAt[c] && !m.solid[c] && !m.zoneAt[c] && !m.buildingAt[c] && !m.constructAt[c] && !m.itemAt[c]) {
+      const fert = TERRAINS[m.terrain[c]].fertility;
+      if (fert >= 0.9) w.spawnPlant(w.rng.chance(0.5) ? (w.rng.chance(0.5) ? 'oak' : 'pine') : 'bush', c, 0.05);
+    }
+  }
+}
+
+// ---------------------------------------------------------------- spoilage
+
+function rotTick(w: World): void {
+  const rotted = new Map<string, number>();
+  for (const id of [...w.kinds.item]) {
+    const it = w.get<Item>(id)!;
+    const def = ITEMS[it.def];
+    if (!def.spoilDays) continue;
+    const temp = w.tempAt(w.cellOf(it));
+    const factor = temp <= 0 ? 0 : temp < 10 ? 0.4 : 1;
+    if (factor === 0) continue;
+    const before = it.rot;
+    it.rot += (RARE_TICK / (def.spoilDays * TICKS_PER_DAY)) * factor;
+    if (it.rot >= 1) {
+      rotted.set(def.label, (rotted.get(def.label) ?? 0) + it.count);
+      w.despawn(id);
+    } else if (Math.floor(before * 10) !== Math.floor(it.rot * 10)) {
+      w.markDirty(it);
+    }
+  }
+  for (const [label, n] of rotted) w.message(0, `${n} ${label.toLowerCase()} rotted away.`, 'bad');
+}
+
+// ---------------------------------------------------------------- rooms & temperature
+
+export function rebuildRooms(w: World): void {
+  const m = w.map;
+  const old = m.roomAt.slice();
+  const oldRooms = w.rooms;
+  m.roomAt.fill(0);
+  w.rooms = new Map();
+  const seen = new Uint8Array(m.n);
+  const stack: number[] = [];
+  const outdoor = w.outdoorTemp();
+  for (let s = 0; s < m.n; s++) {
+    if (seen[s] || m.wall[s]) continue;
+    const cells: number[] = [];
+    let touchesEdge = false;
+    stack.push(s);
+    seen[s] = 1;
+    while (stack.length) {
+      const c = stack.pop()!;
+      cells.push(c);
+      const x = m.cx(c);
+      const y = m.cy(c);
+      if (x === 0 || y === 0 || x === m.w - 1 || y === m.h - 1) touchesEdge = true;
+      for (const [dx, dy] of NEIGHBORS4) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (!m.inBounds(nx, ny)) continue;
+        const ni = m.idx(nx, ny);
+        if (seen[ni] || m.wall[ni]) continue;
+        seen[ni] = 1;
+        stack.push(ni);
+      }
+    }
+    if (touchesEdge || cells.length > MAX_ROOM_CELLS) continue;
+    // Inherit temperature from whatever rooms these cells belonged to before.
+    let sum = 0;
+    for (const c of cells) {
+      const r = old[c] ? oldRooms.get(old[c]) : undefined;
+      sum += r ? r.temp : outdoor;
+    }
+    const room: Room = { id: w.nextRoomId++, cells, temp: sum / cells.length };
+    for (const c of cells) m.roomAt[c] = room.id;
+    w.rooms.set(room.id, room);
+  }
+  m.roomsDirty = false;
+  w.dirty.rooms = true;
+}
+
+function roomTemps(w: World): void {
+  if (w.rooms.size === 0) return;
+  const outdoor = w.outdoorTemp();
+  const heat = new Map<number, number>();
+  for (const id of w.kinds.building) {
+    const b = w.get<Building>(id)!;
+    const d = BUILDINGS[b.def];
+    if (!d.heat) continue;
+    const r = w.map.roomAt[w.cellOf(b)];
+    if (!r) continue;
+    const room = w.rooms.get(r)!;
+    const wants = d.heat > 0 ? room.temp < d.targetTemp! : room.temp > d.targetTemp!;
+    if (wants) heat.set(r, (heat.get(r) ?? 0) + d.heat);
+  }
+  for (const room of w.rooms.values()) {
+    const size = room.cells.length;
+    const leak = 0.04 / (1 + size / 60);
+    room.temp += (outdoor - room.temp) * leak + ((heat.get(room.id) ?? 0) * 2) / size;
+  }
+  w.dirty.roomTemps = true;
+}
+
+// ---------------------------------------------------------------- conditions
+
+function conditionsTick(w: World): void {
+  const before = w.conditions.length;
+  const ended = w.conditions.filter((c) => c.until <= w.tick);
+  if (ended.length === 0) return;
+  w.conditions = w.conditions.filter((c) => c.until > w.tick);
+  for (const c of ended) w.message(c.faction, `The ${c.key.replace('_', ' ')} has ended.`, 'neutral');
+  if (w.conditions.length !== before) w.dirty.conditions = true;
+}

@@ -1,0 +1,11 @@
+{
+  "name": "@fe/bots",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@fe/protocol": "*",
+    "@fe/sim": "*",
+    "ws": "^8.18.0"
+  }
+}
