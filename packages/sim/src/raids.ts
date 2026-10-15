@@ -1,12 +1,13 @@
-import { BUILDINGS, ITEMS, WEAPONS } from '@fe/defs';
-import { TICKS_PER_DAY } from './constants';
+import { BUILDINGS, DEFAULT_PRIORITY, ITEMS, START_PRIORITY, WEAPONS, WORK_TYPES } from '@fe/defs';
+import { RARE_TICK, TICKS_PER_DAY } from './constants';
 import { endJob } from './pawns';
 import { maybeReachable } from './pathfinding';
 import { pawnName } from './names';
+import { breachJob } from './siege';
 import type { Faction, Item, Job, Pawn } from './types';
 import { rk, type World } from './world';
 
-export type RaidKind = 'raid' | 'night' | 'scout';
+export type RaidKind = 'raid' | 'night' | 'scout' | 'sapper';
 
 const RAIDER_GROUPS = ['the Red Hand', 'the Ashen Band', 'the Frostbitten', 'the Gallows Crew', 'the Hollow Men', 'the Last Wolves', 'the Iron Debt', 'the Blackwater Gang'];
 const RAIDER_COLOR = 0x8a1c1c;
@@ -28,6 +29,11 @@ const LOADOUTS: Record<RaidKind, [string, number][]> = {
   ],
   scout: [
     ['bow', 2],
+    ['knife', 1],
+  ],
+  sapper: [
+    ['club', 3],
+    ['rifle', 2],
     ['knife', 1],
   ],
 };
@@ -90,6 +96,13 @@ function arrivalCell(w: World, home: number): number {
       const t = Math.max(0, Math.min(side.len - 1, side.along + w.rng.int(61) - 30));
       const c = side.at(t);
       if (!m.solid[c] && maybeReachable(w, c, home, true)) return c;
+    }
+  }
+  // Walled in or dug into a mountain: come anyway, and break in.
+  for (const side of sides) {
+    for (let t = 0; t < side.len; t++) {
+      const c = side.at((side.along + (t >> 1) * (t & 1 ? -1 : 1) + side.len) % side.len);
+      if (!m.solid[c]) return c;
     }
   }
   return -1;
@@ -182,13 +195,16 @@ export function startRaid(w: World, target: number, points: number, kind: RaidKi
     raiders.push(p);
   }
   rf.raid!.size = raiders.length;
+  rf.raid!.sapper = kind === 'sapper';
   rf.raid!.breakAt = kind === 'scout' ? 1 : Math.max(1, Math.ceil(raiders.length / 2));
   const what =
     kind === 'scout'
       ? `A scouting party of ${rf.name.replace('Raiders of ', '')} (${raiders.length}) is probing your defences from the ${sideName(w, arrive)}.`
       : kind === 'night'
         ? `${rf.name} (${raiders.length}, knives and clubs) are creeping in from the ${sideName(w, arrive)} under cover of dark!`
-        : `${rf.name} (${raiders.length}) have arrived from the ${sideName(w, arrive)} edge to attack you!`;
+        : kind === 'sapper'
+          ? `${rf.name} (${raiders.length}) have come from the ${sideName(w, arrive)} with picks and hammers. They will dig and smash their way in!`
+          : `${rf.name} (${raiders.length}) have arrived from the ${sideName(w, arrive)} edge to attack you!`;
   w.message(target, `${what} Draft your colonists (R) and right-click to fight.`, 'bad', arrive);
   return raiders;
 }
@@ -257,7 +273,7 @@ export function isEdge(w: World, c: number): boolean {
   return x === 0 || y === 0 || x === m.w - 1 || y === m.h - 1;
 }
 
-function fleeJob(w: World, p: Pawn, item = 0): Job {
+export function fleeJob(w: World, p: Pawn, item = 0): Job {
   return { type: 'flee', stage: item ? 0 : 1, dest: exitCell(w, p), item };
 }
 
@@ -291,7 +307,7 @@ export function raiderThink(w: World, p: Pawn): Job {
   let anyTarget = false;
   for (const id of w.kinds.pawn) {
     const o = w.get<Pawn>(id)!;
-    if (o.downed || !w.factions.get(o.faction)?.isPlayer) continue;
+    if (o.downed || o.prisoner || !w.factions.get(o.faction)?.isPlayer) continue;
     const c = w.cellOf(o);
     // Colonists of the target colony first; others only if they're in the way.
     const score = w.dist(here, c) + (o.faction === raid.target ? 0 : 25);
@@ -301,7 +317,12 @@ export function raiderThink(w: World, p: Pawn): Job {
     bestScore = score;
   }
   if (best) return { type: 'attack', stage: 0, target: best.id, forced: false, chase: true, next: 0, until: w.tick + 600 };
-  // Nobody left to fight, or they're all behind walls: grab something and go.
+  // They're all behind walls: break in.
+  if (anyTarget) {
+    const breach = breachJob(w, p, raid);
+    if (breach) return breach;
+  }
+  // Nobody left to fight, or no way in at all: grab something and go.
   const loot = lootFor(w, p, raid.target);
   if (loot && (!anyTarget || w.rng.chance(0.3))) {
     w.reserve(rk.e(loot.id), p.id);
@@ -309,4 +330,44 @@ export function raiderThink(w: World, p: Pawn): Job {
   }
   if (!anyTarget) return fleeJob(w, p);
   return { type: 'hold', stage: 0, until: w.tick + 300 };
+}
+
+// ---------------------------------------------------------------- prisoners
+
+/** Chance per rare tick that a content prisoner agrees to join; about one in three days. */
+const RECRUIT_CHANCE = RARE_TICK / (TICKS_PER_DAY * 3);
+
+/** A downed raider, carried to a bed by `captor`, is now held by the captor's colony. */
+export function takePrisoner(w: World, p: Pawn, captor: Pawn): void {
+  const old = p.faction;
+  if (p.carrying) {
+    w.placeItemNear(p.carrying.def, p.carrying.count, w.cellOf(p), p.carrying.rot);
+    p.carrying = null;
+  }
+  p.faction = captor.faction;
+  p.prisoner = 'held';
+  p.drafted = false;
+  for (const k of WORK_TYPES) p.priorities[k] = 0;
+  p.needs.mood = 0.4;
+  w.markDirty(p);
+  w.message(captor.faction, `${captor.name} has taken ${p.name} prisoner. In time they may agree to join you, or you can let them go.`, 'good', w.cellOf(p));
+  raiderGone(w, old, true);
+}
+
+/** Slow-tick prisoner update: a prisoner who is up and about may come round to joining. */
+export function prisonerTick(w: World, p: Pawn): void {
+  if (p.prisoner !== 'held' || p.downed) return;
+  if (!w.rng.chance(RECRUIT_CHANCE * (0.5 + p.needs.mood))) return;
+  p.prisoner = '';
+  for (const k of WORK_TYPES) p.priorities[k] = START_PRIORITY[k] ?? DEFAULT_PRIORITY;
+  endJob(w, p);
+  w.message(p.faction, `${p.name} has given up the raiding life and joined the colony.`, 'good', w.cellOf(p));
+}
+
+/** Set a prisoner free: they walk off the map. */
+export function releasePrisoner(w: World, p: Pawn): void {
+  if (p.prisoner !== 'held') return;
+  p.prisoner = 'leaving';
+  endJob(w, p);
+  w.message(p.faction, `${p.name} has been released and is leaving.`, 'neutral', w.cellOf(p));
 }

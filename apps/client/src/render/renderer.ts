@@ -1,5 +1,5 @@
 import { Application, BitmapText, Container, Graphics, Sprite, Texture } from 'pixi.js';
-import { BUILDINGS, PLANTS, ROCKS, TERRAINS, WEAPON_KEYS, weaponOf, type TerrainDef } from '@fe/defs';
+import { BUILDINGS, maxHp, PLANTS, ROCKS, TERRAINS, WEAPON_KEYS, weaponOf, type TerrainDef } from '@fe/defs';
 import { pawnPosition } from '@fe/protocol';
 import { DESIG, MIN_COLONY_GAP, SHOT_FIELDS, TICKS_PER_DAY, TICKS_PER_HOUR, bleedRate, hash2, woundTotal, type Construct, type Entity, type Pawn } from '@fe/sim';
 import { store } from '../store';
@@ -386,15 +386,18 @@ export class GameRenderer {
         return `p:${e.def}:${Math.floor(e.growth * 10)}:${e.blighted ? 1 : 0}`;
       case 'item':
         return `i:${e.def}:${e.count}:${e.rot >= 0.5 ? 1 : 0}`;
-      case 'building':
-        return isWall(e) ? `b:${e.def}:${e.faction}:${this.wallMask(e.x, e.y)}` : `b:${e.def}:${e.faction}`;
+      case 'building': {
+        // Damage in eighths, so a wall being smashed redraws a few times rather than every blow.
+        const dmg = Math.ceil((1 - e.hp / maxHp(e.def)) * 8);
+        return isWall(e) ? `b:${e.def}:${e.faction}:${this.wallMask(e.x, e.y)}:${dmg}` : `b:${e.def}:${e.faction}:${dmg}`;
+      }
       case 'construct': {
         const total = Object.values(BUILDINGS[e.def].cost).reduce((a, b) => a + b, 0);
         const got = Object.values(e.delivered).reduce((a, b) => a + b, 0);
         return `c:${e.def}:${got}/${total}:${Math.floor((e.progress / BUILDINGS[e.def].work) * 10)}`;
       }
       case 'pawn':
-        return `w:${e.faction}:${e.name}:${e.asleep ? 1 : 0}:${e.carrying?.def ?? ''}:${e.weapon}:${e.drafted ? 1 : 0}:${e.downed ? 1 : 0}:${Math.ceil(woundTotal(e) * 20)}:${bleedRate(e) > 0 ? 1 : 0}`;
+        return `w:${e.faction}:${e.name}:${e.asleep ? 1 : 0}:${e.carrying?.def ?? ''}:${e.weapon}:${e.drafted ? 1 : 0}:${e.downed ? 1 : 0}:${Math.ceil(woundTotal(e) * 20)}:${bleedRate(e) > 0 ? 1 : 0}:${e.prisoner}`;
     }
   }
 
@@ -444,6 +447,19 @@ export class GameRenderer {
         s.anchor.set(0.5);
         s.width = s.height = TILE;
         root.addChild(s);
+        const health = e.hp / maxHp(e.def);
+        if (health < 1) {
+          // Battered: darker, with a strip showing what's left.
+          const k = Math.round(0x60 + 0x9f * health);
+          s.tint = (k << 16) | (k << 8) | k;
+          root.addChild(
+            new Graphics()
+              .rect(-TILE / 2 + 2, -TILE / 2 + 2, TILE - 4, 3)
+              .fill(0x301010)
+              .rect(-TILE / 2 + 2, -TILE / 2 + 2, (TILE - 4) * health, 3)
+              .fill(health < 0.35 ? 0xe05040 : 0xe0b040),
+          );
+        }
         if (d.door) {
           const f = store.mirror.factions.get(e.faction);
           const g = new Graphics().rect(-TILE / 2, TILE / 2 - 4, TILE, 3).fill(f?.color ?? 0xffffff);
@@ -540,7 +556,7 @@ export class GameRenderer {
       c.position.set(TILE * 0.3, -TILE * 0.05);
       root.addChild(c);
     }
-    const label = new BitmapText({ text: e.name.split(' ')[0] + (e.downed ? ' (down)' : e.asleep ? ' z' : ''), style: LABEL_STYLE });
+    const label = new BitmapText({ text: e.name.split(' ')[0] + (e.prisoner ? ' (prisoner)' : '') + (e.downed ? ' (down)' : e.asleep ? ' z' : ''), style: LABEL_STYLE });
     label.scale.set(0.45);
     label.anchor.set(0.5, 0);
     label.position.set(0, TILE * 0.42);

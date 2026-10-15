@@ -46,6 +46,8 @@ export interface Building extends Base {
   /** Pawn who claimed this bed, or 0. */
   owner: EntityId;
   bills: Bill[];
+  /** Hit points left; at 0 the building is wrecked. Full is maxHp(def). */
+  hp: number;
 }
 
 export interface Construct extends Base {
@@ -121,7 +123,11 @@ export interface Pawn extends Base {
   drafted: boolean;
   /** Knocked down by pain or blood loss: can't move or act. */
   downed: boolean;
+  /** Captured raiders: 'held' in the colony, or 'leaving' once released. '' for everyone else. */
+  prisoner: PrisonerState;
 }
+
+export type PrisonerState = '' | 'held' | 'leaving';
 
 export type Entity = Pawn | Item | Plant | Building | Construct;
 
@@ -154,6 +160,14 @@ export type Job =
   | (JobBase & { type: 'tend'; patient: EntityId; progress: number })
   /** Raiders leaving the map, optionally grabbing loot on the way. */
   | (JobBase & { type: 'flee'; dest: number; item: EntityId })
+  /** Raiders smashing a wall or door (or sappers digging rock) that stands between them and the colony. */
+  | (JobBase & { type: 'bash'; cell: number; next: number; progress: number; until: number })
+  /** Mend a damaged building. */
+  | (JobBase & { type: 'repair'; target: EntityId })
+  /** Carry a downed pawn to a bed: a colony-mate to recover, or (`capture`) a raider to hold prisoner. */
+  | (JobBase & { type: 'rescue'; patient: EntityId; bed: EntityId; capture: boolean })
+  /** Pick up a weapon item and wield it (dropping the old one), or with item 0 just drop the current one. */
+  | (JobBase & { type: 'equip'; item: EntityId })
   | (JobBase & {
       type: 'bill';
       bench: EntityId;
@@ -191,6 +205,8 @@ export interface RaidState {
   /** Tick after which the raiders give up and leave. */
   until: number;
   fled: boolean;
+  /** Sappers dig through rock as well as smashing walls. */
+  sapper?: boolean;
 }
 
 export interface Faction {
@@ -272,7 +288,13 @@ export type Command =
   | { c: 'offerTrade'; to: number; give: [string, number][]; want: [string, number][]; note?: string }
   | { c: 'draft'; pawns: EntityId[]; on: boolean }
   | { c: 'move'; pawns: EntityId[]; x: number; y: number }
-  | { c: 'attack'; pawns: EntityId[]; target: EntityId };
+  | { c: 'attack'; pawns: EntityId[]; target: EntityId }
+  /** Carry a downed raider to a free bed and hold them prisoner. The nearest listed pawn goes. */
+  | { c: 'capture'; pawns: EntityId[]; target: EntityId }
+  /** Wield a weapon lying on the map; item 0 drops the current one. */
+  | { c: 'equip'; pawn: EntityId; item: EntityId }
+  /** Let a prisoner go. */
+  | { c: 'release'; pawn: EntityId };
 
 /** Full state a client needs to render the world. */
 export interface Snapshot {
@@ -313,7 +335,10 @@ export interface Delta {
   /** Present when choices changed. Replaces the full list. */
   choices?: Choice[];
   coldOffset?: number;
-  /** Attacks this delta, flattened SHOT_FIELDS tuples: [shooter, target, sx, sy, tx, ty, hit, weapon index]. */
+  /**
+   * Attacks this delta, flattened SHOT_FIELDS tuples: [shooter, target, sx, sy, tx, ty, hit, weapon index].
+   * The target is a pawn, or a building being smashed.
+   */
   shots?: number[];
 }
 

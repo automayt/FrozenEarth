@@ -1,10 +1,10 @@
 import type { Graphics } from 'pixi.js';
-import { BUILDINGS } from '@fe/defs';
+import { BUILDINGS, WEAPONS } from '@fe/defs';
 import { pawnPosition } from '@fe/protocol';
 import type { Pawn, Rect } from '@fe/sim';
 import { command } from '../net';
 import { store } from '../store';
-import { mySquad, setSpeed, toggleDraft, togglePause } from '../actions';
+import { helpers, mySquad, setSpeed, toggleDraft, togglePause } from '../actions';
 import { TILE, type GameRenderer } from './renderer';
 
 interface Drag {
@@ -171,7 +171,7 @@ export class Input {
     const y1 = Math.max(r.y0, r.y1);
     const ids: number[] = [];
     for (const e of m.entities.values()) {
-      if (e.kind !== 'pawn' || e.faction !== store.me?.faction) continue;
+      if (e.kind !== 'pawn' || e.faction !== store.me?.faction || e.prisoner) continue;
       const pos = pawnPosition(e, tick, m.w);
       const x = Math.round(pos.x);
       const y = Math.round(pos.y);
@@ -199,7 +199,10 @@ export class Input {
     return best;
   }
 
-  /** Right-click with drafted colonists selected: attack whoever is under the cursor, or move there. */
+  /**
+   * Right-click with drafted colonists selected: capture a downed raider, attack whoever else is
+   * under the cursor, pick up a weapon lying there, or move there.
+   */
   private order(e: PointerEvent): boolean {
     const squad = mySquad().filter((p) => p.drafted && !p.downed);
     if (!squad.length) return false;
@@ -208,12 +211,20 @@ export class Input {
     const target = this.pawnAt(p.x, p.y, (o) => o.faction !== store.me?.faction);
     const t = target ? store.mirror.get<Pawn>(target) : undefined;
     if (t && t.faction !== store.me?.faction) {
-      command({ c: 'attack', pawns: ids, target: t.id });
-      this.r.flashOrder(t.x, t.y, true);
+      const raider = !!store.mirror.factions.get(t.faction)?.raid;
+      command(t.downed && raider ? { c: 'capture', pawns: ids, target: t.id } : { c: 'attack', pawns: ids, target: t.id });
+      this.r.flashOrder(t.x, t.y, !t.downed);
       return true;
     }
     const cell = this.r.screenToCell(p.x, p.y);
     if (!store.mirror.inBounds(cell.x, cell.y)) return true;
+    const it = store.mirror.get(store.mirror.itemAt[store.mirror.idx(cell.x, cell.y)]);
+    if (it && it.kind === 'item' && WEAPONS[it.def]) {
+      const who = helpers(cell.x, cell.y).find((s) => s.drafted) ?? squad[0];
+      command({ c: 'equip', pawn: who.id, item: it.id });
+      this.r.flashOrder(cell.x, cell.y, false);
+      return true;
+    }
     command({ c: 'move', pawns: ids, x: cell.x, y: cell.y });
     this.r.flashOrder(cell.x, cell.y, false);
     return true;

@@ -125,6 +125,7 @@ export const EVENTS: Record<string, EventDef> = Object.fromEntries(
     // ------------------------------------------------------------------ threats (combat)
     E({ key: 'raid', label: 'Raid', category: 'threat', scope: 'faction', tone: 'bad', rarity: 'uncommon', cost: 60, scaledCost: true, minDay: 5, cooldownDays: 5, weight: 1.5, description: 'Armed raiders arrive at the map edge and attack the colony. Bigger and better armed the richer the colony is; paid for from the threat budget. They flee once half of them are down.' }),
     E({ key: 'night_raid', label: 'Night raid', category: 'threat', scope: 'faction', tone: 'bad', rarity: 'rare', cost: 60, scaledCost: true, minDay: 8, cooldownDays: 8, description: 'Raiders with knives and clubs creep in after dark. If it is daytime when the storyteller picks it, they wait for nightfall.' }),
+    E({ key: 'sapper_raid', label: 'Sapper raid', category: 'threat', scope: 'faction', tone: 'bad', rarity: 'rare', cost: 60, scaledCost: true, minDay: 12, cooldownDays: 10, description: 'Raiders who tunnel through rock and smash through walls and doors to get at the colony instead of looking for a way in.' }),
     E({ key: 'scout_party', label: 'Scouting party', category: 'threat', scope: 'faction', tone: 'bad', rarity: 'common', cost: 25, minDay: 3, cooldownDays: 4, description: 'One or two raiders probe the colony’s defences. They run as soon as one of them goes down.' }),
 
     // ------------------------------------------------------------------ mysteries & unique

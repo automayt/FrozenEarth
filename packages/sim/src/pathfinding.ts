@@ -1,7 +1,30 @@
-import { MIN_MOVE_COST } from '@fe/defs';
+import { BUILDINGS, MIN_MOVE_COST, ROCKS, TERRAINS } from '@fe/defs';
 import { PAWN_TICKS_PER_CELL } from './constants';
-import type { PathState } from './types';
+import type { Building, PathState } from './types';
 import type { World } from './world';
+
+/** How a path may treat obstacles: walk around them, smash walls and doors, or also dig rock. */
+export const BREACH = { none: 0, walls: 1, rock: 2 } as const;
+export type Breach = (typeof BREACH)[keyof typeof BREACH];
+
+/** A player's wall, door or other blocking building that this faction may smash. */
+export function breakable(w: World, b: Building, faction: number): boolean {
+  return b.faction !== faction && !!w.factions.get(b.faction)?.isPlayer && !BUILDINGS[b.def]?.special;
+}
+
+/**
+ * Extra ticks a breach path pays to get through a cell this faction can't walk into, or -1 if
+ * it can't be broken. Priced like a detour of a few dozen cells, so raiders look for a way
+ * round first and the search stays small.
+ */
+export function breachCost(w: World, i: number, faction: number, mode: Breach): number {
+  const m = w.map;
+  if (!TERRAINS[m.terrain[i]].passable) return -1;
+  if (m.rock[i]) return mode === BREACH.rock ? PAWN_TICKS_PER_CELL * (4 + ROCKS[m.rock[i]].mineWork / 60) : -1;
+  const b = m.buildingAt[i] ? w.get<Building>(m.buildingAt[i]) : undefined;
+  if (!b || !breakable(w, b, faction)) return -1;
+  return PAWN_TICKS_PER_CELL * (8 + b.hp / 12);
+}
 
 /** Binary min-heap keyed by float priority, storing int cell ids. */
 class Heap {
@@ -114,6 +137,8 @@ export function maybeReachable(w: World, start: number, goal: number, adj: boole
 /**
  * A* from start to goal (or any cell next to it when adj). 8-directional, no corner cutting.
  * Returns the cells to walk through, excluding start, or null if unreachable.
+ * With `breach`, the path may also run through obstacles (see breachCost), entered orthogonally;
+ * the caller finds them as the cells on it that aren't passable.
  */
 export function findPath(
   w: World,
@@ -122,10 +147,11 @@ export function findPath(
   adj: boolean,
   faction: number,
   maxNodes = 50_000,
+  breach: Breach = BREACH.none,
 ): number[] | null {
   const m = w.map;
   if (atGoal(w, start, goal, adj)) return [];
-  if (!maybeReachable(w, start, goal, adj)) return null;
+  if (!breach && !maybeReachable(w, start, goal, adj)) return null;
   const b = getBuffers(m.n);
   b.gen++;
   if (b.gen === 0xffffffff) {
@@ -171,10 +197,16 @@ export function findPath(
       const ny = cy + DY[k];
       if (!m.inBounds(nx, ny)) continue;
       const ni = ny * m.w + nx;
-      if (closed[ni] === gen || !w.passable(ni, faction)) continue;
+      if (closed[ni] === gen) continue;
       const diag = k >= 4;
+      let extra = 0;
+      if (!w.passable(ni, faction)) {
+        if (!breach || diag) continue;
+        extra = breachCost(w, ni, faction, breach);
+        if (extra < 0) continue;
+      }
       if (diag && (!w.passable(cy * m.w + nx, faction) || !w.passable(ny * m.w + cx, faction))) continue;
-      const ng = g[c] + w.stepCost(ni, diag);
+      const ng = g[c] + w.stepCost(ni, diag) + extra;
       if (stamp[ni] === gen && ng >= g[ni]) continue;
       stamp[ni] = gen;
       g[ni] = ng;

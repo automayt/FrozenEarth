@@ -1,4 +1,4 @@
-export type ItemCategory = 'resource' | 'raw_food' | 'meal' | 'apparel';
+export type ItemCategory = 'resource' | 'raw_food' | 'meal' | 'apparel' | 'weapon';
 
 export interface ItemDef {
   key: string;
@@ -30,6 +30,11 @@ export const ITEMS: Record<string, ItemDef> = {
   tuque: { key: 'tuque', label: 'Tuque', category: 'apparel', stackLimit: 10, color: 0xa84a4a, marketValue: 20 },
   sun_hat: { key: 'sun_hat', label: 'Sun hat', category: 'apparel', stackLimit: 10, color: 0xd8c070, marketValue: 18 },
   survival_meal: { key: 'survival_meal', label: 'Packaged survival meal', category: 'meal', stackLimit: 20, color: 0x7a8a5a, nutrition: 0.9, marketValue: 24 },
+  // Weapons share their keys with WEAPONS: an equipped one lives in Pawn.weapon, a loose one is an item.
+  knife: { key: 'knife', label: 'Knife', category: 'weapon', stackLimit: 5, color: 0xc8d0d8, marketValue: 40 },
+  club: { key: 'club', label: 'Club', category: 'weapon', stackLimit: 5, color: 0x8a6a40, marketValue: 18 },
+  bow: { key: 'bow', label: 'Short bow', category: 'weapon', stackLimit: 5, color: 0xd8c8a0, marketValue: 60 },
+  rifle: { key: 'rifle', label: 'Bolt rifle', category: 'weapon', stackLimit: 5, color: 0x5a5a60, marketValue: 160 },
 };
 
 export const ITEM_CATEGORIES: { key: ItemCategory; label: string }[] = [
@@ -37,4 +42,5 @@ export const ITEM_CATEGORIES: { key: ItemCategory; label: string }[] = [
   { key: 'raw_food', label: 'Raw food' },
   { key: 'meal', label: 'Meals' },
   { key: 'apparel', label: 'Clothing' },
+  { key: 'weapon', label: 'Weapons' },
 ];

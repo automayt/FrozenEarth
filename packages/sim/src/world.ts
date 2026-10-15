@@ -1,4 +1,4 @@
-import { BUILDINGS, DEFAULT_PRIORITY, ITEMS, PLANTS, RANDOM_TRAITS, SKILLS, START_PRIORITY, TERRAINS, WEATHER, WORK_TYPES, type SkillKey, type WorkType } from '@fe/defs';
+import { BUILDINGS, DEFAULT_PRIORITY, ITEMS, maxHp, PLANTS, RANDOM_TRAITS, SKILLS, START_PRIORITY, TERRAINS, WEATHER, WORK_TYPES, type SkillKey, type WorkType } from '@fe/defs';
 import * as C from './constants';
 import { GameMap } from './map';
 import { Rng } from './rng';
@@ -80,6 +80,8 @@ export class World {
   fireCells = new Set<number>();
   choices = new Map<number, Choice>();
   nextChoiceId = 1;
+  /** Buildings below full hit points, for the repair work giver. Derived from entities. */
+  damaged = new Set<EntityId>();
   /** Cells of buildings that warm the air around them even outdoors -> [degrees, radius]. */
   radiant = new Map<number, [number, number]>();
   /** Server-only data for open choices (kept off the wire so players can't peek). */
@@ -266,6 +268,8 @@ export class World {
       case 'building':
         if (add || m.buildingAt[i] === e.id) m.buildingAt[i] = v;
         this.refreshCell(i);
+        if (add && e.hp < maxHp(e.def)) this.damaged.add(e.id);
+        else this.damaged.delete(e.id);
         if (BUILDINGS[e.def]?.radiant) {
           if (add) this.radiant.set(i, BUILDINGS[e.def].radiant!);
           else this.radiant.delete(i);
@@ -460,6 +464,7 @@ export class World {
       def,
       owner: 0,
       bills: [],
+      hp: maxHp(def),
     });
   }
 
@@ -522,6 +527,7 @@ export class World {
       weapon,
       drafted: false,
       downed: false,
+      prisoner: '',
     });
   }
 
@@ -534,7 +540,7 @@ export class World {
       kind,
       cells: [],
       plant,
-      allow: ['resource', 'raw_food', 'meal', 'apparel'],
+      allow: ['resource', 'raw_food', 'meal', 'apparel', 'weapon'],
     };
     this.zones.set(z.id, z);
     this.dirty.zones.add(z.id);

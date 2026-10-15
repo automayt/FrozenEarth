@@ -1,9 +1,10 @@
-import { APPAREL, BUILDINGS, CONDITIONS, ITEMS, PLANTS, RECIPES, ROCKS, T, weaponOf } from '@fe/defs';
-import { goTo, needsWarmth, pawnSpeed, pushOut, workSpeed } from './pawns';
-import { addCondition, effectsOf, needsTending } from './health';
-import { hostileInReach, inReach, strike, warmup } from './combat';
-import { findPath, makePathState } from './pathfinding';
-import { raiderGone } from './raids';
+import { APPAREL, BUILDINGS, CONDITIONS, ITEMS, maxHp, PLANTS, RECIPES, ROCKS, T, WEAPON_KEYS, WEAPONS, weaponOf } from '@fe/defs';
+import { dropWeapon, goTo, needsWarmth, pawnSpeed, pushOut, workSpeed } from './pawns';
+import { addCondition, effectsOf, inBed, needsTending } from './health';
+import { hostileInReach, inReach, isRaider, strike, warmup } from './combat';
+import { breakable, findPath, makePathState } from './pathfinding';
+import { raiderGone, takePrisoner } from './raids';
+import { damageBuilding, repairBuilding } from './siege';
 import type { Building, Construct, Item, Job, Pawn, Plant } from './types';
 import { DESIG } from './types';
 import type { World } from './world';
@@ -58,6 +59,14 @@ export function runJob(w: World, p: Pawn): JobResult {
       return tend(w, p, j);
     case 'flee':
       return flee(w, p, j);
+    case 'bash':
+      return bash(w, p, j);
+    case 'repair':
+      return repair(w, p, j);
+    case 'rescue':
+      return rescue(w, p, j);
+    case 'equip':
+      return equip(w, p, j);
   }
 }
 
@@ -82,6 +91,23 @@ function wear(w: World, p: Pawn, j: J<'wear'>): JobResult {
   w.takeFromItem(it, 1);
   takeOff();
   p.apparel.push(def);
+  w.markDirty(p);
+  return 'done';
+}
+
+function equip(w: World, p: Pawn, j: J<'equip'>): JobResult {
+  if (!j.item) {
+    dropWeapon(w, p);
+    return 'done';
+  }
+  const it = w.get<Item>(j.item);
+  if (!it || it.kind !== 'item' || !WEAPONS[it.def]) return 'fail';
+  const r = goTo(w, p, w.cellOf(it), false);
+  if (r !== 'arrived') return r === 'fail' ? 'fail' : 'continue';
+  const def = it.def;
+  w.takeFromItem(it, 1);
+  dropWeapon(w, p);
+  p.weapon = def;
   w.markDirty(p);
   return 'done';
 }
@@ -144,7 +170,8 @@ function tend(w: World, p: Pawn, j: J<'tend'>): JobResult {
   bumpProgress(w, p, before, j.progress, TEND_WORK);
   if (j.progress < TEND_WORK) return 'continue';
   // Patching yourself up is clumsier than having someone else do it.
-  const quality = Math.max(0.2, Math.min(1, w.rng.range(0.55, 0.95) * Math.min(1.2, workSpeed(w, p)) * (pt.id === p.id ? 0.7 : 1)));
+  // A patient lying in bed is easier to treat properly.
+  const quality = Math.max(0.2, Math.min(1, w.rng.range(0.55, 0.95) * Math.min(1.2, workSpeed(w, p)) * (pt.id === p.id ? 0.7 : 1) * (inBed(w, pt) ? 1.15 : 1)));
   for (const c of pt.conditions) if (c.tended === undefined && CONDITIONS[c.key]?.bleed) c.tended = Math.round(quality * 100) / 100;
   w.markDirty(pt);
   return 'done';
@@ -173,6 +200,100 @@ function flee(w: World, p: Pawn, j: J<'flee'>): JobResult {
   w.despawn(p.id);
   raiderGone(w, p.faction, false);
   return 'done';
+}
+
+/** Smash the wall or door in the way, or (sappers) dig through the rock. */
+function bash(w: World, p: Pawn, j: J<'bash'>): JobResult {
+  const m = w.map;
+  const b = m.buildingAt[j.cell] ? w.get<Building>(m.buildingAt[j.cell]) : undefined;
+  const target = b && breakable(w, b, p.faction) && !w.passable(j.cell, p.faction) ? b : undefined;
+  const rock = m.rock[j.cell];
+  if ((!target && !rock) || w.tick >= j.until) return 'done';
+  // Drop the hammer to fight anyone who shows up.
+  if ((w.tick + p.id) % 20 === 0 && hostileInReach(w, p)) return 'done';
+  if (j.stage === 0) {
+    const r = goTo(w, p, j.cell, true);
+    if (r !== 'arrived') return r === 'fail' ? 'fail' : 'continue';
+    j.stage = 1;
+    j.next = warmup(w, p);
+  }
+  if (target) {
+    if (w.tick < j.next) return 'continue';
+    const wd = weaponOf(p.weapon);
+    j.next = w.tick + wd.cooldown;
+    // Drawn as a melee swing, whatever they're holding.
+    w.dirty.shots.push(p.id, target.id, p.x, p.y, target.x, target.y, 1, wd.melee ? Math.max(0, WEAPON_KEYS.indexOf(p.weapon)) : 0);
+    return damageBuilding(w, target, wd.structDamage * w.rng.range(0.8, 1.2)) ? 'done' : 'continue';
+  }
+  j.progress += 0.8 * Math.max(0.1, effectsOf(w, p).work);
+  if (j.progress < ROCKS[rock].mineWork) return 'continue';
+  w.setRock(j.cell, 0);
+  if (m.desig[j.cell]) w.setDesig(j.cell, 0, 0);
+  return 'done';
+}
+
+/** Hit points mended per tick of work. */
+export const REPAIR_RATE = 0.35;
+
+function repair(w: World, p: Pawn, j: J<'repair'>): JobResult {
+  const b = w.get<Building>(j.target);
+  if (!b || b.kind !== 'building' || b.faction !== p.faction) return 'fail';
+  const max = maxHp(b.def);
+  if (b.hp >= max) return 'done';
+  if (j.stage === 0) {
+    const r = goTo(w, p, w.cellOf(b), true);
+    if (r !== 'arrived') return r === 'fail' ? 'fail' : 'continue';
+    j.stage = 1;
+  }
+  const before = b.hp;
+  if (repairBuilding(w, b, REPAIR_RATE * workSpeed(w, p, 'construction'))) return 'done';
+  bumpProgress(w, b, before, b.hp, max);
+  return 'continue';
+}
+
+/** Carry a downed pawn to a bed. Captured raiders become prisoners on arrival. */
+function rescue(w: World, p: Pawn, j: J<'rescue'>): JobResult {
+  const pt = w.get<Pawn>(j.patient);
+  if (!pt || pt.kind !== 'pawn' || !pt.downed) return 'done';
+  if (j.capture ? !isRaider(w, pt.faction) : pt.faction !== p.faction) return 'fail';
+  const bed = w.get<Building>(j.bed);
+  if (!bed || bed.kind !== 'building' || bed.faction !== p.faction || (bed.owner && bed.owner !== pt.id)) return 'fail';
+  if (j.stage === 0) {
+    const r = goTo(w, p, w.cellOf(pt), true);
+    if (r !== 'arrived') return r === 'fail' ? 'fail' : 'continue';
+    j.stage = 1;
+  }
+  const r = goTo(w, p, w.cellOf(bed), false);
+  // The patient is carried along.
+  if (pt.x !== p.x || pt.y !== p.y) {
+    pt.x = p.x;
+    pt.y = p.y;
+    w.markDirty(pt);
+  }
+  if (r !== 'arrived') return r === 'fail' ? 'fail' : 'continue';
+  if (j.capture) takePrisoner(w, pt, p);
+  layInBed(w, pt, bed);
+  return 'done';
+}
+
+/** Put a pawn to bed rest in a bed, claiming it. They stay there while downed and after, while they need rest. */
+export function layInBed(w: World, p: Pawn, bed: Building): void {
+  if (p.bed && p.bed !== bed.id) {
+    const old = w.get<Building>(p.bed);
+    if (old && old.kind === 'building' && old.owner === p.id) {
+      old.owner = 0;
+      w.markDirty(old);
+    }
+  }
+  bed.owner = p.id;
+  p.bed = bed.id;
+  p.x = bed.x;
+  p.y = bed.y;
+  p.path = null;
+  p.job = { type: 'sleep', stage: 1, bed: bed.id, cell: w.cellOf(bed), rest: true };
+  p.asleep = true;
+  w.markDirty(bed);
+  w.markDirty(p);
 }
 
 /** Ticks of beating at a fire to knock it down one level. */

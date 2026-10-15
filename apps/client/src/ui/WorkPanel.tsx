@@ -14,7 +14,7 @@ import { store, useStore } from '../store';
 
 export function myPawns(): Pawn[] {
   const out: Pawn[] = [];
-  for (const e of store.mirror.entities.values()) if (e.kind === 'pawn' && e.faction === store.me?.faction) out.push(e);
+  for (const e of store.mirror.entities.values()) if (e.kind === 'pawn' && e.faction === store.me?.faction && !e.prisoner) out.push(e);
   return out.sort((a, b) => a.id - b.id);
 }
 

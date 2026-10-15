@@ -3,6 +3,7 @@ import { RARE_TICK, TICKS_PER_DAY } from './constants';
 import { effectsOf, healthTick } from './health';
 import { endJob, exposureSeverity, needsWarmth, warmthJob } from './pawns';
 import { isRaider } from './combat';
+import { prisonerTick } from './raids';
 import type { Building, Item, Pawn, Plant, Room } from './types';
 import { NEIGHBORS4, type World } from './world';
 
@@ -43,6 +44,7 @@ function needsTick(w: World, p: Pawn): void {
   }
 
   if (!healthTick(w, p, e)) return; // died
+  if (p.prisoner) prisonerTick(w, p);
 
   const thoughts: string[] = [];
   let target = 0.55;
@@ -65,10 +67,11 @@ function needsTick(w: World, p: Pawn): void {
   // Urgent needs, sickness and mental breaks interrupt work.
   const jt = p.job?.type;
   // Drafted pawns ignore all of it until the player releases them.
-  const busy = !p.drafted && jt && jt !== 'eat' && jt !== 'sleep' && jt !== 'warm';
+  // Downed pawns can't act, wherever they lie, so there is nothing to interrupt.
+  const busy = !p.drafted && !p.downed && jt && jt !== 'eat' && jt !== 'sleep' && jt !== 'warm';
   // Too cold or hot here, and somewhere better exists: go there, even out of bed when freezing.
   const seekWarmth =
-    (busy || (jt === 'sleep' && exposureSeverity(p) > 0.3)) && !p.drafted && needsWarmth(w, p, e) && warmthJob(w, p, e) !== null;
+    (busy || (jt === 'sleep' && !p.downed && exposureSeverity(p) > 0.3)) && !p.drafted && needsWarmth(w, p, e) && warmthJob(w, p, e) !== null;
   if (seekWarmth || (busy && (n.food < 0.12 || n.rest < 0.08 || e.bedRest || (e.noWork && jt !== 'wander')))) endJob(w, p);
   w.markPawnIfChanged(p);
 }

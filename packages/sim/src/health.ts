@@ -1,7 +1,7 @@
 import { APPAREL, BUILDINGS, COMFORT_MAX, COMFORT_MIN, CONDITIONS, DOWNED_BLOOD_LOSS, DOWNED_PAIN, TRAITS, WEATHER, type ConditionDef, type ConditionStage } from '@fe/defs';
 import { RARE_TICK, TICKS_PER_DAY, TICKS_PER_HOUR } from './constants';
 import { scheduleEvent } from './schedule';
-import { endJob } from './pawns';
+import { dropWeapon, endJob } from './pawns';
 import { raiderGone, raiderDowned } from './raids';
 import type { Building, Pawn, PawnCondition } from './types';
 import type { World } from './world';
@@ -169,7 +169,15 @@ export function updateDowned(w: World, p: Pawn): void {
   const cell = w.cellOf(p);
   if (down) {
     p.drafted = false;
+    // Collapsing in bed leaves them there, so nobody has to carry them back to it.
+    const rest = inBed(w, p) ? p.job : null;
     endJob(w, p);
+    if (rest) {
+      p.job = rest;
+      p.asleep = true;
+    }
+    // Whatever they held falls from their hands.
+    dropWeapon(w, p);
     if (w.factions.get(p.faction)?.raid) raiderDowned(w, p.faction);
     else w.message(p.faction, `${p.name} has been downed.`, 'bad', cell);
   } else {
@@ -182,7 +190,8 @@ export function isMental(p: Pawn): boolean {
   return p.conditions.some((c) => CONDITIONS[c.key]?.kind === 'mental');
 }
 
-function inBed(w: World, p: Pawn): boolean {
+/** Lying in their own bed: asleep there, or put there to recover. */
+export function inBed(w: World, p: Pawn): boolean {
   return p.asleep && !!p.bed && p.job?.type === 'sleep' && p.job.bed === p.bed;
 }
 
@@ -309,12 +318,13 @@ export function killPawn(w: World, p: Pawn, cause: string): void {
   const fname = w.factions.get(faction)?.name ?? 'the colony';
   if (p.carrying) w.placeItemNear(p.carrying.def, p.carrying.count, cell, p.carrying.rot);
   for (const a of p.apparel) w.placeItemNear(a, 1, cell);
+  if (p.weapon) w.placeItemNear(p.weapon, 1, cell);
   w.despawn(p.id);
   w.message(0, `${p.name} of ${fname} has died of ${cause}.`, 'bad', cell);
   let left = 0;
   for (const id of w.kinds.pawn) {
     const o = w.get<Pawn>(id)!;
-    if (o.faction !== faction) continue;
+    if (o.faction !== faction || o.prisoner) continue;
     left++;
     addCondition(w, o, 'mourning');
   }

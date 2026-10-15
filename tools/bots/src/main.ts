@@ -7,7 +7,7 @@
 import { parseArgs } from 'node:util';
 import WebSocket from 'ws';
 import { decode, encode, Mirror, PROTOCOL_VERSION, type ClientMsg, type ServerMsg } from '@fe/protocol';
-import { BUILDINGS, SOWABLE_PLANTS, WORK_TYPES } from '@fe/defs';
+import { BUILDINGS, SOWABLE_PLANTS, WEAPONS, WORK_TYPES } from '@fe/defs';
 import type { Command, Entity } from '@fe/sim';
 
 const { values: args } = parseArgs({
@@ -55,6 +55,16 @@ function randomCommand(b: Bot): Command | null {
       return pawns.length ? { c: 'setPriority', pawn: pick(pawns).id, work: pick(WORK_TYPES), prio: rand(5) } : null;
     case 5:
       return { c: 'designate', kind: 'cancel', ...r };
+    case 6: {
+      // Siege and rescue orders: capture a downed raider, pick up a weapon, or let a prisoner go.
+      if (!pawns.length) return null;
+      const downed = foreign.filter((e) => e.kind === 'pawn' && e.downed);
+      if (downed.length && Math.random() < 0.5) return { c: 'capture', pawns: pawns.map((p) => p.id), target: pick(downed).id };
+      const prisoners = pawns.filter((p) => p.kind === 'pawn' && p.prisoner === 'held');
+      if (prisoners.length && Math.random() < 0.2) return { c: 'release', pawn: pick(prisoners).id };
+      const weapons = [...b.mirror.entities.values()].filter((e) => e.kind === 'item' && WEAPONS[e.def]);
+      return { c: 'equip', pawn: pick(pawns).id, item: weapons.length && Math.random() < 0.8 ? pick(weapons).id : 0 };
+    }
     case 7:
       return pawns.length ? { c: 'draft', pawns: pawns.slice(0, 1 + rand(pawns.length)).map((p) => p.id), on: Math.random() < 0.6 } : null;
     case 8:

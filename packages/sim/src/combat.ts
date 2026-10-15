@@ -112,7 +112,7 @@ export function hostileInReach(w: World, p: Pawn): Pawn | null {
   let bestD = Infinity;
   for (const id of w.kinds.pawn) {
     const o = w.get<Pawn>(id)!;
-    if (o.downed || !hostile(w, p.faction, o.faction)) continue;
+    if (o.downed || o.prisoner || !hostile(w, p.faction, o.faction)) continue;
     const c = w.cellOf(o);
     const d = cellDistance(w, here, c);
     if (d >= bestD || d > wd.range + 0.01 || !inReach(w, wd, here, c)) continue;

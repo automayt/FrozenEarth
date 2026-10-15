@@ -4,7 +4,7 @@ import { atGoal, findPath, makePathState } from './pathfinding';
 import { runJob } from './jobs';
 import { findWork } from './work';
 import { hostileInReach, isRaider } from './combat';
-import { raiderThink } from './raids';
+import { fleeJob, raiderThink } from './raids';
 import type { Building, Item, Job, Pawn } from './types';
 import { NEIGHBORS8, rk, type World } from './world';
 
@@ -114,7 +114,20 @@ export function endJob(w: World, p: Pawn): void {
   w.markDirty(p);
 }
 
+/** Drop the held weapon at the pawn's feet. */
+export function dropWeapon(w: World, p: Pawn): void {
+  if (!p.weapon) return;
+  w.placeItemNear(p.weapon, 1, w.cellOf(p));
+  p.weapon = '';
+  w.markDirty(p);
+}
+
 function think(w: World, p: Pawn): void {
+  if (p.prisoner) {
+    p.job = prisonerThink(w, p);
+    w.markDirty(p);
+    return;
+  }
   if (isRaider(w, p.faction) || p.drafted) {
     p.job = p.drafted ? draftedThink(w, p) : raiderThink(w, p);
     w.markDirty(p);
@@ -134,6 +147,20 @@ function think(w: World, p: Pawn): void {
   if (!job) job = wanderJob(w, p);
   p.job = job;
   w.markDirty(p);
+}
+
+/** Prisoners eat, rest in their bed and otherwise stay put. Released ones walk off the map. */
+function prisonerThink(w: World, p: Pawn): Job {
+  if (p.prisoner === 'leaving') return fleeJob(w, p);
+  const e = effectsOf(w, p);
+  let job: Job | null = null;
+  if (p.needs.food < 0.3) job = findFood(w, p);
+  if (!job && (e.bedRest || p.needs.rest < 0.8 || w.isNight()) && p.bed) job = findSleep(w, p, e.bedRest);
+  if (!job && p.bed) {
+    const bed = w.get<Building>(p.bed);
+    if (bed && bed.kind === 'building' && w.cellOf(bed) !== w.cellOf(p)) job = { type: 'goto', stage: 0, dest: w.cellOf(bed) };
+  }
+  return job ?? { type: 'hold', stage: 0, until: w.tick + 600 };
 }
 
 /** Drafted pawns hold position and fire at hostiles in reach. They never start a fight with another player. */

@@ -1,5 +1,6 @@
-import { APPAREL, BUILDINGS, CONDITIONS, DOWNED_PAIN, ITEM_CATEGORIES, ITEMS, MAX_SKILL, PLANTS, RECIPES, ROCKS, SKILL_LABELS, SKILLS, SOWABLE_PLANTS, TERRAINS, TRAITS, weaponOf } from '@fe/defs';
+import { APPAREL, BUILDINGS, CONDITIONS, DOWNED_PAIN, ITEM_CATEGORIES, ITEMS, MAX_SKILL, maxHp, WEAPONS, PLANTS, RECIPES, ROCKS, SKILL_LABELS, SKILLS, SOWABLE_PLANTS, TERRAINS, TRAITS, weaponOf } from '@fe/defs';
 import { bleedRate, describeJob, outdoorTempAt, painOf, stageOf, TICKS_PER_HOUR, woundTotal, type Building, type Construct, type Entity, type Pawn, type Zone } from '@fe/sim';
+import { helpers } from '../actions';
 import { command } from '../net';
 import { store, useStore } from '../store';
 import { hex, pct } from './util';
@@ -60,6 +61,7 @@ function EntityInfo({ e }: { e: Entity }) {
           <h3>
             {d.label} ×{e.count}
           </h3>
+          {WEAPONS[e.def] && <WeaponItem id={e.id} def={e.def} x={e.x} y={e.y} />}
           {d.spoilDays ? <p className="muted">Freshness {pct(1 - e.rot)} · spoils in about {Math.max(0, (1 - e.rot) * d.spoilDays).toFixed(1)} days at room temperature</p> : null}
         </>
       );
@@ -78,8 +80,36 @@ function EntityInfo({ e }: { e: Entity }) {
   }
 }
 
+/** Stats of a loose weapon, and who should pick it up. */
+function WeaponItem({ id, def, x, y }: { id: number; def: string; x: number; y: number }) {
+  const wd = weaponOf(def);
+  const who = helpers(x, y);
+  return (
+    <>
+      <p className="muted small">
+        {wd.melee ? 'Melee' : `Ranged, ${wd.range} cells`} · damage {Math.round(wd.damage * 100)} · every {(wd.cooldown / 60).toFixed(1)}s
+      </p>
+      {who.length > 0 && (
+        <div className="combat-row">
+          <span className="muted small">Equip</span>
+          <select value="" onChange={(ev) => ev.target.value && command({ c: 'equip', pawn: Number(ev.target.value), item: id })}>
+            <option value="">choose a colonist…</option>
+            {who.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} ({weaponOf(p.weapon).label.toLowerCase()})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+    </>
+  );
+}
+
 function PawnInfo({ p }: { p: Pawn }) {
   const lookup = (id: number) => store.mirror.get(id);
+  const mine = p.faction === store.me?.faction;
+  const raider = !!store.mirror.factions.get(p.faction)?.raid;
   return (
     <>
       <h3>{p.name}</h3>
@@ -88,12 +118,29 @@ function PawnInfo({ p }: { p: Pawn }) {
         <span className="muted small">{weaponOf(p.weapon).label}</span>
         {p.downed && <span className="chip bad">Downed</span>}
         {p.drafted && <span className="chip drafted">Drafted</span>}
-        {p.faction === store.me?.faction && !p.downed && (
+        {p.prisoner && <span className="chip">{p.prisoner === 'leaving' ? 'Released' : 'Prisoner'}</span>}
+        {mine && !p.downed && !p.prisoner && p.weapon && (
+          <button onClick={() => command({ c: 'equip', pawn: p.id, item: 0 })} title="Drop the weapon here">
+            Drop
+          </button>
+        )}
+        {mine && !p.downed && !p.prisoner && (
           <button className={p.drafted ? 'on' : ''} onClick={() => command({ c: 'draft', pawns: [p.id], on: !p.drafted })} title="Draft to give move and attack orders (R)">
             {p.drafted ? 'Undraft' : 'Draft'}
           </button>
         )}
+        {mine && p.prisoner === 'held' && (
+          <button onClick={() => command({ c: 'release', pawn: p.id })} title="Let them walk away">
+            Release
+          </button>
+        )}
+        {raider && p.downed && (
+          <button onClick={() => command({ c: 'capture', pawns: helpers(p.x, p.y).map((h) => h.id), target: p.id })} title="Carry them to a free bed and hold them prisoner">
+            Capture
+          </button>
+        )}
       </div>
+      {mine && p.prisoner === 'held' && <p className="muted small">Held prisoner. Content prisoners may come round to joining the colony.</p>}
       <p className="job">{describeJob(p.job, lookup)}</p>
       <Bar label="Food" v={p.needs.food} />
       <Bar label="Rest" v={p.needs.rest} />
@@ -219,6 +266,7 @@ function BuildingInfo({ b }: { b: Building }) {
     <>
       <h3>{d.label}</h3>
       {factionTag(b.faction)}
+      {b.hp < maxHp(b.def) && <Bar label="Condition" v={b.hp / maxHp(b.def)} warn={0.35} />}
       {d.bed && <p className="muted">{owner ? `Owned by ${owner.name}` : 'Unclaimed'}</p>}
       {d.heat ? <p className="muted">{d.heat > 0 ? 'Heats' : 'Cools'} an enclosed room toward {d.targetTemp}°C</p> : null}
       {d.recipes && mine && <Bills b={b} />}

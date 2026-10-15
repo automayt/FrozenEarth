@@ -19,11 +19,12 @@ type Handler = (w: World, faction: number, data: Data) => boolean;
 
 // ============================================================================ helpers
 
+/** A faction's colonists. Prisoners it holds don't count. */
 function pawnsOf(w: World, faction: number): Pawn[] {
   const out: Pawn[] = [];
   for (const id of w.kinds.pawn) {
     const p = w.get<Pawn>(id)!;
-    if (p.faction === faction) out.push(p);
+    if (p.faction === faction && !p.prisoner) out.push(p);
   }
   return out;
 }
@@ -828,6 +829,11 @@ HANDLERS.night_raid = (w, faction, data) => {
     return true;
   }
   return !!startRaid(w, faction, points, 'night');
+};
+
+HANDLERS.sapper_raid = (w, faction, data) => {
+  if (!pawnsOf(w, faction).length) return false;
+  return !!startRaid(w, faction, Number(data.points) || raidBudget(w, faction, 1), 'sapper');
 };
 
 HANDLERS.scout_party = (w, faction) => {

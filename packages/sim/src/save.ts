@@ -1,10 +1,10 @@
-import { DEFAULT_PRIORITY, START_PRIORITY } from '@fe/defs';
+import { DEFAULT_PRIORITY, maxHp, START_PRIORITY } from '@fe/defs';
 import type { Choice, Condition, Entity, Faction, Pawn, Room, Snapshot, Zone } from './types';
 import { upgradeStoryState, type StoryState } from './schedule';
 import { SKILLS } from '@fe/defs';
 import { Dirty, rkFromString, rkToString, unreachableKey, World } from './world';
 
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 export interface SaveData {
   version: number;
@@ -100,6 +100,15 @@ function migrate(data: SaveData): SaveData {
       e.priorities.doctor ??= START_PRIORITY.doctor ?? DEFAULT_PRIORITY;
     }
     d.version = 3;
+  }
+  if (d.version === 3) {
+    // Siege and rescue: building hit points, prisoners, and weapons as items stockpiles can take.
+    for (const e of d.ents) {
+      if (e.kind === 'building') e.hp ??= maxHp(e.def);
+      else if (e.kind === 'pawn') e.prisoner ??= '';
+    }
+    for (const z of d.zones) if (z.kind === 'stockpile' && !z.allow.includes('weapon')) z.allow.push('weapon');
+    d.version = 4;
   }
   return d;
 }

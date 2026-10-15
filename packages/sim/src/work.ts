@@ -2,7 +2,7 @@ import { BUILDINGS, ITEMS, PLANTS, RECIPES, TERRAINS, WORK_TYPES, type RecipeDef
 import { fullyDelivered } from './jobs';
 import { maybeReachable } from './pathfinding';
 import { canUseItem } from './pawns';
-import { needsTending } from './health';
+import { inBed, needsTending } from './health';
 import type { Building, Construct, Item, Job, Pawn, Plant, Zone } from './types';
 import { DESIG } from './types';
 import { rk, type World } from './world';
@@ -98,20 +98,71 @@ function giveFirefight(w: World, p: Pawn): Job | null {
 
 // ---------------------------------------------------------------- doctoring
 
-/** Dress bleeding wounds: colony-mates first, yourself if nobody else needs it. */
+/** Patients lying in a bed get seen before ones this many cells closer. */
+const IN_BED_PREFERENCE = 20;
+
+/**
+ * Carry downed colony-mates to bed, then dress bleeding wounds: patients in bed first, then
+ * other colony-mates, yourself if nobody else needs it.
+ */
 function giveDoctor(w: World, p: Pawn): Job | null {
   const patients: Pawn[] = [];
+  const downed: Pawn[] = [];
   let self = false;
   for (const id of w.kinds.pawn) {
     const o = w.get<Pawn>(id)!;
-    if (o.faction !== p.faction || !needsTending(o) || w.reservedByOther(rk.t(o.id), p.id)) continue;
+    if (o.faction !== p.faction) continue;
+    if (o.downed && o.id !== p.id && !inBed(w, o) && !w.reservedByOther(rk.e(o.id), p.id) && !w.reservedByOther(rk.t(o.id), p.id)) downed.push(o);
+    if (!needsTending(o) || w.reservedByOther(rk.t(o.id), p.id)) continue;
     if (o.id === p.id) self = true;
     else patients.push(o);
   }
-  const best = nearest(w, p, patients, (o) => w.cellOf(o), true, 10)[0] ?? (self ? p : undefined);
+  for (const o of nearest(w, p, downed, (x) => w.cellOf(x), true, 5)) {
+    const bed = bedFor(w, o, p);
+    // No bed to take them to: tend them where they lie.
+    if (!bed) break;
+    w.reserve(rk.e(o.id), p.id);
+    w.reserve(rk.t(o.id), p.id);
+    w.reserve(rk.e(bed.id), p.id);
+    return { type: 'rescue', stage: 0, patient: o.id, bed: bed.id, capture: false };
+  }
+  const here = w.cellOf(p);
+  let best: Pawn | undefined;
+  let bestScore = Infinity;
+  for (const o of nearest(w, p, patients, (x) => w.cellOf(x), true, 10)) {
+    const score = w.dist(here, w.cellOf(o)) - (inBed(w, o) ? IN_BED_PREFERENCE : 0);
+    if (score < bestScore) {
+      bestScore = score;
+      best = o;
+    }
+  }
+  best ??= self ? p : undefined;
   if (!best) return null;
   w.reserve(rk.t(best.id), p.id);
   return { type: 'tend', stage: 0, patient: best.id, progress: 0 };
+}
+
+/**
+ * A bed of the carrier's colony to lay a downed pawn in: their own, or the nearest free one.
+ * Reachability is checked from where the patient lies.
+ */
+export function bedFor(w: World, patient: Pawn, carrier: Pawn): Building | null {
+  const own = patient.bed ? w.get<Building>(patient.bed) : undefined;
+  if (own && own.kind === 'building' && own.owner === patient.id && own.faction === carrier.faction && !w.reservedByOther(rk.e(own.id), carrier.id)) return own;
+  const from = w.cellOf(patient);
+  let best: Building | null = null;
+  let bestD = Infinity;
+  for (const id of w.kinds.building) {
+    const b = w.get<Building>(id)!;
+    if (b.faction !== carrier.faction || !BUILDINGS[b.def].bed || b.owner || w.reservedByOther(rk.e(b.id), carrier.id)) continue;
+    const c = w.cellOf(b);
+    const d = w.dist(from, c);
+    if (d < bestD && !w.isUnreachable(carrier.faction, c) && maybeReachable(w, from, c, false)) {
+      bestD = d;
+      best = b;
+    }
+  }
+  return best;
 }
 
 // ---------------------------------------------------------------- hauling
@@ -196,6 +247,24 @@ function findMaterial(w: World, p: Pawn, of: string, near: number, exclude?: Set
 }
 
 function giveConstruct(w: World, p: Pawn): Job | null {
+  return giveBuild(w, p) ?? giveRepair(w, p);
+}
+
+/** Mend this faction's damaged buildings. */
+function giveRepair(w: World, p: Pawn): Job | null {
+  if (w.damaged.size === 0) return null;
+  const hurt: Building[] = [];
+  for (const id of w.damaged) {
+    const b = w.get<Building>(id);
+    if (b && b.faction === p.faction && !w.reservedByOther(rk.e(b.id), p.id)) hurt.push(b);
+  }
+  const best = nearest(w, p, hurt, (b) => w.cellOf(b), true, 10)[0];
+  if (!best) return null;
+  w.reserve(rk.e(best.id), p.id);
+  return { type: 'repair', stage: 0, target: best.id };
+}
+
+function giveBuild(w: World, p: Pawn): Job | null {
   const mine: Construct[] = [];
   for (const id of w.kinds.construct) {
     const c = w.get<Construct>(id)!;

@@ -1,9 +1,12 @@
-import { BUILDINGS, ITEM_CATEGORIES, PLANTS, RECIPES, TERRAINS, WORK_TYPES } from '@fe/defs';
+import { BUILDINGS, ITEM_CATEGORIES, PLANTS, RECIPES, TERRAINS, WEAPONS, WORK_TYPES } from '@fe/defs';
 import { MAX_COMMAND_AREA } from './constants';
-import type { Building, Command, Construct, EntityId, Pawn, Plant, Rect, Zone } from './types';
-import { endJob, setDrafted } from './pawns';
+import type { Building, Command, Construct, EntityId, Item, Pawn, Plant, Rect, Zone } from './types';
+import { canUseItem, endJob, setDrafted } from './pawns';
+import { isRaider } from './combat';
+import { releasePrisoner } from './raids';
+import { bedFor } from './work';
 import { DESIG } from './types';
-import { NEIGHBORS4, type World } from './world';
+import { NEIGHBORS4, rk, type World } from './world';
 import { resolveChoice } from './choices';
 import { offerTrade } from './trade';
 
@@ -83,6 +86,26 @@ export function applyCommand(w: World, faction: number, cmd: Command): void {
       }
       return;
     }
+    case 'capture':
+      return capture(w, faction, cmd.pawns, Number(cmd.target));
+    case 'equip': {
+      const p = ownPawns(w, faction, [cmd.pawn])[0];
+      if (!p) return;
+      const id = Number(cmd.item) || 0;
+      const it = id ? w.get<Item>(id) : undefined;
+      if (id && (!it || it.kind !== 'item' || !WEAPONS[it.def] || !canUseItem(w, p, it))) return;
+      if (!id && !p.weapon) return;
+      endJob(w, p);
+      if (it) w.reserve(rk.e(it.id), p.id);
+      p.job = { type: 'equip', stage: 0, item: id };
+      w.markDirty(p);
+      return;
+    }
+    case 'release': {
+      const p = w.get<Pawn>(Number(cmd.pawn));
+      if (p && p.kind === 'pawn' && p.faction === faction) releasePrisoner(w, p);
+      return;
+    }
     case 'removeBill': {
       const b = ownBench(w, faction, cmd.bench);
       if (!b) return;
@@ -99,9 +122,29 @@ function ownPawns(w: World, faction: number, ids: unknown): Pawn[] {
   const out: Pawn[] = [];
   for (const id of new Set(ids.slice(0, 50).map(Number))) {
     const p = w.get<Pawn>(id as EntityId);
-    if (p && p.kind === 'pawn' && p.faction === faction && !p.downed) out.push(p);
+    if (p && p.kind === 'pawn' && p.faction === faction && !p.downed && !p.prisoner) out.push(p);
   }
   return out;
+}
+
+/** Send the nearest of the listed pawns to carry a downed raider to a free bed as a prisoner. */
+function capture(w: World, faction: number, ids: unknown, target: number): void {
+  const t = w.get<Pawn>(target);
+  if (!t || t.kind !== 'pawn' || !t.downed || !isRaider(w, t.faction) || w.reservedByOther(rk.e(t.id), 0)) return;
+  const there = w.cellOf(t);
+  let who: Pawn | null = null;
+  for (const p of ownPawns(w, faction, ids)) if (!who || w.dist(w.cellOf(p), there) < w.dist(w.cellOf(who), there)) who = p;
+  if (!who) return;
+  const bed = bedFor(w, t, who);
+  if (!bed) {
+    w.message(faction, `There is no free bed to hold ${t.name} in. Build one first.`, 'neutral', there);
+    return;
+  }
+  endJob(w, who);
+  w.reserve(rk.e(t.id), who.id);
+  w.reserve(rk.e(bed.id), who.id);
+  who.job = { type: 'rescue', stage: 0, patient: t.id, bed: bed.id, capture: true };
+  w.markDirty(who);
 }
 
 /** Send drafted pawns to a spot, spreading them over nearby open cells so they don't stack. */

@@ -135,6 +135,7 @@ Hosts have an **Events** button (bottom bar) that fires any event on demand, for
 | --- | --- | --- | --- | --- | --- |
 | **Raid** `raid` | uncommon | bad (60+, scaled) | a colony | day 5+ | Armed raiders arrive at the map edge and attack the colony. Bigger and better armed the richer the colony is; paid for from the threat budget. They flee once half of them are down. |
 | **Night raid** `night_raid` | rare | bad (60+, scaled) | a colony | day 8+ | Raiders with knives and clubs creep in after dark. If it is daytime when the storyteller picks it, they wait for nightfall. |
+| **Sapper raid** `sapper_raid` | rare | bad (60+, scaled) | a colony | day 12+ | Raiders who tunnel through rock and smash through walls and doors to get at the colony instead of looking for a way in. |
 | **Scouting party** `scout_party` | common | bad (25) | a colony | day 3+ | One or two raiders probe the colony’s defences. They run as soon as one of them goes down. |
 
 ### Mysteries and uniques

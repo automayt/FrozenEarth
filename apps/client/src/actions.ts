@@ -27,15 +27,24 @@ export function mySquad(): Pawn[] {
   const out: Pawn[] = [];
   for (const id of store.squad) {
     const p = store.mirror.get<Pawn>(id);
-    if (p && p.kind === 'pawn' && p.faction === store.me?.faction) out.push(p);
+    if (p && p.kind === 'pawn' && p.faction === store.me?.faction && !p.prisoner) out.push(p);
   }
   return out;
 }
 
-function myPawnsAll(): Pawn[] {
+/** All own colonists (not prisoners). */
+export function myPawnsAll(): Pawn[] {
   const out: Pawn[] = [];
-  for (const e of store.mirror.entities.values()) if (e.kind === 'pawn' && e.faction === store.me?.faction) out.push(e);
+  for (const e of store.mirror.entities.values()) if (e.kind === 'pawn' && e.faction === store.me?.faction && !e.prisoner) out.push(e);
   return out;
+}
+
+/** Who should act on an order about something at (x, y): the selected colonists, else everyone able, nearest first. */
+export function helpers(x: number, y: number): Pawn[] {
+  const squad = mySquad();
+  return (squad.length ? squad : myPawnsAll())
+    .filter((p) => !p.downed)
+    .sort((a, b) => Math.max(Math.abs(a.x - x), Math.abs(a.y - y)) - Math.max(Math.abs(b.x - x), Math.abs(b.y - y)));
 }
 
 /** Draft the selected colonists, or undraft them if they all already are. With nothing selected, everyone. */

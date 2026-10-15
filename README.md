@@ -62,7 +62,7 @@ The first player to join a new world is the host (admin). Rejoining with the sam
 - **Crafting:** benches with bills ("do X times", "until you have X", "forever"). Campfire and stove for cooking; crafting spot and workbench for crafting.
 - **Rooms and temperature:** enclosed rooms are detected automatically. Room temperature drifts toward the outdoors, and heaters and coolers push it back. Food spoils unless kept cold.
 - **Seasons and climate:** day/night and four seasons.
-- **Storyteller events:** 59 random events over five rarity tiers, from common migraines to once-per-world wonders such as the Sun Shard. They include weather, disease outbreaks, fires, visitors who arrive as choice letters (some hiding secrets), contested loot between colonies, raids, and center-of-the-map mysteries. See [docs/EVENTS.md](docs/EVENTS.md).
+- **Storyteller events:** 60 random events over five rarity tiers, from common migraines to once-per-world wonders such as the Sun Shard. They include weather, disease outbreaks, fires, visitors who arrive as choice letters (some hiding secrets), contested loot between colonies, raids, and center-of-the-map mysteries. See [docs/EVENTS.md](docs/EVENTS.md).
 - **Health and personality:**
   - Diseases that spread; a race between severity and immunity that bed rest helps you win.
   - Injuries, hypothermia, heatstroke, starvation and death.
@@ -75,10 +75,12 @@ The first player to join a new world is the host (admin). Rejoining with the sam
 - **Alerts:** a list of what needs attention, such as freezing colonists, low food, fires, idle colonists and missing beds.
 - **Combat:**
   - Draft colonists to take direct control, then right-click to move or attack. Drafted colonists fire on raiders in range by themselves. They never fire on another player's pawns unless you order it.
-  - Weapons: knife, club, short bow and bolt rifle, plus fists. Each has range, damage, cooldown and accuracy.
+  - Weapons: knife, club, short bow and bolt rifle, plus fists. Each has range, damage, cooldown and accuracy. Weapons are items: the downed and the dead drop theirs, colonists pick one up on order (right-click it with a drafted colonist, or use the Equip list on the weapon), and the workbench makes them.
   - Line of sight: walls, doors and rock block shots, and a wall next to a target on the shooter's side halves the chance to hit.
-  - Wounds: cuts, gunshots and bruises. Untended cuts and gunshots bleed into blood loss, which is fatal at 100%. Enough pain or blood loss knocks a pawn down. The Doctor work type dresses wounds to stop the bleeding.
-  - Raids: raiders scaled to each colony's wealth arrive at the map edge, come for its colonists, loot if they can, and flee when half of them are down. There are also night raids and scouting parties.
+  - Wounds: cuts, gunshots and bruises. Untended cuts and gunshots bleed into blood loss, which is fatal at 100%. Enough pain or blood loss knocks a pawn down. The Doctor work type carries downed colony-mates to a bed and dresses wounds to stop the bleeding, seeing patients in bed first.
+  - Raids: raiders scaled to each colony's wealth arrive at the map edge, come for its colonists, loot if they can, and flee when half of them are down. There are also night raids, scouting parties and sapper raids.
+  - Sieges: buildings have hit points. Raiders who can't walk to anyone smash the cheapest wall or door in the way; sappers also tunnel through rock. Colonists with Construction repair the damage.
+  - Prisoners: capture a downed raider (the Capture button, or right-click with drafted colonists) and they are carried to a free bed and held. A prisoner may come round to joining the colony, or you can release them.
   - Hunting is deferred until there are animals.
 - **Multiplayer and persistence:** chat, a player list with speed votes, reconnect, late join, persistent worlds.
 
@@ -123,6 +125,7 @@ npm run bench                          # sim cost per tick, snapshot size and de
 - [x] Choosing a start location in the lobby, and player-to-player trading
 - [x] Performance pass: incremental connectivity and rooms, haul caching, leaner deltas, chunk culling
 - [x] Combat: drafting, weapons, wounds and doctors, raids
-- [ ] Hunting (needs animals), sappers and door-bashing, weapons as items, rescuing and capturing downed pawns
+- [x] Sappers and door-bashing, weapons as items, rescuing and capturing downed pawns
+- [ ] Hunting (needs animals)
 - [ ] World map: winter front advancing inward, harsher center, caravans between maps
 - [ ] NPC settlements, jobs and quests, reputation (help, betray, trick)

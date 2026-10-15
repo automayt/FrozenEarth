@@ -48,6 +48,15 @@ export function describeJob(job: Job | null, lookup: (id: number) => Entity | un
       return `Tending ${name(job.patient)}'s wounds`;
     case 'flee':
       return job.stage === 0 ? 'Looting' : 'Fleeing';
+    case 'bash':
+      return 'Breaking in';
+    case 'repair':
+      return `Repairing ${name(job.target)}`;
+    case 'rescue':
+      if (job.stage === 0) return `Going to ${job.capture ? 'capture' : 'rescue'} ${name(job.patient)}`;
+      return job.capture ? `Taking ${name(job.patient)} prisoner` : `Carrying ${name(job.patient)} to bed`;
+    case 'equip':
+      return job.item ? `Picking up ${name(job.item)}` : 'Dropping weapon';
     case 'bill': {
       const b = lookup(job.bench);
       const bill = b && b.kind === 'building' ? b.bills.find((x) => x.id === job.bill) : undefined;
