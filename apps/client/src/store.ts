@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { Mirror, type PlayerInfo, type TimeState } from '@fe/protocol';
+import { Mirror, type PlayerInfo, type Site, type TimeState } from '@fe/protocol';
 import { TICKS_PER_SECOND, type ZoneKind } from '@fe/sim';
 
 export type Tool =
@@ -39,6 +39,10 @@ class Store {
   /** Camera jump requests from UI to renderer. */
   focus: { x: number; y: number } | null = null;
   ping = 0;
+  /** Suggested starting spots while unsettled. */
+  sites: Site[] = [];
+  /** Spot the player clicked while choosing where to settle. */
+  settlePick: { x: number; y: number } | null = null;
 
   private lastTick = 0;
   private lastTickAt = 0;
@@ -61,7 +65,7 @@ class Store {
     this.lastTickAt = performance.now();
   }
 
-  set(patch: Partial<Pick<Store, 'status' | 'error' | 'me' | 'players' | 'time' | 'tool' | 'selected' | 'selectedCell' | 'panel' | 'menu' | 'hoverCell' | 'focus' | 'ping'>>): void {
+  set(patch: Partial<Pick<Store, 'status' | 'error' | 'me' | 'players' | 'time' | 'tool' | 'selected' | 'selectedCell' | 'panel' | 'menu' | 'hoverCell' | 'focus' | 'ping' | 'sites' | 'settlePick'>>): void {
     Object.assign(this, patch);
     this.emit();
   }

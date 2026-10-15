@@ -1,7 +1,7 @@
 import type { Command, Delta, Snapshot } from '@fe/sim';
 
 /** Bump when the wire format changes incompatibly. */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 export interface PlayerInfo {
   id: number;
@@ -25,16 +25,26 @@ export interface TimeState {
   reason: string;
 }
 
+export interface Site {
+  x: number;
+  y: number;
+  region: string;
+}
+
 export type ClientMsg =
   | { t: 'hello'; v: number; name: string; token?: string; password?: string }
   | { t: 'cmd'; cmd: Command }
   | { t: 'speed'; speed: number }
   | { t: 'chat'; text: string }
   | { t: 'ping'; at: number }
-  | { t: 'admin'; action: 'save' | 'kick' | 'event'; target?: number; key?: string };
+  | { t: 'admin'; action: 'save' | 'kick' | 'event'; target?: number; key?: string }
+  /** Found the colony. Without coordinates the server picks a good spot. */
+  | { t: 'settle'; x?: number; y?: number };
 
 export type ServerMsg =
-  | { t: 'welcome'; playerId: number; faction: number; token: string; snap: Snapshot }
+  /** faction 0 means the player hasn't settled yet; `sites` are suggestions. */
+  | { t: 'welcome'; playerId: number; faction: number; token: string; snap: Snapshot; sites?: Site[] }
+  | { t: 'settled'; faction: number }
   | { t: 'delta'; d: Delta; time: TimeState }
   | { t: 'players'; players: PlayerInfo[]; time: TimeState }
   | { t: 'chat'; from: string; color: number; text: string; at: number }

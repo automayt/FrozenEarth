@@ -1,7 +1,7 @@
 import { Application, BitmapText, Container, Graphics, Sprite, Texture } from 'pixi.js';
 import { BUILDINGS, PLANTS, ROCKS, TERRAINS, type TerrainDef } from '@fe/defs';
 import { pawnPosition } from '@fe/protocol';
-import { DESIG, TICKS_PER_DAY, TICKS_PER_HOUR, hash2, type Construct, type Entity, type Pawn } from '@fe/sim';
+import { DESIG, MIN_COLONY_GAP, TICKS_PER_DAY, TICKS_PER_HOUR, hash2, type Construct, type Entity, type Pawn } from '@fe/sim';
 import { store } from '../store';
 import { TextureBank } from './textures';
 import { Input } from './input';
@@ -504,6 +504,10 @@ export class GameRenderer {
     const g = this.ui;
     g.clear();
     const m = store.mirror;
+    if (store.me?.faction === 0) {
+      this.drawSettleUi(g);
+      return;
+    }
     const sel = store.selected ? m.entities.get(store.selected) : undefined;
     if (sel) {
       const v = this.views.get(sel.id);
@@ -524,6 +528,28 @@ export class GameRenderer {
       g.rect((c % m.w) * TILE, ((c / m.w) | 0) * TILE, TILE, TILE).stroke({ width: 2 / this.world.scale.x, color: 0xffffff, alpha: 0.6 });
     }
     this.input.drawPreview(g);
+  }
+
+  /** While choosing a start: other colonies' exclusion zones, suggested sites, and the picked spot. */
+  private drawSettleUi(g: Graphics): void {
+    const m = store.mirror;
+    const w = 2 / this.world.scale.x;
+    for (const f of m.factions.values()) {
+      if (!f.isPlayer) continue;
+      const cx = (f.home.x + 0.5) * TILE;
+      const cy = (f.home.y + 0.5) * TILE;
+      g.circle(cx, cy, MIN_COLONY_GAP * TILE).fill({ color: f.color, alpha: 0.08 }).stroke({ width: w, color: f.color, alpha: 0.6 });
+    }
+    for (const s of store.sites) {
+      g.circle((s.x + 0.5) * TILE, (s.y + 0.5) * TILE, 5 * TILE).stroke({ width: w * 1.5, color: 0x8ac8ff, alpha: 0.9 });
+    }
+    const p = store.settlePick;
+    if (p) {
+      const cx = (p.x + 0.5) * TILE;
+      const cy = (p.y + 0.5) * TILE;
+      g.circle(cx, cy, 5 * TILE).fill({ color: 0xf0b43c, alpha: 0.15 }).stroke({ width: w * 2, color: 0xf0b43c });
+      g.circle(cx, cy, TILE * 0.4).fill(0xf0b43c);
+    }
   }
 
   private drawFire(): void {

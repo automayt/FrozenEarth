@@ -3,7 +3,7 @@ export * from './types';
 export { World, Dirty, NEIGHBORS4, NEIGHBORS8 } from './world';
 export { GameMap } from './map';
 export { Rng, hash2 } from './rng';
-export { createWorld, addPlayerFaction, findSpawn, type WorldOptions } from './setup';
+export { createWorld, addPlayerFaction, findSpawn, siteProblem, suggestSites, regionOf, MIN_COLONY_GAP, type WorldOptions } from './setup';
 export { serializeWorld, deserializeWorld, snapshot, hashWorld, SAVE_VERSION, type SaveData } from './save';
 export { findPath } from './pathfinding';
 export { fireEvent, eligibleEvents } from './storyteller';

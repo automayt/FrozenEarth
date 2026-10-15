@@ -4,6 +4,8 @@ import {
   addPlayerFaction,
   createWorld,
   fireEvent,
+  siteProblem,
+  suggestSites,
   deserializeWorld,
   serializeWorld,
   snapshot,
@@ -217,12 +219,12 @@ export class GameServer {
       const name = String(msg.name ?? '').replace(/[^\p{L}\p{N} _'-]/gu, '').trim().slice(0, 20);
       if (!name) return fail('Pick a name.');
       if ([...this.players.values()].some((x) => x.name.toLowerCase() === name.toLowerCase())) return fail('That name is taken on this server.');
-      const faction = addPlayerFaction(this.world, `${name}'s colony`);
+      // New players pick where to settle before their colony exists.
       p = {
         id: this.nextPlayerId++,
         name,
         token: randomUUID(),
-        faction: faction.id,
+        faction: 0,
         pauseBudget: PAUSE_MAX,
         admin: this.players.size === 0,
         speed: 1,
@@ -232,7 +234,7 @@ export class GameServer {
         cmdTokens: CMD_RATE,
       };
       this.players.set(p.id, p);
-      this.log(`New player ${name} (faction ${faction.id})`);
+      this.log(`New player ${name}`);
     }
     if (p.ws) {
       this.send(p.ws, { t: 'error', msg: 'You connected from somewhere else.', fatal: true });
@@ -240,7 +242,14 @@ export class GameServer {
     }
     p.ws = ws;
     p.speed = 1;
-    this.send(ws, { t: 'welcome', playerId: p.id, faction: p.faction, token: p.token, snap: snapshot(this.world) });
+    this.send(ws, {
+      t: 'welcome',
+      playerId: p.id,
+      faction: p.faction,
+      token: p.token,
+      snap: snapshot(this.world),
+      sites: p.faction ? undefined : suggestSites(this.world),
+    });
     this.system(`${p.name} joined.`);
     this.broadcastPlayers();
     return p;
@@ -248,6 +257,24 @@ export class GameServer {
 
   private handle(p: Player, msg: ClientMsg): void {
     switch (msg.t) {
+      case 'settle': {
+        if (p.faction) return;
+        let at: { x: number; y: number } | undefined;
+        if (msg.x !== undefined && msg.y !== undefined) {
+          at = { x: Math.round(Number(msg.x)), y: Math.round(Number(msg.y)) };
+          const problem = siteProblem(this.world, at.x, at.y);
+          if (problem) {
+            this.send(p.ws!, { t: 'error', msg: problem, fatal: false });
+            return;
+          }
+        }
+        const faction = addPlayerFaction(this.world, `${p.name}'s colony`, 3, at);
+        p.faction = faction.id;
+        this.log(`${p.name} settled at ${faction.home.x},${faction.home.y} (faction ${faction.id})`);
+        this.send(p.ws!, { t: 'settled', faction: faction.id });
+        this.broadcastPlayers();
+        return;
+      }
       case 'cmd':
         if (p.cmdTokens < 1 || !msg.cmd || typeof (msg.cmd as Command).c !== 'string') return;
         p.cmdTokens--;
@@ -324,7 +351,7 @@ export class GameServer {
       id: p.id,
       name: p.name,
       faction: p.faction,
-      color: this.world.factions.get(p.faction)?.color ?? 0xffffff,
+      color: this.world.factions.get(p.faction)?.color ?? 0x8a96a6,
       connected: !!p.ws,
       speed: p.speed,
       pauseBudget: Math.round(p.pauseBudget),

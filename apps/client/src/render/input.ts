@@ -55,6 +55,10 @@ export class Input {
     }
     if (e.button !== 0) return;
     const cell = this.r.screenToCell(p.x, p.y);
+    if (store.me?.faction === 0) {
+      if (store.mirror.inBounds(cell.x, cell.y)) store.set({ settlePick: cell });
+      return;
+    }
     if (store.tool.kind === 'select') {
       this.select(p.x, p.y);
       return;

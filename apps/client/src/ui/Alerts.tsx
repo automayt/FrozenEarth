@@ -27,8 +27,12 @@ function computeAlerts(): Alert[] {
     if (e.kind === 'pawn' && e.faction === me) pawns.push(e);
     else if (e.kind === 'building' && e.faction === me && BUILDINGS[e.def]?.bed) beds.push(e);
     else if (e.kind === 'item') {
+      // Food in our stockpiles, or lying loose near home, counts as ours.
       const z = m.zoneAt[e.y * m.w + e.x];
-      if (z && m.zones.get(z)?.faction === me) storedNutrition += (ITEMS[(e as Item).def]?.nutrition ?? 0) * (e as Item).count;
+      const zf = z ? m.zones.get(z)?.faction : 0;
+      const home = m.factions.get(me)?.home;
+      const near = home && Math.max(Math.abs(e.x - home.x), Math.abs(e.y - home.y)) <= 30;
+      if (zf === me || (!zf && near)) storedNutrition += (ITEMS[(e as Item).def]?.nutrition ?? 0) * (e as Item).count;
     }
   }
   const out: Alert[] = [];
@@ -59,7 +63,7 @@ function computeAlerts(): Alert[] {
   if (beds.length < pawns.length) out.push({ key: 'beds', severity: 'info', title: 'Need beds', detail: `${pawns.length - beds.length} colonist${pawns.length - beds.length > 1 ? 's' : ''} sleep on the ground.` });
 
   const daysOfFood = pawns.length ? storedNutrition / (pawns.length * 0.8) : 99;
-  if (daysOfFood < 2) out.push({ key: 'food', severity: daysOfFood < 0.7 ? 'critical' : 'warning', title: 'Low food', detail: `About ${daysOfFood.toFixed(1)} days of food in stockpiles.` });
+  if (daysOfFood < 2) out.push({ key: 'food', severity: daysOfFood < 0.7 ? 'critical' : 'warning', title: 'Low food', detail: `About ${daysOfFood.toFixed(1)} days of food left.` });
 
   const f = m.factions.get(me);
   if (f && m.fireCells.size) {

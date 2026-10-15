@@ -76,6 +76,11 @@ function connectBot(i: number): Promise<Bot> {
         b.faction = msg.faction;
         b.welcomed = true;
         send({ t: 'speed', speed: Number(args.speed) });
+        // Half the bots take a suggested site, half let the server choose.
+        if (!msg.faction) send(msg.sites?.length && Math.random() < 0.5 ? { t: 'settle', ...msg.sites[0] } : { t: 'settle' });
+        else resolve(b);
+      } else if (msg.t === 'settled') {
+        b.faction = msg.faction;
         resolve(b);
       } else if (msg.t === 'delta') {
         b.mirror.applyDelta(msg.d);
@@ -83,6 +88,8 @@ function connectBot(i: number): Promise<Bot> {
       } else if (msg.t === 'error') {
         b.errors.push(msg.msg);
         if (msg.fatal) reject(new Error(`${b.name}: ${msg.msg}`));
+        // Suggested site got taken by another bot: let the server choose.
+        if (!b.faction) send({ t: 'settle' });
       }
     });
     ws.on('error', reject);

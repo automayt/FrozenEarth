@@ -2,6 +2,7 @@ import { TERRAINS } from '@fe/defs';
 import { generateMap } from './mapgen';
 import { FACTION_COLORS, pawnName } from './names';
 import type { Faction } from './types';
+import { Rng } from './rng';
 import { World } from './world';
 
 export interface WorldOptions {
@@ -47,6 +48,61 @@ function spawnScore(w: World, cx: number, cy: number): number {
   return open / total + Math.min(resources, 40) / 40 + Math.min(minDist, 100) / 200;
 }
 
+/** Minimum distance between a new colony and existing ones, when a player picks the spot. */
+export const MIN_COLONY_GAP = 35;
+
+/** Why a player can't settle at (x, y), or null if they can. */
+export function siteProblem(w: World, x: number, y: number): string | null {
+  const m = w.map;
+  if (x < 6 || y < 6 || x >= m.w - 6 || y >= m.h - 6) return 'Too close to the edge of the map.';
+  let open = 0;
+  let total = 0;
+  for (let yy = y - 5; yy <= y + 5; yy++) {
+    for (let xx = x - 5; xx <= x + 5; xx++) {
+      total++;
+      const i = m.idx(xx, yy);
+      if (!m.solid[i] && TERRAINS[m.terrain[i]].buildable && !m.buildingAt[i] && !m.zoneAt[i]) open++;
+    }
+  }
+  if (open / total < 0.6) return 'Not enough open, buildable ground here.';
+  for (const f of w.factions.values()) {
+    if (f.isPlayer && Math.hypot(f.home.x - x, f.home.y - y) < MIN_COLONY_GAP) return `Too close to ${f.name}.`;
+  }
+  return null;
+}
+
+/** Which ring of the map a cell is in. Further in is harder now but freezes last. */
+export function regionOf(w: World, x: number, y: number): 'outer band' | 'middle lands' | 'center' {
+  const m = w.map;
+  const edge = Math.min(x, y, m.w - 1 - x, m.h - 1 - y) / (Math.min(m.w, m.h) / 2);
+  return edge < 0.4 ? 'outer band' : edge < 0.7 ? 'middle lands' : 'center';
+}
+
+/** A spread of good starting spots in the outer band, best first. Doesn't touch the world's RNG. */
+export function suggestSites(w: World, count = 5): { x: number; y: number; region: string }[] {
+  const m = w.map;
+  const rng = new Rng(w.seed ^ (w.tick * 2654435761) ^ (w.factions.size * 97));
+  const band = Math.max(12, Math.floor(Math.min(m.w, m.h) * 0.2));
+  const cands: { x: number; y: number; score: number }[] = [];
+  for (let tries = 0; tries < 600; tries++) {
+    const side = rng.int(4);
+    const along = 10 + rng.int((side < 2 ? m.w : m.h) - 20);
+    const depth = 10 + rng.int(band);
+    const x = side < 2 ? along : side === 2 ? depth : m.w - 1 - depth;
+    const y = side === 0 ? depth : side === 1 ? m.h - 1 - depth : along;
+    const score = spawnScore(w, x, y);
+    if (score > 0) cands.push({ x, y, score });
+  }
+  cands.sort((a, b) => b.score - a.score);
+  const out: { x: number; y: number; region: string }[] = [];
+  for (const c of cands) {
+    if (out.length >= count) break;
+    if (out.some((o) => Math.hypot(o.x - c.x, o.y - c.y) < 30)) continue;
+    out.push({ x: c.x, y: c.y, region: regionOf(w, c.x, c.y) });
+  }
+  return out;
+}
+
 /**
  * Pick a start location in the outer band of the map. The outer band is easier now
  * and is where winter will arrive first.
@@ -71,9 +127,9 @@ export function findSpawn(w: World): { x: number; y: number } {
   return best;
 }
 
-export function addPlayerFaction(w: World, name: string, colonists = 3): Faction {
+export function addPlayerFaction(w: World, name: string, colonists = 3, at?: { x: number; y: number }): Faction {
   const id = Math.max(0, ...w.factions.keys()) + 1;
-  const home = findSpawn(w);
+  const home = at ? { x: at.x, y: at.y } : findSpawn(w);
   const f: Faction = { id, name, color: FACTION_COLORS[(id - 1) % FACTION_COLORS.length], home, isPlayer: true };
   w.factions.set(id, f);
   w.dirty.factions.add(id);
@@ -94,6 +150,7 @@ export function addPlayerFaction(w: World, name: string, colonists = 3): Faction
   ];
   const drop = m.idx(Math.min(m.w - 1, home.x + 2), Math.min(m.h - 1, home.y + 2));
   for (const [def, n] of supplies) w.placeItemNear(def, n, drop);
-  w.message(0, `${name} has settled on the outer band.`, 'neutral', m.idx(home.x, home.y));
+  const region = regionOf(w, home.x, home.y);
+  w.message(0, `${name} has settled ${region === 'center' ? 'near the center' : `in the ${region}`}.`, 'neutral', m.idx(home.x, home.y));
   return f;
 }

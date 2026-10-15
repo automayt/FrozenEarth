@@ -191,3 +191,19 @@ describe('determinism', () => {
     expect(hashWorld(b)).toBe(hashWorld(a));
   });
 });
+
+describe('settling', () => {
+  it('suggests spread-out sites and rejects spots too close to another colony', async () => {
+    const { siteProblem, suggestSites, MIN_COLONY_GAP } = await import('../src');
+    const w = createWorld({ seed: 4, width: 160, height: 160 });
+    const sites = suggestSites(w, 5);
+    expect(sites.length).toBeGreaterThan(2);
+    for (const s of sites) expect(siteProblem(w, s.x, s.y)).toBeNull();
+    const a = addPlayerFaction(w, 'First', 3, sites[0]);
+    expect(a.home).toEqual({ x: sites[0].x, y: sites[0].y });
+    expect(siteProblem(w, a.home.x + 3, a.home.y + 3)).toMatch(/Too close/);
+    expect(siteProblem(w, 1, 1)).toMatch(/edge/);
+    const far = sites.find((s) => Math.hypot(s.x - a.home.x, s.y - a.home.y) >= MIN_COLONY_GAP)!;
+    expect(siteProblem(w, far.x, far.y)).toBeNull();
+  });
+});

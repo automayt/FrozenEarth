@@ -10,6 +10,7 @@ import { WorkPanel } from './WorkPanel';
 import { ColonistsPanel } from './ColonistsPanel';
 import { EventsPanel } from './EventsPanel';
 import { Alerts } from './Alerts';
+import { SettlePanel } from './SettlePanel';
 
 export function App() {
   const s = useStore();
@@ -17,7 +18,13 @@ export function App() {
   return (
     <>
       {playing && <GameView />}
-      {playing ? (
+      {playing && s.me?.faction === 0 ? (
+        <div className="hud">
+          <TopBar />
+          <Feed />
+          <SettlePanel />
+        </div>
+      ) : playing ? (
         <div className="hud">
           <TopBar />
           {s.status === 'connecting' && <div className="banner">{s.error || 'Reconnecting…'}</div>}

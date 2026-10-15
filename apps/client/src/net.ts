@@ -76,12 +76,25 @@ function handle(msg: ServerMsg): void {
       writeLocal(tokenKey(joinArgs!.name), msg.token);
       store.mirror.applySnapshot(msg.snap);
       store.setServerTick(msg.snap.tick);
-      store.set({ status: 'playing', error: '', me: { playerId: msg.playerId, faction: msg.faction } });
+      store.set({ status: 'playing', error: '', me: { playerId: msg.playerId, faction: msg.faction }, sites: msg.sites ?? [] });
       if (!store.focus) {
         const f = store.mirror.factions.get(msg.faction);
+        const first = msg.sites?.[0];
         if (f) store.set({ focus: { ...f.home } });
+        else if (first) store.set({ focus: { x: first.x, y: first.y }, settlePick: { x: first.x, y: first.y } });
       }
       return;
+    case 'settled': {
+      store.set({ me: { playerId: store.me!.playerId, faction: msg.faction }, sites: [], settlePick: null });
+      // The faction arrives in the next delta; jump home once it does.
+      const jump = () => {
+        const f = store.mirror.factions.get(msg.faction);
+        if (f) store.set({ focus: { ...f.home } });
+        else setTimeout(jump, 100);
+      };
+      jump();
+      return;
+    }
     case 'delta':
       store.mirror.applyDelta(msg.d);
       store.setServerTick(msg.d.tick);
