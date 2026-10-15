@@ -31,6 +31,8 @@ export class Mirror {
   choices: Choice[] = [];
   coldOffset = 0;
   messages: GameMessage[] = [];
+  /** Attacks since the renderer last drained them, flattened SHOT_FIELDS tuples. */
+  shots: number[] = [];
 
   // Change tracking for the renderer; it clears these after reading.
   changedEnts = new Set<number>();
@@ -107,6 +109,11 @@ export class Mirror {
     if (d.conditions) this.conditions = d.conditions;
     if (d.choices) this.choices = d.choices;
     if (d.coldOffset !== undefined) this.coldOffset = d.coldOffset;
+    if (d.shots?.length) {
+      this.shots.push(...d.shots);
+      // Nobody draining (hidden tab, headless bot): keep only the latest few hundred.
+      if (this.shots.length > 4000) this.shots.splice(0, this.shots.length - 4000);
+    }
     if (d.msgs.length) {
       this.messages.push(...d.msgs);
       if (this.messages.length > 200) this.messages.splice(0, this.messages.length - 200);

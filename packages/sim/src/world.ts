@@ -45,6 +45,8 @@ export class Dirty {
   conditions = false;
   choices = false;
   coldOffset = false;
+  /** Attacks, flattened SHOT_FIELDS tuples. Presentation only: never read by the sim. */
+  shots: number[] = [];
 }
 
 export class World {
@@ -495,7 +497,7 @@ export class World {
     ) as Record<SkillKey, { level: number; xp: number }>;
   }
 
-  spawnPawn(faction: number, cell: number, name: string, traits?: string[]): Pawn {
+  spawnPawn(faction: number, cell: number, name: string, traits?: string[], weapon = ''): Pawn {
     const m = this.map;
     const priorities = Object.fromEntries(WORK_TYPES.map((w) => [w, START_PRIORITY[w] ?? DEFAULT_PRIORITY])) as Record<WorkType, number>;
     return this.add<Pawn>({
@@ -517,6 +519,9 @@ export class World {
       apparel: ['tunic'],
       skills: this.rollSkills(),
       thoughts: [],
+      weapon,
+      drafted: false,
+      downed: false,
     });
   }
 
@@ -627,6 +632,7 @@ export class World {
     if (d.conditions) delta.conditions = this.conditions;
     if (d.choices) delta.choices = [...this.choices.values()];
     if (d.coldOffset) delta.coldOffset = this.coldOffset;
+    if (d.shots.length) delta.shots = d.shots;
     this.dirty = new Dirty();
     return delta;
   }
@@ -637,19 +643,25 @@ export class World {
  * saves still store the readable string form ("e12", "c3401", ...).
  */
 export const rk = {
-  e: (id: number) => id * 4,
-  c: (cell: number) => cell * 4 + 1,
-  d: (id: number) => id * 4 + 2,
-  f: (cell: number) => cell * 4 + 3,
+  /** An entity (item, plant, construct, bench). */
+  e: (id: number) => id * 8,
+  /** A cell (stockpile slot, mining target, sowing spot). */
+  c: (cell: number) => cell * 8 + 1,
+  /** Material deliveries to a construct. */
+  d: (id: number) => id * 8 + 2,
+  /** A burning cell being fought. */
+  f: (cell: number) => cell * 8 + 3,
+  /** A patient being tended. */
+  t: (id: number) => id * 8 + 4,
 };
-const RK_PREFIX = ['e', 'c', 'd', 'f'];
+const RK_PREFIX = ['e', 'c', 'd', 'f', 't'];
 
 export function rkToString(key: number): string {
-  return RK_PREFIX[key % 4] + Math.floor(key / 4);
+  return RK_PREFIX[key % 8] + Math.floor(key / 8);
 }
 
 export function rkFromString(s: string): number {
-  return Number(s.slice(1)) * 4 + RK_PREFIX.indexOf(s[0]);
+  return Number(s.slice(1)) * 8 + RK_PREFIX.indexOf(s[0]);
 }
 
 /** Cells fit in 20 bits for any map up to 1024x1024. */

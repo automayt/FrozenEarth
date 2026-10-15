@@ -1,9 +1,10 @@
+import { DEFAULT_PRIORITY, START_PRIORITY } from '@fe/defs';
 import type { Choice, Condition, Entity, Faction, Pawn, Room, Snapshot, Zone } from './types';
 import { upgradeStoryState, type StoryState } from './schedule';
 import { SKILLS } from '@fe/defs';
 import { Dirty, rkFromString, rkToString, unreachableKey, World } from './world';
 
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 export interface SaveData {
   version: number;
@@ -88,6 +89,17 @@ function migrate(data: SaveData): SaveData {
       delete p.sickUntil;
     }
     d.version = 2;
+  }
+  if (d.version === 2) {
+    // Combat: weapons, drafting, downed state, and the doctor work type.
+    for (const e of d.ents) {
+      if (e.kind !== 'pawn') continue;
+      e.weapon ??= '';
+      e.drafted ??= false;
+      e.downed ??= false;
+      e.priorities.doctor ??= START_PRIORITY.doctor ?? DEFAULT_PRIORITY;
+    }
+    d.version = 3;
   }
   return d;
 }

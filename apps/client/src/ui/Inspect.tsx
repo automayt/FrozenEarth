@@ -1,5 +1,5 @@
-import { APPAREL, BUILDINGS, CONDITIONS, ITEM_CATEGORIES, ITEMS, MAX_SKILL, PLANTS, RECIPES, ROCKS, SKILL_LABELS, SKILLS, SOWABLE_PLANTS, TERRAINS, TRAITS } from '@fe/defs';
-import { describeJob, outdoorTempAt, stageOf, TICKS_PER_HOUR, type Building, type Construct, type Entity, type Pawn, type Zone } from '@fe/sim';
+import { APPAREL, BUILDINGS, CONDITIONS, DOWNED_PAIN, ITEM_CATEGORIES, ITEMS, MAX_SKILL, PLANTS, RECIPES, ROCKS, SKILL_LABELS, SKILLS, SOWABLE_PLANTS, TERRAINS, TRAITS, weaponOf } from '@fe/defs';
+import { bleedRate, describeJob, outdoorTempAt, painOf, stageOf, TICKS_PER_HOUR, woundTotal, type Building, type Construct, type Entity, type Pawn, type Zone } from '@fe/sim';
 import { command } from '../net';
 import { store, useStore } from '../store';
 import { hex, pct } from './util';
@@ -84,6 +84,16 @@ function PawnInfo({ p }: { p: Pawn }) {
     <>
       <h3>{p.name}</h3>
       {factionTag(p.faction)}
+      <div className="combat-row">
+        <span className="muted small">{weaponOf(p.weapon).label}</span>
+        {p.downed && <span className="chip bad">Downed</span>}
+        {p.drafted && <span className="chip drafted">Drafted</span>}
+        {p.faction === store.me?.faction && !p.downed && (
+          <button className={p.drafted ? 'on' : ''} onClick={() => command({ c: 'draft', pawns: [p.id], on: !p.drafted })} title="Draft to give move and attack orders (R)">
+            {p.drafted ? 'Undraft' : 'Draft'}
+          </button>
+        )}
+      </div>
       <p className="job">{describeJob(p.job, lookup)}</p>
       <Bar label="Food" v={p.needs.food} />
       <Bar label="Rest" v={p.needs.rest} />
@@ -121,6 +131,7 @@ function PawnInfo({ p }: { p: Pawn }) {
       {p.conditions.length > 0 && (
         <div className="health">
           <h4>Health</h4>
+          <Wounds p={p} />
           {p.conditions.map((c) => {
             const def = CONDITIONS[c.key];
             if (!def) return null;
@@ -133,7 +144,11 @@ function PawnInfo({ p }: { p: Pawn }) {
                   {def.label}
                   {st.label ? ` (${st.label})` : ''}
                 </span>
-                {timed ? (
+                {def.healPerDay ? (
+                  <small>
+                    {Math.round(c.severity * 100)}% · {def.bleed ? (c.tended !== undefined ? `tended (${Math.round(c.tended * 100)}%)` : 'bleeding') : 'healing'}
+                  </small>
+                ) : timed ? (
                   <small>{Math.max(0, Math.ceil((c.until - store.mirror.tick) / TICKS_PER_HOUR))}h left</small>
                 ) : def.immunityPerDay ? (
                   <small>
@@ -156,6 +171,26 @@ function PawnInfo({ p }: { p: Pawn }) {
           ))}
         </ul>
       )}
+    </>
+  );
+}
+
+/** Pain, bleeding and how close the wounds are to killing. Only shown when wounded. */
+function Wounds({ p }: { p: Pawn }) {
+  const total = woundTotal(p);
+  const bleed = bleedRate(p);
+  if (total <= 0 && !p.downed) return null;
+  return (
+    <>
+      <Bar label="Wounds" v={1 - total} warn={0.4} />
+      <p className="muted small">
+        Pain {Math.round((painOf(p) / DOWNED_PAIN) * 100)}% of collapse
+        {bleed > 0 ? (
+          <span className="bad"> · losing {((bleed * 100) / 24).toFixed(1)}% blood an hour, needs a doctor</span>
+        ) : (
+          <span> · not bleeding</span>
+        )}
+      </p>
     </>
   );
 }

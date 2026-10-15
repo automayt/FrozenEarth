@@ -38,13 +38,26 @@ export function TopBar() {
         </div>
       </div>
       <div className="players">
-        {s.players.map((p) => (
-          <span key={p.id} className={`player ${p.connected ? '' : 'offline'}`} title={`${p.name}${p.admin ? ' (host)' : ''} · votes ${p.speed === 0 ? 'pause' : p.speed + '×'}`}>
-            <i style={{ background: hex(p.color) }} />
-            {p.name}
-            <small>{p.connected ? (p.speed === 0 ? '❚❚' : `${p.speed}×`) : 'offline'}</small>
+        {s.players
+          .filter((p) => p.connected || p.id === s.me?.playerId)
+          .map((p) => (
+            <span key={p.id} className="player" title={`${p.name}${p.admin ? ' (host)' : ''} · votes ${p.speed === 0 ? 'pause' : p.speed + '×'}`}>
+              <i style={{ background: hex(p.color) }} />
+              {p.name}
+              <small>{p.speed === 0 ? '❚❚' : `${p.speed}×`}</small>
+            </span>
+          ))}
+        {s.players.some((p) => !p.connected) && (
+          <span
+            className="player offline"
+            title={s.players
+              .filter((p) => !p.connected)
+              .map((p) => p.name)
+              .join(', ')}
+          >
+            {s.players.filter((p) => !p.connected).length} offline
           </span>
-        ))}
+        )}
         <span className="muted small">{s.ping} ms</span>
       </div>
     </div>

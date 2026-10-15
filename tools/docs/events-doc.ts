@@ -14,6 +14,7 @@ const CATEGORY_TITLES: Record<EventCategory, string> = {
   fortune: 'Fortune',
   disaster: 'Disasters',
   visitors: 'Visitors and choices',
+  threat: 'Threats (combat)',
   mystery: 'Mysteries and uniques',
 };
 const SEASON = ['Spring', 'Summer', 'Fall', 'Winter'];
@@ -34,7 +35,7 @@ function eventTables(): string {
         .filter(Boolean)
         .join(', ');
       const hits = e.scope === 'map' ? 'everyone' : e.scope === 'faction' ? 'a colony' : 'a colonist';
-      out.push(`| **${e.label}** \`${e.key}\` | ${e.rarity} | ${e.tone}${e.cost ? ` (${e.cost})` : ''} | ${hits} | ${when} | ${e.description} |`);
+      out.push(`| **${e.label}** \`${e.key}\` | ${e.rarity} | ${e.tone}${e.cost ? ` (${e.scaledCost ? `${e.cost}+, scaled` : e.cost})` : ''} | ${hits} | ${when} | ${e.description} |`);
     }
     out.push('');
   }
@@ -44,7 +45,9 @@ function eventTables(): string {
 function conditionTable(): string {
   const out = ['| Condition | Kind | How it behaves |', '| --- | --- | --- |'];
   for (const c of Object.values(CONDITIONS)) {
-    const how = c.hours
+    const how = c.healPerDay
+      ? `wound: stacks per hit${c.bleed ? `, bleeds ${c.bleed}×severity/day until tended` : ''}, pain ×${c.pain}, heals ${c.healPerDay}/day once tended`
+      : c.hours
       ? `lasts ${c.hours[0]}–${c.hours[1]} h`
       : c.immunityPerDay
         ? `severity +${c.severityPerDay}/day vs immunity +${c.immunityPerDay}/day${c.lethal ? ', lethal at 100%' : ''}${c.contagious ? ', contagious' : ''}`

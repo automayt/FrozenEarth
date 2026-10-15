@@ -2,6 +2,7 @@ import { BUILDINGS, ITEMS, PLANTS, RECIPES, TERRAINS, WORK_TYPES, type RecipeDef
 import { fullyDelivered } from './jobs';
 import { maybeReachable } from './pathfinding';
 import { canUseItem } from './pawns';
+import { needsTending } from './health';
 import type { Building, Construct, Item, Job, Pawn, Plant, Zone } from './types';
 import { DESIG } from './types';
 import { rk, type World } from './world';
@@ -10,6 +11,7 @@ type Giver = (w: World, p: Pawn) => Job | null;
 
 const GIVERS: Record<WorkType, Giver> = {
   firefight: giveFirefight,
+  doctor: giveDoctor,
   cook: (w, p) => giveBill(w, p, 'cook'),
   construct: giveConstruct,
   grow: giveGrow,
@@ -92,6 +94,24 @@ function giveFirefight(w: World, p: Pawn): Job | null {
   if (best === undefined) return null;
   w.reserve(rk.f(best), p.id);
   return { type: 'extinguish', stage: 0, cell: best, progress: 0 };
+}
+
+// ---------------------------------------------------------------- doctoring
+
+/** Dress bleeding wounds: colony-mates first, yourself if nobody else needs it. */
+function giveDoctor(w: World, p: Pawn): Job | null {
+  const patients: Pawn[] = [];
+  let self = false;
+  for (const id of w.kinds.pawn) {
+    const o = w.get<Pawn>(id)!;
+    if (o.faction !== p.faction || !needsTending(o) || w.reservedByOther(rk.t(o.id), p.id)) continue;
+    if (o.id === p.id) self = true;
+    else patients.push(o);
+  }
+  const best = nearest(w, p, patients, (o) => w.cellOf(o), true, 10)[0] ?? (self ? p : undefined);
+  if (!best) return null;
+  w.reserve(rk.t(best.id), p.id);
+  return { type: 'tend', stage: 0, patient: best.id, progress: 0 };
 }
 
 // ---------------------------------------------------------------- hauling

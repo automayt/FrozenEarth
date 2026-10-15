@@ -3,10 +3,13 @@ import { conditionOf, effectsOf, type Effects } from './health';
 import { atGoal, findPath, makePathState } from './pathfinding';
 import { runJob } from './jobs';
 import { findWork } from './work';
+import { hostileInReach, isRaider } from './combat';
+import { raiderThink } from './raids';
 import type { Building, Item, Job, Pawn } from './types';
 import { NEIGHBORS8, rk, type World } from './world';
 
 export function tickPawn(w: World, p: Pawn): void {
+  if (p.downed) return;
   tickMovement(w, p);
   if (!p.job) {
     think(w, p);
@@ -112,6 +115,11 @@ export function endJob(w: World, p: Pawn): void {
 }
 
 function think(w: World, p: Pawn): void {
+  if (isRaider(w, p.faction) || p.drafted) {
+    p.job = p.drafted ? draftedThink(w, p) : raiderThink(w, p);
+    w.markDirty(p);
+    return;
+  }
   const n = p.needs;
   const e = effectsOf(w, p);
   let job: Job | null = null;
@@ -125,6 +133,21 @@ function think(w: World, p: Pawn): void {
   if (!job && !e.noWork) job = findWork(w, p);
   if (!job) job = wanderJob(w, p);
   p.job = job;
+  w.markDirty(p);
+}
+
+/** Drafted pawns hold position and fire at hostiles in reach. They never start a fight with another player. */
+function draftedThink(w: World, p: Pawn): Job {
+  const t = hostileInReach(w, p);
+  if (t) return { type: 'attack', stage: 0, target: t.id, forced: false, chase: false, next: 0, until: 0 };
+  return { type: 'hold', stage: 0, until: 0 };
+}
+
+/** Draft or undraft a pawn, dropping whatever it was doing. */
+export function setDrafted(w: World, p: Pawn, on: boolean): void {
+  if (p.downed || p.drafted === on) return;
+  endJob(w, p);
+  p.drafted = on;
   w.markDirty(p);
 }
 

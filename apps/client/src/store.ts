@@ -31,6 +31,8 @@ class Store {
   chat: ChatLine[] = [];
   tool: Tool = { kind: 'select' };
   selected: number | null = null;
+  /** Own pawns selected together (click or drag-box), for drafting and orders. */
+  squad: number[] = [];
   selectedCell: number | null = null;
   panel: Panel = 'none';
   /** Open architect category, if any. */
@@ -65,7 +67,7 @@ class Store {
     this.lastTickAt = performance.now();
   }
 
-  set(patch: Partial<Pick<Store, 'status' | 'error' | 'me' | 'players' | 'time' | 'tool' | 'selected' | 'selectedCell' | 'panel' | 'menu' | 'hoverCell' | 'focus' | 'ping' | 'sites' | 'settlePick'>>): void {
+  set(patch: Partial<Pick<Store, 'status' | 'error' | 'me' | 'players' | 'time' | 'tool' | 'selected' | 'squad' | 'selectedCell' | 'panel' | 'menu' | 'hoverCell' | 'focus' | 'ping' | 'sites' | 'settlePick'>>): void {
     Object.assign(this, patch);
     this.emit();
   }

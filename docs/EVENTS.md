@@ -129,6 +129,14 @@ Hosts have an **Events** button (bottom bar) that fires any event on demand, for
 | **Survivors arrive** `new_arrivals` | common | good | a colony | follow-up only | When a colony is wiped out, two survivors arrive a day later so the player can keep going. |
 | **Betrayal** `refugee_betrayal` | common | bad | a colony | follow-up only | A refugee you took in robs you and runs. |
 
+### Threats (combat)
+
+| Event | Rarity | Tone | Hits | When | What happens |
+| --- | --- | --- | --- | --- | --- |
+| **Raid** `raid` | uncommon | bad (60+, scaled) | a colony | day 5+ | Armed raiders arrive at the map edge and attack the colony. Bigger and better armed the richer the colony is; paid for from the threat budget. They flee once half of them are down. |
+| **Night raid** `night_raid` | rare | bad (60+, scaled) | a colony | day 8+ | Raiders with knives and clubs creep in after dark. If it is daytime when the storyteller picks it, they wait for nightfall. |
+| **Scouting party** `scout_party` | common | bad (25) | a colony | day 3+ | One or two raiders probe the colony’s defences. They run as soon as one of them goes down. |
+
 ### Mysteries and uniques
 
 | Event | Rarity | Tone | Hits | When | What happens |
@@ -198,9 +206,13 @@ Hosts have an **Events** button (bottom bar) that fires any event on demand, for
 | **Cut hand** | injury | lasts 18–48 h. A clumsy slip. Work is slower until it heals. |
 | **Burns** | injury | lasts 24–72 h. From fighting fires or standing in them. |
 | **Strained back** | injury | lasts 24–60 h. Hauled too much. Slow and grumpy for a while. |
+| **Cut** | injury | wound: stacks per hit, bleeds 4×severity/day until tended, pain ×1, heals 0.3/day once tended. From blades, arrows and claws. Bleeds until a doctor tends it. |
+| **Gunshot wound** | injury | wound: stacks per hit, bleeds 6×severity/day until tended, pain ×1.2, heals 0.22/day once tended. Bleeds heavily until a doctor tends it. |
+| **Bruises** | injury | wound: stacks per hit, pain ×1.1, heals 0.5/day once tended. From fists and clubs. Hurts, but does not bleed and heals by itself. |
 | **Hypothermia** | exposure | builds from the environment, lethal at 100%. From staying out in the cold. Get warm or die. |
 | **Heatstroke** | exposure | builds from the environment, lethal at 100%. From staying in the heat. Get to shade or a cool room. |
 | **Malnutrition** | exposure | builds from the environment, lethal at 100%. From going without food. Fatal if it goes on too long. |
+| **Blood loss** | exposure | builds from the environment, lethal at 100%. From untended wounds. Recovers slowly once the bleeding stops. Fatal at 100%. |
 | **Sulking** | mental | lasts 6–14 h. Mental break. Refuses to work and mopes around. |
 | **Dazed wandering** | mental | lasts 4–10 h. Mental break. Wanders aimlessly, ignoring work. |
 | **Food binge** | mental | lasts 5–10 h. Mental break. Eats everything in sight. |
@@ -247,8 +259,11 @@ Colonists roll 0–2 traits, with no conflicting pairs. Event-only traits come f
 
 These need systems that don't exist yet. They are listed so the content plan is complete and the systems get built with them in mind.
 
-### Need combat, health and injuries
-- **Raids:** raiders scaled to colony wealth. Variants: sappers who dig through walls, a siege camp, a night raid during a blizzard.
+### Building on combat
+Combat is in: drafting, weapons, wounds with bleeding and a doctor work type, and the `raid`, `night_raid` and `scout_party` threats above. Raids are sized from the colony's wealth and headcount (`raidPoints` in `packages/sim/src/raids.ts`), paid from its threat budget, arrive at the nearest map edge, and break once half the raiders are down. Still to come:
+- **Raid variants:** sappers who dig or bash through walls (raiders can't open other factions' doors yet, so a fully walled colony only loses what lies outside), a siege camp, a raid during a blizzard.
+- **Hunting** is deferred: there are no animals yet, so there is no `hunt` designation.
+- **Loot and gear:** weapons are a pawn field, not items, so they can't be dropped, picked up or crafted yet. Downed pawns can't be carried to bed or taken prisoner.
 - **Manhunter pack:** starving animals driven out of the cold.
 - **Duel challenge** *(choice)*: an outsider demands single combat for a stockpile.
 - **Feud:** a raider band targets whichever player wronged them before (needs reputation).

@@ -2,6 +2,7 @@ import { BUILDINGS, COMFORT_MAX, COMFORT_MIN, EVENTS, ITEMS, PLANTS, TERRAINS } 
 import { RARE_TICK, TICKS_PER_DAY } from './constants';
 import { effectsOf, healthTick } from './health';
 import { endJob, exposureSeverity, needsWarmth, warmthJob } from './pawns';
+import { isRaider } from './combat';
 import type { Building, Item, Pawn, Plant, Room } from './types';
 import { NEIGHBORS4, type World } from './world';
 
@@ -28,6 +29,11 @@ function needsTick(w: World, p: Pawn): void {
   const n = p.needs;
   const cell = w.cellOf(p);
   const e = effectsOf(w, p);
+  // Raiders only stay a day or so: wounds and weather matter, hunger and moods don't.
+  if (isRaider(w, p.faction)) {
+    if (healthTick(w, p, e)) w.markDirty(p);
+    return;
+  }
   n.food = Math.max(0, n.food - (RARE_TICK * e.foodDrain) / (p.asleep ? 90_000 : 45_000));
   if (p.asleep) {
     const inBed = p.bed && p.job?.type === 'sleep' && p.job.bed === p.bed;
@@ -58,10 +64,11 @@ function needsTick(w: World, p: Pawn): void {
 
   // Urgent needs, sickness and mental breaks interrupt work.
   const jt = p.job?.type;
-  const busy = jt && jt !== 'eat' && jt !== 'sleep' && jt !== 'warm';
+  // Drafted pawns ignore all of it until the player releases them.
+  const busy = !p.drafted && jt && jt !== 'eat' && jt !== 'sleep' && jt !== 'warm';
   // Too cold or hot here, and somewhere better exists: go there, even out of bed when freezing.
   const seekWarmth =
-    (busy || (jt === 'sleep' && exposureSeverity(p) > 0.3)) && needsWarmth(w, p, e) && warmthJob(w, p, e) !== null;
+    (busy || (jt === 'sleep' && exposureSeverity(p) > 0.3)) && !p.drafted && needsWarmth(w, p, e) && warmthJob(w, p, e) !== null;
   if (seekWarmth || (busy && (n.food < 0.12 || n.rest < 0.08 || e.bedRest || (e.noWork && jt !== 'wander')))) endJob(w, p);
   w.markPawnIfChanged(p);
 }

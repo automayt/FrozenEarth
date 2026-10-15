@@ -10,6 +10,7 @@ import { startFire } from './fire';
 import { addCondition, hasCondition, isMental, removeCondition } from './health';
 import { pawnName } from './names';
 import { scheduleEvent } from './schedule';
+import { raidPoints, spendThreat, startRaid } from './raids';
 import type { Item, Pawn, Plant, Tone } from './types';
 import { NEIGHBORS8, type World } from './world';
 
@@ -181,7 +182,8 @@ function dropLoot(w: World, cell: number, table: Loot[], stacks: number): string
 function joinPawn(w: World, faction: number, name: string, traits: string[]): Pawn | null {
   const cell = edgeCell(w);
   if (cell < 0) return null;
-  const p = w.spawnPawn(faction, cell, name, traits);
+  // Travellers carry whatever they could find.
+  const p = w.spawnPawn(faction, cell, name, traits, w.rng.pick(['', 'knife', 'club', 'bow']));
   p.needs.food = 0.6;
   p.needs.rest = 0.6;
   return p;
@@ -798,6 +800,40 @@ registerChoice('pilgrim', (w, c, option, d) => {
   const p = joinPawn(w, c.faction, String(d.name), traits);
   if (p) say(w, 0, `${p.name}, a pilgrim from the Center, has joined ${w.factions.get(c.faction)?.name}.`, 'good', w.cellOf(p));
 });
+
+// ---------------------------------------------------------------------------- threats
+
+/** Raid points for an event: the colony's wealth-based size, but never more than its threat budget allows. */
+function raidBudget(w: World, faction: number, mult: number): number {
+  const want = raidPoints(w, faction) * mult;
+  const pool = w.story.threat[faction] ?? 0;
+  const points = Math.max(EVENTS.raid.cost, Math.min(want, pool));
+  spendThreat(w, faction, points);
+  return points;
+}
+
+HANDLERS.raid = (w, faction, data) => {
+  if (!pawnsOf(w, faction).length) return false;
+  return !!startRaid(w, faction, Number(data.points) || raidBudget(w, faction, 1), 'raid');
+};
+
+HANDLERS.night_raid = (w, faction, data) => {
+  if (!pawnsOf(w, faction).length) return false;
+  // Melee raiders hit harder per point, so a night raid gets a little more to spend.
+  const points = Number(data.points) || raidBudget(w, faction, 1.2);
+  if (!w.isNight()) {
+    // Already paid for: wait for dark.
+    const hours = (23 - w.hour() + 24) % 24;
+    scheduleEvent(w, 'night_raid', faction, hours * TICKS_PER_HOUR, { points });
+    return true;
+  }
+  return !!startRaid(w, faction, points, 'night');
+};
+
+HANDLERS.scout_party = (w, faction) => {
+  if (!pawnsOf(w, faction).length) return false;
+  return !!startRaid(w, faction, 90, 'scout');
+};
 
 // ---------------------------------------------------------------------------- mysteries
 

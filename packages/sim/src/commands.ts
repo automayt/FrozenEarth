@@ -1,6 +1,7 @@
 import { BUILDINGS, ITEM_CATEGORIES, PLANTS, RECIPES, TERRAINS, WORK_TYPES } from '@fe/defs';
 import { MAX_COMMAND_AREA } from './constants';
-import type { Building, Command, Construct, Pawn, Plant, Rect, Zone } from './types';
+import type { Building, Command, Construct, EntityId, Pawn, Plant, Rect, Zone } from './types';
+import { endJob, setDrafted } from './pawns';
 import { DESIG } from './types';
 import { NEIGHBORS4, type World } from './world';
 import { resolveChoice } from './choices';
@@ -66,6 +67,22 @@ export function applyCommand(w: World, faction: number, cmd: Command): void {
     case 'offerTrade':
       offerTrade(w, faction, Number(cmd.to), cmd.give, cmd.want, cmd.note);
       return;
+    case 'draft':
+      for (const p of ownPawns(w, faction, cmd.pawns)) setDrafted(w, p, !!cmd.on);
+      return;
+    case 'move':
+      return moveOrder(w, faction, cmd.pawns, Number(cmd.x) | 0, Number(cmd.y) | 0);
+    case 'attack': {
+      // The only way one player's pawns ever fight another's: an explicit order from drafted pawns.
+      const t = w.get<Pawn>(Number(cmd.target));
+      if (!t || t.kind !== 'pawn' || t.faction === faction) return;
+      for (const p of ownPawns(w, faction, cmd.pawns)) {
+        if (!p.drafted) continue;
+        endJob(w, p);
+        p.job = { type: 'attack', stage: 0, target: t.id, forced: true, chase: true, next: 0, until: 0 };
+      }
+      return;
+    }
     case 'removeBill': {
       const b = ownBench(w, faction, cmd.bench);
       if (!b) return;
@@ -74,6 +91,47 @@ export function applyCommand(w: World, faction: number, cmd: Command): void {
       return;
     }
   }
+}
+
+/** The listed pawns that belong to this faction and can act (at most a squad's worth). */
+function ownPawns(w: World, faction: number, ids: unknown): Pawn[] {
+  if (!Array.isArray(ids)) return [];
+  const out: Pawn[] = [];
+  for (const id of new Set(ids.slice(0, 50).map(Number))) {
+    const p = w.get<Pawn>(id as EntityId);
+    if (p && p.kind === 'pawn' && p.faction === faction && !p.downed) out.push(p);
+  }
+  return out;
+}
+
+/** Send drafted pawns to a spot, spreading them over nearby open cells so they don't stack. */
+function moveOrder(w: World, faction: number, ids: unknown, x: number, y: number): void {
+  const m = w.map;
+  if (!m.inBounds(x, y)) return;
+  const squad = ownPawns(w, faction, ids).filter((p) => p.drafted);
+  const start = m.idx(x, y);
+  const seen = new Set([start]);
+  const queue = [start];
+  const spots: number[] = [];
+  for (let qi = 0; qi < queue.length && spots.length < squad.length && qi < 200; qi++) {
+    const c = queue[qi];
+    if (w.passable(c, faction)) spots.push(c);
+    for (const [dx, dy] of NEIGHBORS4) {
+      const nx = m.cx(c) + dx;
+      const ny = m.cy(c) + dy;
+      if (!m.inBounds(nx, ny)) continue;
+      const n = m.idx(nx, ny);
+      if (!seen.has(n)) {
+        seen.add(n);
+        queue.push(n);
+      }
+    }
+  }
+  squad.forEach((p, k) => {
+    if (k >= spots.length) return;
+    endJob(w, p);
+    p.job = { type: 'goto', stage: 0, dest: spots[k] };
+  });
 }
 
 function validMode(m: string): 'count' | 'forever' | 'until' {

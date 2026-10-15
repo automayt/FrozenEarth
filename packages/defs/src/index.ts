@@ -11,3 +11,4 @@ export * from './events';
 export * from './health';
 export * from './apparel';
 export * from './skills';
+export * from './weapons';

@@ -1,6 +1,8 @@
-import { APPAREL, BUILDINGS, COMFORT_MAX, COMFORT_MIN, CONDITIONS, TRAITS, WEATHER, type ConditionDef, type ConditionStage } from '@fe/defs';
+import { APPAREL, BUILDINGS, COMFORT_MAX, COMFORT_MIN, CONDITIONS, DOWNED_BLOOD_LOSS, DOWNED_PAIN, TRAITS, WEATHER, type ConditionDef, type ConditionStage } from '@fe/defs';
 import { RARE_TICK, TICKS_PER_DAY, TICKS_PER_HOUR } from './constants';
 import { scheduleEvent } from './schedule';
+import { endJob } from './pawns';
+import { raiderGone, raiderDowned } from './raids';
 import type { Building, Pawn, PawnCondition } from './types';
 import type { World } from './world';
 
@@ -114,6 +116,68 @@ export function removeCondition(w: World, p: Pawn, key: string): void {
   if (p.conditions.length !== n) w.markDirty(p);
 }
 
+// ---------------------------------------------------------------- wounds
+
+/** Total pain from wounds. At DOWNED_PAIN the pawn collapses. */
+export function painOf(p: Pawn): number {
+  let pain = 0;
+  for (const c of p.conditions) pain += (CONDITIONS[c.key]?.pain ?? 0) * c.severity;
+  return pain;
+}
+
+/** Blood loss per in-game day from untended wounds. */
+export function bleedRate(p: Pawn): number {
+  let r = 0;
+  for (const c of p.conditions) if (c.tended === undefined) r += (CONDITIONS[c.key]?.bleed ?? 0) * c.severity;
+  return r;
+}
+
+/** Sum of combat wound severity. A pawn dies at 1. */
+export function woundTotal(p: Pawn): number {
+  let t = 0;
+  for (const c of p.conditions) if (CONDITIONS[c.key]?.healPerDay) t += c.severity;
+  return t;
+}
+
+export function needsTending(p: Pawn): boolean {
+  return p.conditions.some((c) => c.tended === undefined && CONDITIONS[c.key]?.bleed);
+}
+
+/** Add a wound. Fresh damage reopens the wound, so it needs tending again. Returns false if it killed. */
+export function injure(w: World, p: Pawn, key: string, severity: number, by?: Pawn): boolean {
+  const c = conditionOf(p, key);
+  if (c) {
+    c.severity += severity;
+    delete c.tended;
+  } else {
+    p.conditions.push({ key, severity, immunity: 0, until: 0 });
+  }
+  w.markDirty(p);
+  if (woundTotal(p) >= 1) {
+    killPawn(w, p, by ? `wounds from ${by.name}` : 'wounds');
+    return false;
+  }
+  updateDowned(w, p);
+  return true;
+}
+
+/** Knock a pawn down, or let it back up, from its current pain and blood loss. */
+export function updateDowned(w: World, p: Pawn): void {
+  const down = painOf(p) >= DOWNED_PAIN || (conditionOf(p, 'blood_loss')?.severity ?? 0) >= DOWNED_BLOOD_LOSS;
+  if (down === p.downed) return;
+  p.downed = down;
+  const cell = w.cellOf(p);
+  if (down) {
+    p.drafted = false;
+    endJob(w, p);
+    if (w.factions.get(p.faction)?.raid) raiderDowned(w, p.faction);
+    else w.message(p.faction, `${p.name} has been downed.`, 'bad', cell);
+  } else {
+    w.message(p.faction, `${p.name} is back on their feet.`, 'neutral', cell);
+  }
+  w.markDirty(p);
+}
+
 export function isMental(p: Pawn): boolean {
   return p.conditions.some((c) => CONDITIONS[c.key]?.kind === 'mental');
 }
@@ -139,10 +203,19 @@ export function healthTick(w: World, p: Pawn, e: Effects): boolean {
   exposure(w, p, 'hypothermia', temp < coldLine ? Math.min(2, (0.8 * (coldLine - temp)) / 10) : -2, dt);
   exposure(w, p, 'heatstroke', temp > hotLine ? Math.min(2, (0.8 * (temp - hotLine)) / 10) : -2, dt);
   exposure(w, p, 'malnutrition', p.needs.food <= 0 ? 0.4 : -0.5, dt);
+  const bleed = bleedRate(p);
+  exposure(w, p, 'blood_loss', bleed > 0 ? bleed : -0.4, dt);
 
   for (const c of [...p.conditions]) {
     const def = CONDITIONS[c.key];
     if (!def) continue;
+    if (def.healPerDay) {
+      // Dressed wounds close quickly, open ones barely; bruises need no dressing. Rest in bed helps.
+      const care = c.tended !== undefined ? 0.5 + c.tended : def.bleed ? 0.2 : 1;
+      c.severity -= def.healPerDay * dt * care * (resting ? 1.3 : 1);
+      if (c.severity <= 0) removeCondition(w, p, c.key);
+      continue;
+    }
     if (def.hours) {
       if (w.tick >= c.until) {
         removeCondition(w, p, c.key);
@@ -169,8 +242,10 @@ export function healthTick(w: World, p: Pawn, e: Effects): boolean {
     }
   }
 
+  updateDowned(w, p);
+
   // Minds: breaks when miserable, inspiration when happy.
-  if (!isMental(p)) {
+  if (!isMental(p) && !p.downed) {
     const mood = p.needs.mood;
     if (mood < 0.18 && w.rng.chance(0.02 * e.breakMult)) {
       const kind = w.rng.pick(['sulking', 'dazed', 'binging', 'hiding']);
@@ -243,6 +318,7 @@ export function killPawn(w: World, p: Pawn, cause: string): void {
     left++;
     addCondition(w, o, 'mourning');
   }
+  if (w.factions.get(faction)?.raid) raiderGone(w, faction, true);
   if (left === 0 && w.factions.get(faction)?.isPlayer) {
     w.message(0, `${fname} has fallen. Survivors from the wilds may yet find what is left of it.`, 'bad', cell);
     scheduleEvent(w, 'new_arrivals', faction, TICKS_PER_DAY);

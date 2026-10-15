@@ -1,6 +1,9 @@
-import { APPAREL, BUILDINGS, ITEMS, PLANTS, RECIPES, ROCKS, T } from '@fe/defs';
-import { goTo, needsWarmth, pushOut, workSpeed } from './pawns';
-import { addCondition, effectsOf } from './health';
+import { APPAREL, BUILDINGS, CONDITIONS, ITEMS, PLANTS, RECIPES, ROCKS, T, weaponOf } from '@fe/defs';
+import { goTo, needsWarmth, pawnSpeed, pushOut, workSpeed } from './pawns';
+import { addCondition, effectsOf, needsTending } from './health';
+import { hostileInReach, inReach, strike, warmup } from './combat';
+import { findPath, makePathState } from './pathfinding';
+import { raiderGone } from './raids';
 import type { Building, Construct, Item, Job, Pawn, Plant } from './types';
 import { DESIG } from './types';
 import type { World } from './world';
@@ -41,6 +44,20 @@ export function runJob(w: World, p: Pawn): JobResult {
       return warm(w, p, j);
     case 'wear':
       return wear(w, p, j);
+    case 'attack':
+      return attack(w, p, j);
+    case 'goto': {
+      const r = goTo(w, p, j.dest, false);
+      return r === 'moving' ? 'continue' : 'done';
+    }
+    case 'hold':
+      if (j.until && w.tick >= j.until) return 'done';
+      // Look around a few times a second, staggered across pawns.
+      return (w.tick + p.id) % 20 === 0 && hostileInReach(w, p) ? 'done' : 'continue';
+    case 'tend':
+      return tend(w, p, j);
+    case 'flee':
+      return flee(w, p, j);
   }
 }
 
@@ -66,6 +83,95 @@ function wear(w: World, p: Pawn, j: J<'wear'>): JobResult {
   takeOff();
   p.apparel.push(def);
   w.markDirty(p);
+  return 'done';
+}
+
+// ---------------------------------------------------------------- combat
+
+/** Walk toward a moving target, repathing only when it has strayed far from where we were heading. */
+function chase(w: World, p: Pawn, goal: number): boolean {
+  const here = w.cellOf(p);
+  const ps = p.path;
+  if (ps && ps.idx < ps.cells.length && w.dist(ps.goal, goal) <= Math.max(1, w.dist(here, goal) >> 2)) return true;
+  const cells = findPath(w, here, goal, true, p.faction);
+  if (!cells) return false;
+  p.path = cells.length ? makePathState(w, here, cells, goal, true, pawnSpeed(w, p)) : null;
+  w.markDirty(p);
+  return true;
+}
+
+function attack(w: World, p: Pawn, j: J<'attack'>): JobResult {
+  const t = w.get<Pawn>(j.target);
+  if (!t || t.kind !== 'pawn' || t.faction === p.faction) return 'done';
+  if (t.downed && !j.forced) return 'done';
+  if (j.until && w.tick >= j.until) return 'done';
+  const here = w.cellOf(p);
+  const there = w.cellOf(t);
+  if (inReach(w, weaponOf(p.weapon), here, there)) {
+    if (p.path) {
+      p.path = null;
+      w.markDirty(p);
+    }
+    if (j.stage === 0) {
+      j.stage = 1;
+      j.next = Math.max(j.next, warmup(w, p));
+    }
+    if (w.tick >= j.next) {
+      strike(w, p, t);
+      j.next = w.tick + weaponOf(p.weapon).cooldown;
+    }
+    return 'continue';
+  }
+  j.stage = 0;
+  if (!j.chase) return 'done';
+  if (chase(w, p, there)) return 'continue';
+  w.markUnreachable(p.faction, there);
+  return 'fail';
+}
+
+/** Ticks of work to dress a patient's wounds. */
+export const TEND_WORK = 240;
+
+function tend(w: World, p: Pawn, j: J<'tend'>): JobResult {
+  const pt = w.get<Pawn>(j.patient);
+  if (!pt || pt.kind !== 'pawn' || !needsTending(pt)) return 'done';
+  if (pt.id !== p.id && w.dist(w.cellOf(p), w.cellOf(pt)) > 1) {
+    const r = goTo(w, p, w.cellOf(pt), true);
+    return r === 'fail' ? 'fail' : 'continue';
+  }
+  const before = j.progress;
+  j.progress += workSpeed(w, p);
+  bumpProgress(w, p, before, j.progress, TEND_WORK);
+  if (j.progress < TEND_WORK) return 'continue';
+  // Patching yourself up is clumsier than having someone else do it.
+  const quality = Math.max(0.2, Math.min(1, w.rng.range(0.55, 0.95) * Math.min(1.2, workSpeed(w, p)) * (pt.id === p.id ? 0.7 : 1)));
+  for (const c of pt.conditions) if (c.tended === undefined && CONDITIONS[c.key]?.bleed) c.tended = Math.round(quality * 100) / 100;
+  w.markDirty(pt);
+  return 'done';
+}
+
+function flee(w: World, p: Pawn, j: J<'flee'>): JobResult {
+  if (j.stage === 0) {
+    const it = w.get<Item>(j.item);
+    if (!it || it.kind !== 'item' || p.carrying) {
+      j.stage = 1;
+      return 'continue';
+    }
+    const r = goTo(w, p, w.cellOf(it), false);
+    if (r === 'fail') j.stage = 1;
+    if (r !== 'arrived') return 'continue';
+    pickUp(w, p, it, Math.min(it.count, ITEMS[it.def].stackLimit));
+    j.stage = 1;
+    return 'continue';
+  }
+  const r = goTo(w, p, j.dest, false);
+  if (r === 'moving') return 'continue';
+  // Off the map, or stuck with no way out, in which case they slip away all the same.
+  const f = w.factions.get(p.faction);
+  if (p.carrying && f?.raid) w.message(f.raid.target, `A raider escaped with ${p.carrying.count} ${ITEMS[p.carrying.def]?.label.toLowerCase() ?? p.carrying.def}.`, 'bad');
+  p.carrying = null;
+  w.despawn(p.id);
+  raiderGone(w, p.faction, false);
   return 'done';
 }
 
