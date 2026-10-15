@@ -1,172 +1,108 @@
-import { EVENTS, PLANTS, type EventDef } from '@fe/defs';
+import { EVENTS, RARITY_WEIGHT, WEATHER, type EventDef } from '@fe/defs';
 import { SEASONS, START_TICK, TICKS_PER_DAY, TICKS_PER_HOUR } from './constants';
-import { pawnName } from './names';
-import type { Pawn, Plant } from './types';
+import { tickChoices } from './choices';
+import { fireEvent } from './eventHandlers';
 import type { World } from './world';
 
-export interface StoryState {
-  nextCheck: number;
-  /** Event key -> tick it last fired. */
-  lastFired: Record<string, number>;
-  /** Points available for bad events. Grows with time, spent by firing. */
-  threat: number;
-  lastSeason: number;
+export { newStoryState, scheduleEvent, type StoryState } from './schedule';
+
+/** Hours between storyteller rolls. */
+const CHECK_HOURS = 4;
+/** Chance per roll that a map-wide event fires. */
+const MAP_CHANCE = 0.12;
+/** Chance per roll, per colony, that something happens to that colony. */
+const FACTION_CHANCE = 0.15;
+
+/** Days since the world began, so minDay means "days into the game". */
+function gameDay(w: World): number {
+  return (w.tick - START_TICK) / TICKS_PER_DAY;
 }
 
-/** Hours between storyteller rolls, and the chance each roll fires something. */
-const CHECK_HOURS = 6;
-const FIRE_CHANCE = 0.3;
-
-export function newStoryState(): StoryState {
-  // A quiet first day to get settled.
-  return { nextCheck: START_TICK + TICKS_PER_DAY, lastFired: {}, threat: 0, lastSeason: 0 };
-}
-
-/** Check every few in-game hours whether something should happen. */
 export function tickStoryteller(w: World): void {
   const s = w.story;
   const season = w.seasonIndex();
   if (season !== s.lastSeason) {
     s.lastSeason = season;
     const name = SEASONS[season];
-    w.message(0, name === 'Winter' ? 'Winter has arrived. Crops will freeze outdoors.' : `${name} has begun.`, season === 3 ? 'bad' : 'neutral');
+    w.message(0, name === 'Winter' ? 'Winter has arrived. Crops will freeze outdoors and the nights can kill.' : `${name} has begun.`, season === 3 ? 'bad' : 'neutral');
   }
+  tickChoices(w);
+  runScheduled(w);
   if (w.tick < s.nextCheck) return;
   s.nextCheck = w.tick + TICKS_PER_HOUR * CHECK_HOURS;
   const players = [...w.factions.values()].filter((f) => f.isPlayer);
   if (players.length === 0) return;
-  // Days since the world began, so minDay means "days into the game".
-  const day = (w.tick - START_TICK) / TICKS_PER_DAY;
-  s.threat += 9 * Math.min(2, 0.5 + day / 10);
-  if (!w.rng.chance(FIRE_CHANCE)) return;
 
-  const options = Object.values(EVENTS).filter((e) => {
-    if (day < e.minDay) return false;
-    const last = s.lastFired[e.key];
-    if (last !== undefined && w.tick - last < e.cooldownDays * TICKS_PER_DAY) return false;
-    if (e.tone === 'bad' && e.cost > s.threat) return false;
-    return true;
-  });
-  if (options.length === 0) return;
-  const total = options.reduce((a, e) => a + e.weight, 0);
-  let r = w.rng.next() * total;
-  let pick: EventDef = options[0];
-  for (const e of options) {
-    r -= e.weight;
-    if (r <= 0) {
-      pick = e;
-      break;
-    }
+  const day = gameDay(w);
+  const ramp = Math.min(2.2, 0.5 + day / 8);
+  s.threat[0] = (s.threat[0] ?? 0) + 7 * ramp;
+  for (const f of players) s.threat[f.id] = (s.threat[f.id] ?? 0) + 7 * ramp;
+
+  if (w.rng.chance(MAP_CHANCE)) roll(w, 'map', 0);
+  for (const f of players) if (w.rng.chance(FACTION_CHANCE)) roll(w, 'faction', f.id);
+}
+
+function runScheduled(w: World): void {
+  const due = w.story.scheduled.filter((e) => e.tick <= w.tick);
+  if (!due.length) return;
+  w.story.scheduled = w.story.scheduled.filter((e) => e.tick > w.tick);
+  for (const e of due) fireEvent(w, e.key, e.faction, e.data);
+}
+
+function cooldownKey(def: EventDef, faction: number): string {
+  return def.scope === 'map' ? def.key : `${def.key}:${faction}`;
+}
+
+/** Events that could fire right now for this target, with their weights. */
+export function eligibleEvents(w: World, scope: 'map' | 'faction', faction: number): { def: EventDef; weight: number }[] {
+  const s = w.story;
+  const day = gameDay(w);
+  const season = w.seasonIndex();
+  const pool = s.threat[faction] ?? 0;
+  const recentBad = w.tick - (s.lastBad[faction] ?? -Infinity) < TICKS_PER_DAY;
+  const activeTemp = w.conditions.some((c) => WEATHER[c.key]?.tempOffset);
+  const out: { def: EventDef; weight: number }[] = [];
+  for (const def of Object.values(EVENTS)) {
+    if (def.followUp) continue;
+    if ((def.scope === 'map') !== (scope === 'map')) continue;
+    if (day < def.minDay) continue;
+    if (def.seasons && !def.seasons.includes(season)) continue;
+    if (def.unique && s.uniqueFired.includes(def.key)) continue;
+    const last = s.lastFired[cooldownKey(def, faction)];
+    if (last !== undefined && w.tick - last < def.cooldownDays * TICKS_PER_DAY) continue;
+    if (w.conditions.some((c) => c.key === def.key)) continue;
+    // Don't stack two temperature swings on top of each other.
+    if (activeTemp && WEATHER[def.key]?.tempOffset) continue;
+    if (def.tone === 'bad' && def.cost > pool) continue;
+    let weight = RARITY_WEIGHT[def.rarity] * (def.weight ?? 1);
+    if (def.tone === 'bad' && recentBad) weight *= 0.35;
+    out.push({ def, weight });
   }
-  const target = pick.scope === 'faction' ? w.rng.pick(players).id : 0;
-  if (fireEvent(w, pick.key, target)) {
-    s.lastFired[pick.key] = w.tick;
-    if (pick.tone === 'bad') s.threat -= pick.cost;
+  return out;
+}
+
+function roll(w: World, scope: 'map' | 'faction', faction: number): void {
+  const options = eligibleEvents(w, scope, faction);
+  // A few tries: some events find nothing to act on (no crops to blight, no rock for ore...).
+  for (let tries = 0; tries < 3 && options.length; tries++) {
+    const total = options.reduce((a, o) => a + o.weight, 0);
+    let r = w.rng.next() * total;
+    let k = 0;
+    for (; k < options.length - 1; k++) {
+      r -= options[k].weight;
+      if (r <= 0) break;
+    }
+    const { def } = options.splice(k, 1)[0];
+    if (!fireEvent(w, def.key, faction)) continue;
+    const s = w.story;
+    s.lastFired[cooldownKey(def, faction)] = w.tick;
+    if (def.unique) s.uniqueFired.push(def.key);
+    if (def.tone === 'bad') {
+      s.threat[faction] = (s.threat[faction] ?? 0) - def.cost;
+      s.lastBad[faction] = w.tick;
+    }
+    return;
   }
 }
 
-function addCondition(w: World, def: EventDef, faction: number): void {
-  w.conditions.push({ key: def.key, until: w.tick + (def.durationHours ?? 24) * TICKS_PER_HOUR, faction });
-  w.dirty.conditions = true;
-}
-
-/** Run an event now. Returns false if it had nothing to act on. */
-export function fireEvent(w: World, key: string, faction: number): boolean {
-  const def = EVENTS[key];
-  const m = w.map;
-  switch (key) {
-    case 'cold_snap':
-      addCondition(w, def, 0);
-      w.message(0, 'A cold snap has rolled in. Temperatures will drop sharply for a day and a half.', 'bad');
-      return true;
-    case 'heat_wave':
-      addCondition(w, def, 0);
-      w.message(0, 'A heat wave is baking the land.', 'bad');
-      return true;
-    case 'eclipse':
-      addCondition(w, def, 0);
-      w.message(0, 'An eclipse darkens the sky. Plants will not grow until it passes.', 'neutral');
-      return true;
-    case 'aurora':
-      addCondition(w, def, 0);
-      w.message(0, 'A shimmering aurora fills the sky. Everyone feels a little better.', 'good');
-      return true;
-    case 'blight': {
-      const crops: Plant[] = [];
-      for (const id of w.kinds.plant) {
-        const p = w.get<Plant>(id)!;
-        const z = w.zoneAt(w.cellOf(p));
-        if (z && z.faction === faction && PLANTS[p.def].sowable && !p.blighted) crops.push(p);
-      }
-      if (crops.length < 6) return false;
-      let n = 0;
-      for (const p of crops) {
-        if (w.rng.chance(0.4)) {
-          p.blighted = true;
-          w.markDirty(p);
-          n++;
-        }
-      }
-      w.message(faction, `Blight has struck ${n} of your crops. Harvest or cut them before it spreads.`, 'bad', w.cellOf(crops[0]));
-      return true;
-    }
-    case 'wanderer_joins': {
-      const cell = edgeCell(w);
-      if (cell < 0) return false;
-      const p = w.spawnPawn(faction, cell, pawnName(w.rng));
-      w.message(faction, `${p.name}, a wanderer, has asked to join you. They are walking in from the edge of the map.`, 'good', cell);
-      return true;
-    }
-    case 'cargo_pods': {
-      const homes = [...w.factions.values()].filter((f) => f.isPlayer).map((f) => f.home);
-      // Land roughly between the colonies so everyone has a reason to race for it.
-      const ax = homes.reduce((a, h) => a + h.x, 0) / homes.length;
-      const ay = homes.reduce((a, h) => a + h.y, 0) / homes.length;
-      for (let tries = 0; tries < 50; tries++) {
-        const x = Math.round(ax + w.rng.range(-20, 20));
-        const y = Math.round(ay + w.rng.range(-20, 20));
-        if (!m.inBounds(x, y)) continue;
-        const c = m.idx(x, y);
-        if (m.solid[c] || m.buildingAt[c]) continue;
-        const loot: [string, number][] = [
-          ['steel', 40 + w.rng.int(36)],
-          ['wood', 50 + w.rng.int(26)],
-          ['survival_meal', 6 + w.rng.int(8)],
-          ['cloth', 20 + w.rng.int(30)],
-          ['simple_meal', 4 + w.rng.int(6)],
-        ];
-        for (let k = 0; k < 3; k++) {
-          const [def, n] = w.rng.pick(loot);
-          w.placeItemNear(def, n, c);
-        }
-        w.message(0, 'Cargo pods crashed nearby. Whoever hauls the contents first keeps them!', 'good', c);
-        return true;
-      }
-      return false;
-    }
-    case 'stomach_flu': {
-      const pawns = [...w.kinds.pawn].map((id) => w.get<Pawn>(id)!).filter((p) => p.faction === faction);
-      if (pawns.length === 0) return false;
-      const victim = w.rng.pick(pawns);
-      victim.sickUntil = w.tick + (def.durationHours ?? 24) * TICKS_PER_HOUR;
-      w.markDirty(victim);
-      w.message(faction, `${victim.name} has come down with stomach flu. They will be slow for a day.`, 'bad', w.cellOf(victim));
-      return true;
-    }
-  }
-  return false;
-}
-
-/** A random passable cell on the map border. */
-function edgeCell(w: World): number {
-  const m = w.map;
-  for (let tries = 0; tries < 200; tries++) {
-    const side = w.rng.int(4);
-    const t = w.rng.int(side < 2 ? m.w : m.h);
-    const x = side === 0 ? t : side === 1 ? t : side === 2 ? 0 : m.w - 1;
-    const y = side === 0 ? 0 : side === 1 ? m.h - 1 : t;
-    const c = m.idx(x, y);
-    if (!m.solid[c]) return c;
-  }
-  return -1;
-}
+export { fireEvent };

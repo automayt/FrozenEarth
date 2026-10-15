@@ -75,6 +75,15 @@ export interface Needs {
   mood: number;
 }
 
+/** An active health condition on a pawn. */
+export interface PawnCondition {
+  key: string;
+  severity: number;
+  immunity: number;
+  /** Tick when a timed condition ends, or 0. */
+  until: number;
+}
+
 export interface Carried {
   def: string;
   count: number;
@@ -91,8 +100,8 @@ export interface Pawn extends Base {
   carrying: Carried | null;
   bed: EntityId;
   asleep: boolean;
-  /** Tick until which the pawn is sick, or 0. */
-  sickUntil: number;
+  conditions: PawnCondition[];
+  traits: string[];
   /** Short mood explanations, for the inspect pane. */
   thoughts: string[];
 }
@@ -112,7 +121,9 @@ export type Job =
   | (JobBase & { type: 'cut'; target: EntityId; progress: number; harvest: boolean })
   | (JobBase & { type: 'sow'; cell: number; plant: string; progress: number })
   | (JobBase & { type: 'eat'; item: EntityId; count: number; progress: number })
-  | (JobBase & { type: 'sleep'; bed: EntityId; cell: number })
+  | (JobBase & { type: 'sleep'; bed: EntityId; cell: number; rest?: boolean })
+  | (JobBase & { type: 'extinguish'; cell: number; progress: number })
+  | (JobBase & { type: 'warm'; dest: number; until: number })
   | (JobBase & {
       type: 'bill';
       bench: EntityId;
@@ -164,6 +175,24 @@ export interface Condition {
   faction: number;
 }
 
+export interface ChoiceOption {
+  key: string;
+  label: string;
+}
+
+/** A letter that asks a player to decide something. */
+export interface Choice {
+  id: number;
+  faction: number;
+  event: string;
+  title: string;
+  text: string;
+  options: ChoiceOption[];
+  /** Tick at which the last option is chosen automatically. */
+  expires: number;
+  at?: number;
+}
+
 export interface Room {
   id: number;
   cells: number[];
@@ -191,7 +220,8 @@ export type Command =
   | { c: 'zoneSettings'; zone: number; plant?: string; allow?: ItemCategory[] }
   | { c: 'addBill'; bench: EntityId; recipe: string; mode: BillMode; target: number }
   | { c: 'updateBill'; bench: EntityId; bill: number; mode?: BillMode; target?: number; suspended?: boolean }
-  | { c: 'removeBill'; bench: EntityId; bill: number };
+  | { c: 'removeBill'; bench: EntityId; bill: number }
+  | { c: 'choose'; choice: number; option: string };
 
 /** Full state a client needs to render the world. */
 export interface Snapshot {
@@ -203,11 +233,13 @@ export interface Snapshot {
   rock: Uint8Array;
   desig: Uint8Array;
   desigFaction: Uint8Array;
+  fire: Uint8Array;
   ents: Entity[];
   zones: Zone[];
   factions: Faction[];
   rooms: Room[];
   conditions: Condition[];
+  choices: Choice[];
   coldOffset: number;
 }
 
@@ -216,7 +248,7 @@ export interface Delta {
   tick: number;
   ents: Entity[];
   removed: EntityId[];
-  /** Flattened [cell, terrain, rock, desig, desigFaction] quintuples. */
+  /** Flattened [cell, terrain, rock, desig, desigFaction, fire] sextuples. */
   cells: number[];
   zones: Zone[];
   removedZones: number[];
@@ -227,5 +259,9 @@ export interface Delta {
   /** Present when only temperatures changed: [roomId, temp] pairs. */
   roomTemps?: number[];
   conditions?: Condition[];
+  /** Present when choices changed. Replaces the full list. */
+  choices?: Choice[];
   coldOffset?: number;
 }
+
+export const CELL_FIELDS = 6;

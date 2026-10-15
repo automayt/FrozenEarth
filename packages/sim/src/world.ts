@@ -1,9 +1,10 @@
-import { BUILDINGS, DEFAULT_PRIORITY, ITEMS, PLANTS, TERRAINS, WORK_TYPES, type WorkType } from '@fe/defs';
+import { BUILDINGS, DEFAULT_PRIORITY, ITEMS, PLANTS, RANDOM_TRAITS, START_PRIORITY, TERRAINS, WEATHER, WORK_TYPES, type WorkType } from '@fe/defs';
 import * as C from './constants';
 import { GameMap } from './map';
 import { Rng } from './rng';
 import type {
   Building,
+  Choice,
   Command,
   Condition,
   Construct,
@@ -25,7 +26,9 @@ import { DESIG } from './types';
 import { applyCommand } from './commands';
 import { tickPawn } from './pawns';
 import { rareTick } from './rare';
-import { tickStoryteller, type StoryState, newStoryState } from './storyteller';
+import { tickStoryteller } from './storyteller';
+import { newStoryState, type StoryState } from './schedule';
+import { fireTick } from './fire';
 import { outdoorTempAt } from './time';
 
 /** Everything that changed since the last delta was taken. */
@@ -40,6 +43,7 @@ export class Dirty {
   rooms = false;
   roomTemps = false;
   conditions = false;
+  choices = false;
   coldOffset = false;
 }
 
@@ -69,6 +73,13 @@ export class World {
   rooms = new Map<number, Room>();
   nextRoomId = 1;
   conditions: Condition[] = [];
+  fireCells = new Set<number>();
+  choices = new Map<number, Choice>();
+  nextChoiceId = 1;
+  /** Cells of buildings that warm the air around them even outdoors -> [degrees, radius]. */
+  radiant = new Map<number, [number, number]>();
+  /** Server-only data for open choices (kept off the wire so players can't peek). */
+  choiceData = new Map<number, Record<string, unknown>>();
   /** Degrees added to outdoor temperature. The future winter front drives this. */
   coldOffset = 0;
   story: StoryState = newStoryState();
@@ -101,6 +112,7 @@ export class World {
       if (p) tickPawn(this, p);
     }
     rareTick(this);
+    fireTick(this);
     tickStoryteller(this);
     this.tick++;
   }
@@ -130,7 +142,7 @@ export class World {
 
   /** 0 at night, 1 at midday. */
   daylight(): number {
-    if (this.hasCondition('eclipse')) return 0;
+    if (this.conditions.some((c) => WEATHER[c.key]?.dark)) return 0;
     const h = this.hour();
     if (h < 5 || h > 20) return 0;
     if (h < 7) return (h - 5) / 2;
@@ -142,11 +154,28 @@ export class World {
     return outdoorTempAt(tick, this.coldOffset, this.conditions);
   }
 
+  /** Combined plant growth multiplier from the weather. */
+  growthMult(): number {
+    let g = 1;
+    for (const c of this.conditions) g *= WEATHER[c.key]?.growthMult ?? 1;
+    return g;
+  }
+
   /** Temperature at a cell: its room's, or outdoors. */
   tempAt(cell: number): number {
     const r = this.map.roomAt[cell];
     const room = r ? this.rooms.get(r) : undefined;
-    return room ? room.temp : this.outdoorTemp();
+    let t = room ? room.temp : this.outdoorTemp();
+    for (const [c, [deg, radius]] of this.radiant) {
+      const d = this.dist(c, cell);
+      if (d <= radius) t = Math.max(t, Math.min(26, t + deg * (1 - d / (radius + 1))));
+    }
+    return t;
+  }
+
+  /** True when a cell is under open sky. */
+  outdoors(cell: number): boolean {
+    return this.map.roomAt[cell] === 0;
   }
 
   // ---------------------------------------------------------------- entities
@@ -217,6 +246,10 @@ export class World {
       case 'building':
         if (add || m.buildingAt[i] === e.id) m.buildingAt[i] = v;
         this.refreshCell(i);
+        if (BUILDINGS[e.def]?.radiant) {
+          if (add) this.radiant.set(i, BUILDINGS[e.def].radiant!);
+          else this.radiant.delete(i);
+        }
         break;
       case 'construct':
         if (add || m.constructAt[i] === e.id) m.constructAt[i] = v;
@@ -296,6 +329,16 @@ export class World {
     m.desigFaction[i] = kind ? faction : 0;
     if (kind) this.desigCells.add(i);
     else this.desigCells.delete(i);
+    this.dirty.cells.add(i);
+  }
+
+  setFire(i: number, level: number): void {
+    const m = this.map;
+    const v = Math.max(0, Math.min(3, level));
+    if (m.fire[i] === v) return;
+    m.fire[i] = v;
+    if (v) this.fireCells.add(i);
+    else this.fireCells.delete(i);
     this.dirty.cells.add(i);
   }
 
@@ -413,9 +456,21 @@ export class World {
     });
   }
 
-  spawnPawn(faction: number, cell: number, name: string): Pawn {
+  /** 0-2 random traits that don't conflict. */
+  rollTraits(): string[] {
+    const out: string[] = [];
+    const n = this.rng.chance(0.25) ? 0 : this.rng.chance(0.55) ? 1 : 2;
+    for (let tries = 0; out.length < n && tries < 20; tries++) {
+      const t = this.rng.pick(RANDOM_TRAITS);
+      if (out.includes(t.key) || out.some((o) => t.conflicts?.includes(o))) continue;
+      out.push(t.key);
+    }
+    return out;
+  }
+
+  spawnPawn(faction: number, cell: number, name: string, traits?: string[]): Pawn {
     const m = this.map;
-    const priorities = Object.fromEntries(WORK_TYPES.map((w) => [w, DEFAULT_PRIORITY])) as Record<WorkType, number>;
+    const priorities = Object.fromEntries(WORK_TYPES.map((w) => [w, START_PRIORITY[w] ?? DEFAULT_PRIORITY])) as Record<WorkType, number>;
     return this.add<Pawn>({
       kind: 'pawn',
       id: this.newId(),
@@ -430,7 +485,8 @@ export class World {
       carrying: null,
       bed: 0,
       asleep: false,
-      sickUntil: 0,
+      conditions: [],
+      traits: traits ?? this.rollTraits(),
       thoughts: [],
     });
   }
@@ -521,7 +577,7 @@ export class World {
     const d = this.dirty;
     const m = this.map;
     const cells: number[] = [];
-    for (const i of d.cells) cells.push(i, m.terrain[i], m.rock[i], m.desig[i], m.desigFaction[i]);
+    for (const i of d.cells) cells.push(i, m.terrain[i], m.rock[i], m.desig[i], m.desigFaction[i], m.fire[i]);
     const delta: Delta = {
       tick: this.tick,
       ents: [...d.ents].map((id) => this.entities.get(id)!).filter(Boolean),
@@ -535,6 +591,7 @@ export class World {
     if (d.rooms) delta.rooms = [...this.rooms.values()];
     else if (d.roomTemps) delta.roomTemps = [...this.rooms.values()].flatMap((r) => [r.id, r.temp]);
     if (d.conditions) delta.conditions = this.conditions;
+    if (d.choices) delta.choices = [...this.choices.values()];
     if (d.coldOffset) delta.coldOffset = this.coldOffset;
     this.dirty = new Dirty();
     return delta;

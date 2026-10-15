@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { calendar } from '@fe/sim';
-import { send } from '../net';
+import { calendar, TICKS_PER_HOUR } from '@fe/sim';
+import { command, send } from '../net';
 import { store, useStore } from '../store';
 import { hex } from './util';
 
@@ -10,13 +10,29 @@ export function Feed() {
   const m = s.mirror;
   const [text, setText] = useState('');
   const chatEnd = useRef<HTMLDivElement>(null);
-  const msgs = m.messages.filter((x) => x.faction === 0 || x.faction === s.me?.faction).slice(-8);
+  const msgs = m.messages.filter((x) => x.faction === 0 || x.faction === s.me?.faction).slice(-6);
   useEffect(() => {
     chatEnd.current?.scrollIntoView({ block: 'end' });
   }, [s.chat.length]);
   return (
     <div className="feed">
       <div className="letters">
+        {m.choices
+          .filter((c) => c.faction === s.me?.faction)
+          .map((c) => (
+            <div key={c.id} className="letter choice">
+              <b>{c.title}</b>
+              <p>{c.text}</p>
+              <div className="options">
+                {c.options.map((o, i) => (
+                  <button key={o.key} className={i === 0 ? 'on' : ''} onClick={() => command({ c: 'choose', choice: c.id, option: o.key })}>
+                    {o.label}
+                  </button>
+                ))}
+                <small>{Math.max(0, Math.ceil((c.expires - m.tick) / TICKS_PER_HOUR))}h to decide</small>
+              </div>
+            </div>
+          ))}
         {msgs.map((x, i) => (
           <button
             key={`${x.tick}-${i}`}

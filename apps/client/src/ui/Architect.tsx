@@ -1,5 +1,6 @@
 import { BUILD_CATEGORIES, BUILDINGS, ITEMS, SOWABLE_PLANTS, type BuildCategory } from '@fe/defs';
 import { store, useStore, type Tool } from '../store';
+import { myPlayer } from '../actions';
 
 type Cat = 'orders' | 'zones' | BuildCategory;
 
@@ -66,6 +67,11 @@ export function Architect() {
         <button className={s.panel === 'colonists' ? 'on' : ''} onClick={() => store.set({ panel: s.panel === 'colonists' ? 'none' : 'colonists', menu: null })}>
           Colonists
         </button>
+        {myPlayer()?.admin && (
+          <button className={s.panel === 'events' ? 'on' : ''} onClick={() => store.set({ panel: s.panel === 'events' ? 'none' : 'events', menu: null })} title="Host tool: trigger events">
+            Events
+          </button>
+        )}
         {s.tool.kind !== 'select' && (
           <span className="tool-hint">
             Drag to apply · right-click or Esc to stop

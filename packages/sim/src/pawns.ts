@@ -1,4 +1,5 @@
-import { BUILDINGS, ITEMS } from '@fe/defs';
+import { BUILDINGS, COMFORT_MAX, COMFORT_MIN, ITEMS } from '@fe/defs';
+import { conditionOf, effectsOf, type Effects } from './health';
 import { atGoal, findPath, makePathState } from './pathfinding';
 import { runJob } from './jobs';
 import { findWork } from './work';
@@ -17,16 +18,14 @@ export function tickPawn(w: World, p: Pawn): void {
 
 /** Walk speed multiplier. */
 export function pawnSpeed(w: World, p: Pawn): number {
-  let s = 1;
-  if (p.sickUntil > w.tick) s *= 0.7;
+  let s = Math.max(0.15, effectsOf(w, p).move);
   if (p.needs.rest < 0.1) s *= 0.8;
   return s;
 }
 
 /** Work speed multiplier. */
 export function workSpeed(w: World, p: Pawn): number {
-  let s = 1;
-  if (p.sickUntil > w.tick) s *= 0.6;
+  let s = Math.max(0.1, effectsOf(w, p).work);
   if (p.needs.mood < 0.2) s *= 0.8;
   if (p.needs.rest < 0.1) s *= 0.8;
   return s;
@@ -97,13 +96,62 @@ export function endJob(w: World, p: Pawn): void {
 
 function think(w: World, p: Pawn): void {
   const n = p.needs;
+  const e = effectsOf(w, p);
   let job: Job | null = null;
-  if (n.food < 0.3) job = findFood(w, p);
-  if (!job && (n.rest < 0.2 || (w.isNight() && n.rest < 0.8))) job = findSleep(w, p);
-  if (!job) job = findWork(w, p);
+  if (n.food < 0.3 || (e.binge && n.food < 0.95)) job = findFood(w, p);
+  // Severe exposure beats everything else: get somewhere survivable first.
+  if (!job && exposureSeverity(p) > 0.3 && needsWarmth(w, p, e)) job = warmthJob(w, p, e);
+  if (!job && e.bedRest) job = findSleep(w, p, true);
+  if (!job && needsWarmth(w, p, e)) job = warmthJob(w, p, e);
+  if (!job && (n.rest < 0.2 || (w.isNight() && n.rest < 0.8))) job = findSleep(w, p, false);
+  if (!job && !e.noWork) job = findWork(w, p);
   if (!job) job = wanderJob(w, p);
   p.job = job;
   w.markDirty(p);
+}
+
+export function exposureSeverity(p: Pawn): number {
+  return Math.max(conditionOf(p, 'hypothermia')?.severity ?? 0, conditionOf(p, 'heatstroke')?.severity ?? 0);
+}
+
+/** Cold or hot enough here that the pawn should go somewhere better. */
+export function needsWarmth(w: World, p: Pawn, e: Effects): boolean {
+  const hypo = conditionOf(p, 'hypothermia')?.severity ?? 0;
+  const heat = conditionOf(p, 'heatstroke')?.severity ?? 0;
+  if (hypo < 0.12 && heat < 0.12) return false;
+  const t = w.tempAt(w.cellOf(p));
+  return t < COMFORT_MIN + e.coldShift + 2 || t > COMFORT_MAX + e.heatShift - 2;
+}
+
+/** Walk to the nearest comfortable spot: a warm room, or near a radiant relic. */
+export function warmthJob(w: World, p: Pawn, e: Effects): Job | null {
+  const here = w.cellOf(p);
+  const lo = COMFORT_MIN + e.coldShift + 4;
+  const hi = COMFORT_MAX + e.heatShift - 4;
+  let best = -1;
+  let bestD = Infinity;
+  const consider = (c: number) => {
+    const d = w.dist(here, c);
+    if (d < bestD && d < 60 && w.passable(c, p.faction) && !w.isUnreachable(p.faction, c)) {
+      const t = w.tempAt(c);
+      if (t >= lo && t <= hi) {
+        best = c;
+        bestD = d;
+      }
+    }
+  };
+  for (const room of w.rooms.values()) {
+    // Sample a few cells per room rather than all of them.
+    const step = Math.max(1, Math.floor(room.cells.length / 6));
+    for (let k = 0; k < room.cells.length; k += step) consider(room.cells[k]);
+  }
+  for (const r of w.radiant.keys()) {
+    const x = w.map.cx(r);
+    const y = w.map.cy(r);
+    for (const [dx, dy] of NEIGHBORS8) if (w.map.inBounds(x + dx * 2, y + dy * 2)) consider(w.map.idx(x + dx * 2, y + dy * 2));
+  }
+  if (best < 0) return null;
+  return { type: 'warm', stage: 0, dest: best, until: 0 };
 }
 
 /** True when this pawn may take this item: not reserved, not rotten, not in someone else's stockpile. */
@@ -138,7 +186,7 @@ function findFood(w: World, p: Pawn): Job | null {
   return { type: 'eat', stage: 0, item: best.id, count, progress: 0 };
 }
 
-function findSleep(w: World, p: Pawn): Job | null {
+function findSleep(w: World, p: Pawn, rest: boolean): Job | null {
   let bed = p.bed ? w.get<Building>(p.bed) : undefined;
   if (!bed || bed.owner !== p.id) {
     bed = undefined;
@@ -160,7 +208,17 @@ function findSleep(w: World, p: Pawn): Job | null {
       w.markDirty(bed);
     }
   }
-  return { type: 'sleep', stage: 0, bed: bed ? bed.id : 0, cell: bed ? w.cellOf(bed) : w.cellOf(p) };
+  let cell = bed ? w.cellOf(bed) : w.cellOf(p);
+  if (!bed) {
+    // No bed: at least lie down somewhere with a bearable temperature.
+    const e = effectsOf(w, p);
+    const t = w.tempAt(cell);
+    if (t < COMFORT_MIN + e.coldShift || t > COMFORT_MAX + e.heatShift) {
+      const spot = warmthJob(w, p, e);
+      if (spot && spot.type === 'warm') cell = spot.dest;
+    }
+  }
+  return { type: 'sleep', stage: 0, bed: bed ? bed.id : 0, cell, rest };
 }
 
 function wanderJob(w: World, p: Pawn): Job {

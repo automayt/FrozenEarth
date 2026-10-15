@@ -1,8 +1,8 @@
-import type { Condition, Entity, Faction, Room, Snapshot, Zone } from './types';
-import type { StoryState } from './storyteller';
+import type { Choice, Condition, Entity, Faction, Pawn, Room, Snapshot, Zone } from './types';
+import { upgradeStoryState, type StoryState } from './schedule';
 import { Dirty, World } from './world';
 
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 
 export interface SaveData {
   version: number;
@@ -15,6 +15,7 @@ export interface SaveData {
   rock: Uint8Array;
   desig: Uint8Array;
   desigFaction: Uint8Array;
+  fire: Uint8Array;
   ents: Entity[];
   nextId: number;
   factions: Faction[];
@@ -26,6 +27,9 @@ export interface SaveData {
   rooms: Room[];
   nextRoomId: number;
   conditions: Condition[];
+  choices: Choice[];
+  choiceData: [number, Record<string, unknown>][];
+  nextChoiceId: number;
   coldOffset: number;
   story: StoryState;
 }
@@ -44,6 +48,7 @@ export function serializeWorld(w: World): SaveData {
     rock: m.rock,
     desig: m.desig,
     desigFaction: m.desigFaction,
+    fire: m.fire,
     ents: [...w.entities.values()],
     nextId: w.nextId,
     factions: [...w.factions.values()],
@@ -55,14 +60,37 @@ export function serializeWorld(w: World): SaveData {
     rooms: [...w.rooms.values()],
     nextRoomId: w.nextRoomId,
     conditions: w.conditions,
+    choices: [...w.choices.values()],
+    choiceData: [...w.choiceData],
+    nextChoiceId: w.nextChoiceId,
     coldOffset: w.coldOffset,
     story: w.story,
   });
 }
 
+/** Bring an older save up to the current format. */
+function migrate(data: SaveData): SaveData {
+  const d = data as SaveData & { version: number };
+  if (d.version === 1) {
+    d.fire = new Uint8Array(d.w * d.h);
+    d.choices = [];
+    d.choiceData = [];
+    d.nextChoiceId = 1;
+    for (const e of d.ents) {
+      if (e.kind !== 'pawn') continue;
+      const p = e as Pawn & { sickUntil?: number };
+      p.conditions = p.sickUntil && p.sickUntil > d.tick ? [{ key: 'stomach_flu', severity: 0.2, immunity: 0, until: 0 }] : [];
+      p.traits = [];
+      delete p.sickUntil;
+    }
+    d.version = 2;
+  }
+  return d;
+}
+
 export function deserializeWorld(data: SaveData): World {
-  if (data.version !== SAVE_VERSION) throw new Error(`Unsupported save version ${data.version}`);
-  const d = structuredClone(data);
+  if (data.version > SAVE_VERSION) throw new Error(`Save version ${data.version} is newer than this server`);
+  const d = migrate(structuredClone(data));
   const w = new World(d.seed, d.w, d.h);
   const m = w.map;
   w.tick = d.tick;
@@ -71,8 +99,10 @@ export function deserializeWorld(data: SaveData): World {
   m.rock.set(d.rock);
   m.desig.set(d.desig);
   m.desigFaction.set(d.desigFaction);
+  m.fire.set(d.fire);
   for (let i = 0; i < m.n; i++) {
     if (m.desig[i]) w.desigCells.add(i);
+    if (m.fire[i]) w.fireCells.add(i);
     w.refreshCell(i);
   }
   for (const e of d.ents) w.add(e);
@@ -92,8 +122,11 @@ export function deserializeWorld(data: SaveData): World {
   }
   w.nextRoomId = d.nextRoomId;
   w.conditions = d.conditions;
+  for (const c of d.choices) w.choices.set(c.id, c);
+  w.choiceData = new Map(d.choiceData);
+  w.nextChoiceId = d.nextChoiceId;
   w.coldOffset = d.coldOffset;
-  w.story = d.story;
+  w.story = upgradeStoryState(d.story);
   m.compDirty = true;
   m.roomsDirty = false;
   w.dirty = new Dirty();
@@ -112,11 +145,13 @@ export function snapshot(w: World): Snapshot {
     rock: m.rock,
     desig: m.desig,
     desigFaction: m.desigFaction,
+    fire: m.fire,
     ents: [...w.entities.values()],
     zones: [...w.zones.values()],
     factions: [...w.factions.values()],
     rooms: [...w.rooms.values()],
     conditions: w.conditions,
+    choices: [...w.choices.values()],
     coldOffset: w.coldOffset,
   };
 }

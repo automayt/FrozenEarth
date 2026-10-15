@@ -84,6 +84,7 @@ describe('replication', () => {
       expect(Array.from(m.rock)).toEqual(Array.from(w.map.rock));
       expect(Array.from(m.terrain)).toEqual(Array.from(w.map.terrain));
       expect(Array.from(m.desig)).toEqual(Array.from(w.map.desig));
+      expect(Array.from(m.fire)).toEqual(Array.from(w.map.fire));
       expect(Array.from(m.zoneAt)).toEqual(Array.from(w.map.zoneAt));
     }
   });

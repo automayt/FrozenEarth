@@ -1,5 +1,6 @@
 import { BUILDINGS, ITEMS, PLANTS, RECIPES, ROCKS, T } from '@fe/defs';
-import { goTo, pushOut, workSpeed } from './pawns';
+import { goTo, needsWarmth, pushOut, workSpeed } from './pawns';
+import { addCondition, effectsOf } from './health';
 import type { Building, Construct, Item, Job, Pawn, Plant } from './types';
 import { DESIG } from './types';
 import type { World } from './world';
@@ -34,7 +35,40 @@ export function runJob(w: World, p: Pawn): JobResult {
       return sleep(w, p, j);
     case 'bill':
       return bill(w, p, j);
+    case 'extinguish':
+      return extinguish(w, p, j);
+    case 'warm':
+      return warm(w, p, j);
   }
+}
+
+/** Ticks of beating at a fire to knock it down one level. */
+export const EXTINGUISH_WORK = 45;
+
+function extinguish(w: World, p: Pawn, j: J<'extinguish'>): JobResult {
+  if (!w.map.fire[j.cell]) return 'done';
+  if (j.stage === 0) {
+    const r = goTo(w, p, j.cell, true);
+    if (r !== 'arrived') return r === 'fail' ? 'fail' : 'continue';
+    j.stage = 1;
+  }
+  j.progress += workSpeed(w, p);
+  if (j.progress < EXTINGUISH_WORK) return 'continue';
+  j.progress = 0;
+  w.setFire(j.cell, w.map.fire[j.cell] - 1);
+  if (w.rng.chance(0.04)) addCondition(w, p, 'burns');
+  return w.map.fire[j.cell] ? 'continue' : 'done';
+}
+
+function warm(w: World, p: Pawn, j: J<'warm'>): JobResult {
+  if (j.stage === 0) {
+    const r = goTo(w, p, j.dest, false);
+    if (r !== 'arrived') return r === 'fail' ? 'fail' : 'continue';
+    j.stage = 1;
+    j.until = w.tick + 600;
+  }
+  if (w.tick >= j.until || !needsWarmth(w, p, effectsOf(w, p))) return 'done';
+  return 'continue';
 }
 
 type J<K extends Job['type']> = Extract<Job, { type: K }>;
@@ -247,6 +281,11 @@ function eat(w: World, p: Pawn, j: J<'eat'>): JobResult {
     const def = ITEMS[c.def];
     p.needs.food = Math.min(1, p.needs.food + (def.nutrition ?? 0) * c.count);
     p.carrying = null;
+    // Rotten food (and, rarely, raw food) can make people sick.
+    const risk = c.rot > 0.5 ? 0.35 : def.category === 'raw_food' ? 0.02 : 0;
+    if (risk && w.rng.chance(risk) && addCondition(w, p, 'food_poisoning')) {
+      w.message(p.faction, `${p.name} got food poisoning from ${c.rot > 0.5 ? 'rotting' : 'raw'} ${def.label.toLowerCase()}.`, 'bad', w.cellOf(p));
+    }
   }
   w.markDirty(p);
   return 'done';
@@ -268,7 +307,13 @@ function sleep(w: World, p: Pawn, j: J<'sleep'>): JobResult {
     w.markDirty(p);
     return 'continue';
   }
-  if (p.needs.rest >= 1 || p.needs.food < 0.08) return 'done';
+  if (p.needs.food < 0.08) return 'done';
+  if (j.rest) {
+    // Bed rest lasts while a condition calls for it. Check now and then, not every tick.
+    if (w.tick % 60 === p.id % 60 && !effectsOf(w, p).bedRest) return 'done';
+    return 'continue';
+  }
+  if (p.needs.rest >= 1) return 'done';
   if (!w.isNight() && p.needs.rest > 0.95) return 'done';
   return 'continue';
 }

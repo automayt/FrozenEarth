@@ -3,6 +3,7 @@ import { MAX_COMMAND_AREA } from './constants';
 import type { Building, Command, Construct, Pawn, Plant, Rect, Zone } from './types';
 import { DESIG } from './types';
 import { NEIGHBORS4, type World } from './world';
+import { resolveChoice } from './choices';
 
 /** Validate and apply one player command. Invalid commands are silently ignored. */
 export function applyCommand(w: World, faction: number, cmd: Command): void {
@@ -57,6 +58,9 @@ export function applyCommand(w: World, faction: number, cmd: Command): void {
       w.markDirty(b);
       return;
     }
+    case 'choose':
+      resolveChoice(w, Number(cmd.choice), String(cmd.option), faction);
+      return;
     case 'removeBill': {
       const b = ownBench(w, faction, cmd.bench);
       if (!b) return;
@@ -132,7 +136,7 @@ function designate(w: World, faction: number, kind: string, r: Rect): void {
 export function canPlace(w: World, faction: number, def: string, c: number): boolean {
   const m = w.map;
   const d = BUILDINGS[def];
-  if (!d) return false;
+  if (!d || d.special) return false;
   if (!TERRAINS[m.terrain[c]].buildable || m.rock[c] || m.constructAt[c]) return false;
   const z = w.zoneAt(c);
   if (z && z.faction !== faction) return false;
@@ -141,7 +145,7 @@ export function canPlace(w: World, faction: number, def: string, c: number): boo
 }
 
 function build(w: World, faction: number, def: string, hollow: boolean, r: Rect): void {
-  if (!BUILDINGS[def]) return;
+  if (!BUILDINGS[def] || BUILDINGS[def].special) return;
   const cells = rectCells(w, r, hollow && !!BUILDINGS[def].wall);
   for (const c of cells) if (canPlace(w, faction, def, c)) w.spawnConstruct(def, c, faction);
 }

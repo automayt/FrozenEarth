@@ -30,7 +30,12 @@ export function describeJob(job: Job | null, lookup: (id: number) => Entity | un
     case 'eat':
       return 'Eating';
     case 'sleep':
+      if (job.rest) return job.stage === 0 ? 'Going to bed to recover' : 'Resting in bed';
       return job.stage === 0 ? 'Going to sleep' : 'Sleeping';
+    case 'extinguish':
+      return 'Fighting a fire';
+    case 'warm':
+      return 'Seeking a better temperature';
     case 'bill': {
       const b = lookup(job.bench);
       const bill = b && b.kind === 'building' ? b.bills.find((x) => x.id === job.bill) : undefined;

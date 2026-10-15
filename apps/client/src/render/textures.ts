@@ -4,6 +4,9 @@ import { BUILDINGS, ITEMS, PLANTS } from '@fe/defs';
 /** Texture resolution in pixels for procedurally drawn sprites. */
 const S = 64;
 
+/** Generated art that doesn't fit the top-down view; the procedural version is used instead. */
+const ART_SKIP = new Set(['building_door']);
+
 function shade(color: number, f: number): number {
   const r = Math.max(0, Math.min(255, ((color >> 16) & 255) * f));
   const g = Math.max(0, Math.min(255, ((color >> 8) & 255) * f));
@@ -18,6 +21,9 @@ function shade(color: number, f: number): number {
 export class TextureBank {
   private cache = new Map<string, Texture>();
   private art = new Map<string, Texture>();
+  private manifest: Record<string, string> = {};
+  /** Raw RGBA pixels of tileable terrain textures, keyed like "terrain_soil". */
+  pixels = new Map<string, { w: number; h: number; data: Uint8ClampedArray }>();
 
   constructor(private renderer: Renderer) {}
 
@@ -26,8 +32,16 @@ export class TextureBank {
       const res = await fetch('/sprites/manifest.json', { cache: 'no-cache' });
       if (!res.ok) return 0;
       const manifest = (await res.json()) as Record<string, string>;
+      this.manifest = manifest;
       await Promise.all(
-        Object.entries(manifest).map(async ([key, file]) => {
+        Object.entries(manifest)
+          .filter(([key]) => key.startsWith('terrain_') || key.startsWith('rock_'))
+          .map(([key, file]) => this.loadPixels(key, file)),
+      );
+      await Promise.all(
+        Object.entries(manifest)
+          .filter(([key]) => !key.startsWith('terrain_') && !key.startsWith('rock_') && !ART_SKIP.has(key))
+          .map(async ([key, file]) => {
           try {
             const tex = await Assets.load<Texture>(`/sprites/${file}`);
             tex.source.scaleMode = 'linear';
@@ -41,6 +55,19 @@ export class TextureBank {
       // No manifest: procedural art only.
     }
     return this.art.size;
+  }
+
+  private async loadPixels(key: string, file: string): Promise<void> {
+    try {
+      const blob = await (await fetch(`/sprites/${file}`)).blob();
+      const bmp = await createImageBitmap(blob);
+      const c = new OffscreenCanvas(bmp.width, bmp.height);
+      const ctx = c.getContext('2d')!;
+      ctx.drawImage(bmp, 0, 0);
+      this.pixels.set(key, { w: bmp.width, h: bmp.height, data: ctx.getImageData(0, 0, bmp.width, bmp.height).data });
+    } catch {
+      // Fall back to flat colour for this terrain.
+    }
   }
 
   hasArt(key: string): boolean {
@@ -140,6 +167,16 @@ export class TextureBank {
           }
           g.circle(32, 32, 14).fill(0xe0702a);
           g.circle(32, 32, 7).fill(0xffd060);
+          return;
+        case 'sun_shard':
+          g.circle(32, 32, 30).fill({ color: 0xffd060, alpha: 0.25 });
+          g.star(32, 32, 7, 26, 11).fill(0xffc040).stroke({ width: 2, color: 0xa06010 });
+          g.circle(32, 32, 9).fill(0xfff4c0);
+          return;
+        case 'whispering_stone':
+          g.ellipse(32, 54, 18, 6).fill({ color: 0x000000, alpha: 0.4 });
+          g.poly([32, 2, 46, 14, 44, 56, 20, 56, 18, 14]).fill(0x1a1a24).stroke({ width: 2, color: 0x6a5aa0 });
+          g.rect(29, 16, 6, 30).fill({ color: 0x8a7ad0, alpha: 0.35 });
           return;
         case 'crafting_spot':
           g.roundRect(6, 10, 52, 44, 4).fill({ color: c, alpha: 0.7 });

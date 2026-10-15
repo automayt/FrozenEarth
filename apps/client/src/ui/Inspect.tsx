@@ -1,5 +1,5 @@
-import { BUILDINGS, ITEM_CATEGORIES, ITEMS, PLANTS, RECIPES, ROCKS, SOWABLE_PLANTS, TERRAINS } from '@fe/defs';
-import { describeJob, outdoorTempAt, type Building, type Construct, type Entity, type Pawn, type Zone } from '@fe/sim';
+import { BUILDINGS, CONDITIONS, ITEM_CATEGORIES, ITEMS, PLANTS, RECIPES, ROCKS, SOWABLE_PLANTS, TERRAINS, TRAITS } from '@fe/defs';
+import { describeJob, outdoorTempAt, stageOf, TICKS_PER_HOUR, type Building, type Construct, type Entity, type Pawn, type Zone } from '@fe/sim';
 import { command } from '../net';
 import { store, useStore } from '../store';
 import { hex, pct } from './util';
@@ -93,7 +93,44 @@ function PawnInfo({ p }: { p: Pawn }) {
           Carrying {p.carrying.count} {ITEMS[p.carrying.def]?.label.toLowerCase()}
         </p>
       )}
-      {p.sickUntil > store.mirror.tick && <p className="bad">Sick with stomach flu</p>}
+      {p.traits.length > 0 && (
+        <div className="traits">
+          {p.traits.map((t) => (
+            <span key={t} className="chip" title={TRAITS[t]?.description}>
+              {TRAITS[t]?.label ?? t}
+            </span>
+          ))}
+        </div>
+      )}
+      {p.conditions.length > 0 && (
+        <div className="health">
+          <h4>Health</h4>
+          {p.conditions.map((c) => {
+            const def = CONDITIONS[c.key];
+            if (!def) return null;
+            const st = stageOf(def, c.severity);
+            const timed = !!def.hours;
+            const tone = def.kind === 'buff' || (def.kind === 'mood' && (st.mood ?? 0) > 0) ? 'good' : 'bad';
+            return (
+              <div key={c.key} className={`condition ${tone}`} title={def.description}>
+                <span>
+                  {def.label}
+                  {st.label ? ` (${st.label})` : ''}
+                </span>
+                {timed ? (
+                  <small>{Math.max(0, Math.ceil((c.until - store.mirror.tick) / TICKS_PER_HOUR))}h left</small>
+                ) : def.immunityPerDay ? (
+                  <small>
+                    severity {Math.round(c.severity * 100)}% · immunity {Math.round(c.immunity * 100)}%
+                  </small>
+                ) : (
+                  <small>{Math.round(c.severity * 100)}%</small>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
       {p.thoughts.length > 0 && (
         <ul className="thoughts">
           {p.thoughts.map((t) => (

@@ -42,4 +42,5 @@ export const ROCKS: RockDef[] = [
   { id: 0, key: 'none', label: 'None', color: 0, mineWork: 0, yieldItem: '', yieldCount: 0 },
   { id: 1, key: 'granite', label: 'Granite', color: 0x3c3a38, mineWork: 420, yieldItem: 'stone', yieldCount: 8 },
   { id: 2, key: 'steel_ore', label: 'Steel ore', color: 0x5a6a7a, mineWork: 600, yieldItem: 'steel', yieldCount: 20 },
+  { id: 3, key: 'gold_ore', label: 'Gold vein', color: 0x6a5a30, mineWork: 800, yieldItem: 'gold', yieldCount: 8 },
 ];

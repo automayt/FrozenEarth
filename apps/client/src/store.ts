@@ -18,7 +18,7 @@ export interface ChatLine {
 }
 
 export type Status = 'join' | 'connecting' | 'playing' | 'error';
-export type Panel = 'none' | 'work' | 'colonists';
+export type Panel = 'none' | 'work' | 'colonists' | 'events';
 
 /** All client state. React reads it through useStore; the renderer reads it directly. */
 class Store {
@@ -70,11 +70,15 @@ class Store {
   emit(): void {
     if (this.pending) return;
     this.pending = true;
-    requestAnimationFrame(() => {
+    const flush = () => {
+      if (!this.pending) return;
       this.pending = false;
       this.version++;
       for (const l of this.listeners) l();
-    });
+    };
+    // Animation frames stop when the window is hidden or covered; race a timer so state keeps flowing.
+    requestAnimationFrame(flush);
+    setTimeout(flush, 100);
   }
 
   subscribe = (l: () => void) => {

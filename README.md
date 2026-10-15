@@ -59,7 +59,12 @@ The first player to join a new world is the host (admin). Rejoining with the sam
 - **Crafting:** benches with bills ("do X times", "until you have X", "forever"). Campfire and stove for cooking; crafting spot and workbench for crafting.
 - **Rooms and temperature:** enclosed rooms are detected automatically. Room temperature drifts toward the outdoors, and heaters and coolers push it back. Food spoils unless kept cold.
 - **Seasons and climate:** day/night and four seasons.
-- **Storyteller events:** cold snap, heat wave, blight, eclipse, aurora, wanderer joins, cargo pods, stomach flu. Cargo pods land between colonies, and whoever hauls them first keeps them.
+- **Storyteller events:** 56 random events over five rarity tiers, from common migraines to once-per-world wonders such as the Sun Shard. They include weather, disease outbreaks, fires, visitors who arrive as choice letters (some hiding secrets), contested loot between colonies, and center-of-the-map mysteries. See [docs/EVENTS.md](docs/EVENTS.md).
+- **Health and personality:**
+  - Diseases that spread; a race between severity and immunity that bed rest helps you win.
+  - Injuries, hypothermia, heatstroke, starvation and death.
+  - 18 traits, mental breaks and inspirations.
+- **Fire:** spreads through forests and wooden buildings, rain puts it out, and lightning starts it. Colonists fight fires near home.
 - **Multiplayer and persistence:** chat, a player list with speed votes, reconnect, late join, persistent worlds.
 
 ## Architecture
@@ -97,7 +102,7 @@ npm run bots -- --bots 8 --minutes 2   # against a running server; checks all cl
 - [x] **M3:** pawns, jobs, building, hauling, rooms
 - [x] **M4:** farming, cooking and crafting bills, temperature, spoilage
 - [x] **M5:** factions per player, speed vote and pause budget, chat, persistence
-- [x] **M6:** storyteller and random events
+- [x] **M6:** storyteller and random events: 56 events, health conditions, traits, mental states, fire, choice letters
 - [ ] **M7:** playtest polish (alerts, more UI, performance profiling, fog of war)
 - [ ] Choosing a start location in the lobby, and player-to-player trading
 - [ ] Combat, health and injuries, raids, hunting

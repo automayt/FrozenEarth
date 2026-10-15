@@ -1,4 +1,4 @@
-import { calendar, outdoorTempAt } from '@fe/sim';
+import { calendar, outdoorTempAt, TICKS_PER_HOUR } from '@fe/sim';
 import { EVENTS } from '@fe/defs';
 import { myPlayer, setSpeed } from '../actions';
 import { useStore } from '../store';
@@ -20,7 +20,7 @@ export function TopBar() {
       </div>
       <div className="conditions">
         {m.conditions.map((c, i) => (
-          <span key={i} className={`chip ${EVENTS[c.key]?.tone ?? ''}`}>
+          <span key={i} className={`chip ${EVENTS[c.key]?.tone ?? ''}`} title={`${EVENTS[c.key]?.description ?? ''} Ends in ${Math.max(0, Math.ceil((c.until - tick) / TICKS_PER_HOUR))}h.`}>
             {EVENTS[c.key]?.label ?? c.key}
           </span>
         ))}

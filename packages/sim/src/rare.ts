@@ -1,6 +1,7 @@
-import { BUILDINGS, ITEMS, PLANTS, TERRAINS } from '@fe/defs';
+import { BUILDINGS, COMFORT_MAX, COMFORT_MIN, EVENTS, ITEMS, PLANTS, TERRAINS } from '@fe/defs';
 import { RARE_TICK, TICKS_PER_DAY } from './constants';
-import { endJob } from './pawns';
+import { effectsOf, healthTick } from './health';
+import { endJob, exposureSeverity, needsWarmth, warmthJob } from './pawns';
 import type { Building, Item, Pawn, Plant, Room } from './types';
 import { NEIGHBORS4, type World } from './world';
 
@@ -25,13 +26,16 @@ export function rareTick(w: World): void {
 function needsTick(w: World, p: Pawn): void {
   const n = p.needs;
   const cell = w.cellOf(p);
-  n.food = Math.max(0, n.food - RARE_TICK / (p.asleep ? 90_000 : 45_000));
+  const e = effectsOf(w, p);
+  n.food = Math.max(0, n.food - (RARE_TICK * e.foodDrain) / (p.asleep ? 90_000 : 45_000));
   if (p.asleep) {
     const inBed = p.bed && p.job?.type === 'sleep' && p.job.bed === p.bed;
     n.rest = Math.min(1, n.rest + (RARE_TICK * (inBed ? 1 : 0.6)) / 9000);
   } else {
-    n.rest = Math.max(0, n.rest - RARE_TICK / 24_000);
+    n.rest = Math.max(0, n.rest - (RARE_TICK * e.restDrain) / 24_000);
   }
+
+  if (!healthTick(w, p, e)) return; // died
 
   const thoughts: string[] = [];
   let target = 0.55;
@@ -44,19 +48,20 @@ function needsTick(w: World, p: Pawn): void {
   if (n.rest < 0.2) add('Exhausted', -0.1);
   if (!p.bed) add('No bed', -0.06);
   const temp = w.tempAt(cell);
-  if (temp < -10) add('Freezing', -0.25);
-  else if (temp < 5) add('Cold', -0.1);
-  else if (temp > 38) add('Overheated', -0.15);
+  if (temp < COMFORT_MIN + e.coldShift) add('Cold', -0.04);
+  else if (temp > COMFORT_MAX + e.heatShift) add('Too hot', -0.04);
   if (w.map.roomAt[cell]) add('Sheltered', 0.05);
-  if (p.sickUntil > w.tick) add('Sick', -0.15);
-  else if (p.sickUntil) p.sickUntil = 0;
-  if (w.hasCondition('aurora')) add('Saw the aurora', 0.15);
+  for (const [label, v] of effectsOf(w, p).thoughts) add(label, v);
   n.mood += (Math.max(0, Math.min(1, target)) - n.mood) * 0.2;
   p.thoughts = thoughts;
 
-  // Urgent needs interrupt work.
+  // Urgent needs, sickness and mental breaks interrupt work.
   const jt = p.job?.type;
-  if (jt && jt !== 'eat' && jt !== 'sleep' && (n.food < 0.12 || n.rest < 0.08)) endJob(w, p);
+  const busy = jt && jt !== 'eat' && jt !== 'sleep' && jt !== 'warm';
+  // Too cold or hot here, and somewhere better exists: go there, even out of bed when freezing.
+  const seekWarmth =
+    (busy || (jt === 'sleep' && exposureSeverity(p) > 0.3)) && needsWarmth(w, p, e) && warmthJob(w, p, e) !== null;
+  if (seekWarmth || (busy && (n.food < 0.12 || n.rest < 0.08 || e.bedRest || (e.noWork && jt !== 'wander')))) endJob(w, p);
   w.markDirty(p);
 }
 
@@ -67,7 +72,7 @@ function plantsTick(w: World): void {
   const light = w.daylight();
   const outdoor = w.outdoorTemp();
   // Plants only grow in daylight (~14 h/day), so scale up to keep growDays honest.
-  const lightFactor = light > 0.3 ? 24 / 14 : 0;
+  const lightFactor = light > 0.3 ? (24 / 14) * w.growthMult() : 0;
   const killed = new Map<number, number>();
   for (const id of [...w.kinds.plant]) {
     const p = w.get<Plant>(id)!;
@@ -206,6 +211,6 @@ function conditionsTick(w: World): void {
   const ended = w.conditions.filter((c) => c.until <= w.tick);
   if (ended.length === 0) return;
   w.conditions = w.conditions.filter((c) => c.until > w.tick);
-  for (const c of ended) w.message(c.faction, `The ${c.key.replace('_', ' ')} has ended.`, 'neutral');
+  for (const c of ended) w.message(c.faction, `The ${(EVENTS[c.key]?.label ?? c.key).toLowerCase()} has ended.`, 'neutral');
   if (w.conditions.length !== before) w.dirty.conditions = true;
 }

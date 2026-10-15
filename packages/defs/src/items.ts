@@ -17,6 +17,7 @@ export const ITEMS: Record<string, ItemDef> = {
   wood: { key: 'wood', label: 'Wood', category: 'resource', stackLimit: 75, color: 0x9c6b3a, marketValue: 1.2 },
   stone: { key: 'stone', label: 'Stone blocks', category: 'resource', stackLimit: 75, color: 0x8f8a84, marketValue: 0.9 },
   steel: { key: 'steel', label: 'Steel', category: 'resource', stackLimit: 75, color: 0xa9b8c8, marketValue: 1.9 },
+  gold: { key: 'gold', label: 'Gold', category: 'resource', stackLimit: 50, color: 0xe8c040, marketValue: 10 },
   cloth: { key: 'cloth', label: 'Cloth', category: 'resource', stackLimit: 75, color: 0xd8d0bc, marketValue: 1.5 },
   berries: { key: 'berries', label: 'Berries', category: 'raw_food', stackLimit: 75, color: 0x8a2a5a, nutrition: 0.05, spoilDays: 14, marketValue: 1.1 },
   rice: { key: 'rice', label: 'Rice', category: 'raw_food', stackLimit: 75, color: 0xe8e2c8, nutrition: 0.05, spoilDays: 40, marketValue: 1.1 },

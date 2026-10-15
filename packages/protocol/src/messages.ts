@@ -1,7 +1,7 @@
 import type { Command, Delta, Snapshot } from '@fe/sim';
 
 /** Bump when the wire format changes incompatibly. */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 export interface PlayerInfo {
   id: number;
@@ -31,7 +31,7 @@ export type ClientMsg =
   | { t: 'speed'; speed: number }
   | { t: 'chat'; text: string }
   | { t: 'ping'; at: number }
-  | { t: 'admin'; action: 'save' | 'kick'; target?: number };
+  | { t: 'admin'; action: 'save' | 'kick' | 'event'; target?: number; key?: string };
 
 export type ServerMsg =
   | { t: 'welcome'; playerId: number; faction: number; token: string; snap: Snapshot }

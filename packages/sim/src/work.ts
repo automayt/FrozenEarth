@@ -9,6 +9,7 @@ import type { World } from './world';
 type Giver = (w: World, p: Pawn) => Job | null;
 
 const GIVERS: Record<WorkType, Giver> = {
+  firefight: giveFirefight,
   cook: (w, p) => giveBill(w, p, 'cook'),
   construct: giveConstruct,
   grow: giveGrow,
@@ -39,6 +40,40 @@ function nearest<T>(w: World, p: Pawn, items: T[], cellOf: (t: T) => number, adj
     .slice(0, limit)
     .filter((x) => maybeReachable(w, here, x.c, adj))
     .map((x) => x.t);
+}
+
+// ---------------------------------------------------------------- firefighting
+
+/** Fires worth fighting: near home, or next to something this faction owns. */
+function giveFirefight(w: World, p: Pawn): Job | null {
+  if (w.fireCells.size === 0) return null;
+  const f = w.factions.get(p.faction);
+  if (!f) return null;
+  const m = w.map;
+  const home = m.idx(f.home.x, f.home.y);
+  const fires: number[] = [];
+  for (const c of w.fireCells) {
+    if (w.reservedByOther('f' + c, p.id)) continue;
+    let ours = w.dist(c, home) <= 25;
+    if (!ours) {
+      const x = m.cx(c);
+      const y = m.cy(c);
+      for (let dy = -3; dy <= 3 && !ours; dy++) {
+        for (let dx = -3; dx <= 3 && !ours; dx++) {
+          if (!m.inBounds(x + dx, y + dy)) continue;
+          const n = m.idx(x + dx, y + dy);
+          const b = m.buildingAt[n] ? w.get<Building>(m.buildingAt[n]) : undefined;
+          const z = w.zoneAt(n);
+          if ((b && b.faction === p.faction) || (z && z.faction === p.faction)) ours = true;
+        }
+      }
+    }
+    if (ours) fires.push(c);
+  }
+  const best = nearest(w, p, fires, (c) => c, true, 10)[0];
+  if (best === undefined) return null;
+  w.reserve('f' + best, p.id);
+  return { type: 'extinguish', stage: 0, cell: best, progress: 0 };
 }
 
 // ---------------------------------------------------------------- hauling

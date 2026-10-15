@@ -1,4 +1,4 @@
-import type { Condition, Delta, Entity, Faction, GameMessage, Pawn, Room, Snapshot, Zone } from '@fe/sim';
+import { CELL_FIELDS, type Choice, type Condition, type Delta, type Entity, type Faction, type GameMessage, type Pawn, type Room, type Snapshot, type Zone } from '@fe/sim';
 import { toU8 } from './codec';
 
 /**
@@ -14,6 +14,9 @@ export class Mirror {
   rock = new Uint8Array(0);
   desig = new Uint8Array(0);
   desigFaction = new Uint8Array(0);
+  fire = new Uint8Array(0);
+  /** Cells currently on fire, for cheap per-frame drawing. */
+  fireCells = new Set<number>();
   zoneAt = new Int32Array(0);
   roomAt = new Int32Array(0);
   itemAt = new Int32Array(0);
@@ -25,6 +28,7 @@ export class Mirror {
   factions = new Map<number, Faction>();
   rooms = new Map<number, Room>();
   conditions: Condition[] = [];
+  choices: Choice[] = [];
   coldOffset = 0;
   messages: GameMessage[] = [];
 
@@ -45,6 +49,9 @@ export class Mirror {
     this.rock = toU8(s.rock).slice();
     this.desig = toU8(s.desig).slice();
     this.desigFaction = toU8(s.desigFaction).slice();
+    this.fire = s.fire ? toU8(s.fire).slice() : new Uint8Array(n);
+    this.fireCells.clear();
+    for (let i = 0; i < n; i++) if (this.fire[i]) this.fireCells.add(i);
     this.zoneAt = new Int32Array(n);
     this.roomAt = new Int32Array(n);
     this.itemAt = new Int32Array(n);
@@ -59,6 +66,7 @@ export class Mirror {
     this.factions = new Map(s.factions.map((f) => [f.id, f]));
     this.setRooms(s.rooms);
     this.conditions = s.conditions;
+    this.choices = s.choices ?? [];
     this.coldOffset = s.coldOffset;
     this.allCellsChanged = true;
     this.zonesChanged = true;
@@ -69,12 +77,15 @@ export class Mirror {
     for (const id of d.removed) this.remove(id);
     for (const e of d.ents) this.upsert(e);
     const c = d.cells;
-    for (let k = 0; k < c.length; k += 5) {
+    for (let k = 0; k < c.length; k += CELL_FIELDS) {
       const i = c[k];
       this.terrain[i] = c[k + 1];
       this.rock[i] = c[k + 2];
       this.desig[i] = c[k + 3];
       this.desigFaction[i] = c[k + 4];
+      this.fire[i] = c[k + 5];
+      if (this.fire[i]) this.fireCells.add(i);
+      else this.fireCells.delete(i);
       this.changedCells.add(i);
     }
     for (const id of d.removedZones) {
@@ -94,6 +105,7 @@ export class Mirror {
       }
     }
     if (d.conditions) this.conditions = d.conditions;
+    if (d.choices) this.choices = d.choices;
     if (d.coldOffset !== undefined) this.coldOffset = d.coldOffset;
     if (d.msgs.length) {
       this.messages.push(...d.msgs);

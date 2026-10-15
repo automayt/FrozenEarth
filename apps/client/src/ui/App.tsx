@@ -8,6 +8,7 @@ import { Inspect } from './Inspect';
 import { Feed } from './Feed';
 import { WorkPanel } from './WorkPanel';
 import { ColonistsPanel } from './ColonistsPanel';
+import { EventsPanel } from './EventsPanel';
 
 export function App() {
   const s = useStore();
@@ -23,6 +24,7 @@ export function App() {
           <Inspect />
           {s.panel === 'work' && <WorkPanel />}
           {s.panel === 'colonists' && <ColonistsPanel />}
+          {s.panel === 'events' && <EventsPanel />}
           <Architect />
         </div>
       ) : (

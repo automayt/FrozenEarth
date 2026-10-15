@@ -1,4 +1,5 @@
 import { DAYS_PER_SEASON, DAYS_PER_YEAR, SEASONS, TICKS_PER_DAY, TICKS_PER_HOUR } from './constants';
+import { WEATHER } from '@fe/defs';
 import type { Condition } from './types';
 
 /** Calendar fields for a tick. Pure, so clients can use it too. */
@@ -25,7 +26,6 @@ export function outdoorTempAt(tick: number, coldOffset: number, conditions: read
   // Coldest mid-winter (~-7°C), warmest mid-summer (~27°C).
   let t = 10 + 17 * Math.sin(2 * Math.PI * (yearFrac - 0.125));
   t += 5 * Math.sin((2 * Math.PI * (hour - 9)) / 24);
-  if (conditions.some((c) => c.key === 'cold_snap')) t -= 20;
-  if (conditions.some((c) => c.key === 'heat_wave')) t += 18;
+  for (const c of conditions) t += WEATHER[c.key]?.tempOffset ?? 0;
   return t + coldOffset;
 }

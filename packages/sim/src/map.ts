@@ -9,6 +9,8 @@ export class GameMap {
   rock: Uint8Array;
   desig: Uint8Array;
   desigFaction: Uint8Array;
+  /** Fire intensity per cell: 0 none, 1-3 burning. */
+  fire: Uint8Array;
 
   // Derived indexes, rebuilt from entities on load.
   buildingAt: Int32Array;
@@ -38,6 +40,7 @@ export class GameMap {
     this.rock = new Uint8Array(this.n);
     this.desig = new Uint8Array(this.n);
     this.desigFaction = new Uint8Array(this.n);
+    this.fire = new Uint8Array(this.n);
     this.buildingAt = new Int32Array(this.n);
     this.constructAt = new Int32Array(this.n);
     this.itemAt = new Int32Array(this.n);

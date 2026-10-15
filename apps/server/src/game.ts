@@ -3,6 +3,7 @@ import type { WebSocket } from 'ws';
 import {
   addPlayerFaction,
   createWorld,
+  fireEvent,
   deserializeWorld,
   serializeWorld,
   snapshot,
@@ -11,6 +12,7 @@ import {
   type Command,
   type World,
 } from '@fe/sim';
+import { EVENTS } from '@fe/defs';
 import { decode, encode, PROTOCOL_VERSION, type ClientMsg, type PlayerInfo, type ServerMsg, type TimeState } from '@fe/protocol';
 import { loadWorldFile, saveWorldFile, type StoredPlayer } from './persistence';
 
@@ -277,6 +279,10 @@ export class GameServer {
         if (msg.action === 'save') {
           this.save();
           this.system('World saved.');
+        } else if (msg.action === 'event' && msg.key) {
+          const ok = fireEvent(this.world, String(msg.key), p.faction);
+          if (ok) this.system(`The host triggered an event: ${EVENTS[String(msg.key)]?.label ?? msg.key}.`);
+          else this.send(p.ws!, { t: 'error', msg: 'That event had nothing to act on right now.', fatal: false });
         } else if (msg.action === 'kick' && msg.target) {
           const target = this.players.get(msg.target);
           if (target?.ws && target !== p) {

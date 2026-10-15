@@ -1,5 +1,5 @@
 import { Application, Container, Graphics, Sprite, Text, Texture } from 'pixi.js';
-import { BUILDINGS, PLANTS, ROCKS, TERRAINS } from '@fe/defs';
+import { BUILDINGS, PLANTS, ROCKS, TERRAINS, type TerrainDef } from '@fe/defs';
 import { pawnPosition } from '@fe/protocol';
 import { DESIG, TICKS_PER_DAY, TICKS_PER_HOUR, hash2, type Construct, type Entity, type Pawn } from '@fe/sim';
 import { store } from '../store';
@@ -9,7 +9,9 @@ import { Input } from './input';
 /** World units per cell. */
 export const TILE = 32;
 /** Pixels per cell in the terrain and overlay canvases. */
-const PX = 4;
+const PX = 8;
+/** Texture pixels skipped per canvas pixel when sampling terrain art (texture repeats every 128/(PX*STEP) cells). */
+const TEX_STEP = 2;
 
 interface EntityView {
   root: Container;
@@ -36,8 +38,10 @@ export class GameRenderer {
     buildings: new Container(),
     plants: new Container(),
     pawns: new Container(),
+    fx: new Container(),
     ui: new Container(),
   };
+  private fireGfx = new Graphics();
   ui = new Graphics();
   private night = new Graphics();
   private views = new Map<number, EntityView>();
@@ -59,6 +63,7 @@ export class GameRenderer {
     this.app.stage.addChild(this.world, this.night);
     for (const l of Object.values(this.layers)) this.world.addChild(l);
     this.layers.ui.addChild(this.ui);
+    this.layers.fx.addChild(this.fireGfx);
     this.input = new Input(this, this.app.canvas);
     this.app.ticker.add(() => this.frame());
   }
@@ -123,7 +128,7 @@ export class GameRenderer {
       const ctx = this.terrainCanvas.getContext('2d')!;
       // Neighbours below and right re-bevel when rock next to them changes.
       const n = m.w * m.h;
-      for (const c of m.changedCells) for (const k of [c, c + 1, c + m.w]) if (k < n) this.drawTerrainCell(ctx, k);
+      for (const c of m.changedCells) for (const k of [c, c + 1, c + m.w, c - m.w]) if (k >= 0 && k < n) this.drawTerrainCell(ctx, k);
       this.terrainTex.source.update();
     }
     if (m.zonesChanged || m.changedCells.size) {
@@ -168,6 +173,7 @@ export class GameRenderer {
       v.root.position.set((pos.x + 0.5) * TILE, (pos.y + 0.5) * TILE);
     }
     this.layers.pawns.children.sort((a, b) => a.y - b.y);
+    this.drawFire();
     this.drawUi();
     this.drawNight(tick);
   }
@@ -184,7 +190,7 @@ export class GameRenderer {
     this.overlayTex?.destroy(true);
     this.terrainTex = Texture.from(this.terrainCanvas);
     this.overlayTex = Texture.from(this.overlayCanvas);
-    this.terrainTex.source.scaleMode = 'nearest';
+    this.terrainTex.source.scaleMode = this.tex.pixels.size ? 'linear' : 'nearest';
     this.overlayTex.source.scaleMode = 'nearest';
     this.layers.terrain.removeChildren();
     this.layers.overlay.removeChildren();
@@ -219,21 +225,52 @@ export class GameRenderer {
     const x = c % m.w;
     const y = (c / m.w) | 0;
     const rock = m.rock[c];
-    const base = rock ? ROCKS[rock].color : TERRAINS[m.terrain[c]].color;
+    const terrain: TerrainDef = TERRAINS[m.terrain[c]];
+    const base = rock ? ROCKS[rock].color : terrain.color;
+    // Ore veins are granite tinted toward the ore colour.
+    const tex = this.tex.pixels.get(rock ? 'rock_granite' : `terrain_${terrain.key}`);
+    const tint = rock > 1 ? base : -1;
     const openUp = rock && y > 0 && !m.rock[c - m.w];
     const openLeft = rock && x > 0 && !m.rock[c - 1];
+    const openDown = rock && y < m.h - 1 && !m.rock[c + m.w];
     for (let py = 0; py < PX; py++) {
       for (let px = 0; px < PX; px++) {
-        let f = 0.92 + hash2(x * PX + px, y * PX + py, 7) * 0.16;
+        const gx = x * PX + px;
+        const gy = y * PX + py;
+        let r: number;
+        let g: number;
+        let b: number;
+        let f = 1;
+        if (tex) {
+          const tx = (gx * TEX_STEP) % tex.w;
+          const ty = (gy * TEX_STEP) % tex.h;
+          const o = (ty * tex.w + tx) * 4;
+          r = tex.data[o];
+          g = tex.data[o + 1];
+          b = tex.data[o + 2];
+          if (tint >= 0 && hash2(gx >> 2, gy >> 2, 3) > 0.55) {
+            r = (r + ((tint >> 16) & 255) * 1.6) / 2;
+            g = (g + ((tint >> 8) & 255) * 1.6) / 2;
+            b = (b + (tint & 255) * 1.6) / 2;
+          }
+          // Faint per-cell variation breaks up visible tiling.
+          f = 0.94 + hash2(x, y, 11) * 0.12;
+        } else {
+          r = (base >> 16) & 255;
+          g = (base >> 8) & 255;
+          b = base & 255;
+          f = 0.92 + hash2(gx, gy, 7) * 0.16;
+          if (rock > 1 && hash2(gx, gy, 3) > 0.8) f *= 1.6;
+        }
         if (rock) {
           // Bevel rock edges that face open ground.
-          if ((py === 0 && openUp) || (px === 0 && openLeft)) f *= 1.35;
-          if (rock === 2 && hash2(x * PX + px, y * PX + py, 3) > 0.8) f *= 1.6;
+          if ((py < 2 && openUp) || (px < 2 && openLeft)) f *= 1.3;
+          if (py >= PX - 2 && openDown) f *= 0.6;
         }
         const o = ((oy + py) * stride + ox + px) * 4;
-        data[o] = Math.min(255, ((base >> 16) & 255) * f);
-        data[o + 1] = Math.min(255, ((base >> 8) & 255) * f);
-        data[o + 2] = Math.min(255, (base & 255) * f);
+        data[o] = Math.min(255, r * f);
+        data[o + 1] = Math.min(255, g * f);
+        data[o + 2] = Math.min(255, b * f);
         data[o + 3] = 255;
       }
     }
@@ -257,10 +294,12 @@ export class GameRenderer {
       const y = ((c / m.w) | 0) * PX;
       ctx.fillStyle = d === DESIG.mine ? 'rgba(240,180,60,0.85)' : d === DESIG.cut ? 'rgba(230,80,60,0.85)' : 'rgba(120,220,90,0.85)';
       // Corner brackets so the cell content stays visible.
-      ctx.fillRect(x, y, 2, 1);
-      ctx.fillRect(x, y, 1, 2);
-      ctx.fillRect(x + PX - 2, y + PX - 1, 2, 1);
-      ctx.fillRect(x + PX - 1, y + PX - 2, 1, 2);
+      const t = PX / 4;
+      const l = PX / 2;
+      ctx.fillRect(x, y, l, t);
+      ctx.fillRect(x, y, t, l);
+      ctx.fillRect(x + PX - l, y + PX - t, l, t);
+      ctx.fillRect(x + PX - t, y + PX - l, t, l);
     }
     this.overlayTex.source.update();
   }
@@ -443,14 +482,47 @@ export class GameRenderer {
     this.input.drawPreview(g);
   }
 
+  private drawFire(): void {
+    const g = this.fireGfx;
+    g.clear();
+    const m = store.mirror;
+    if (!m.fireCells.size) return;
+    const t = performance.now() / 120;
+    for (const c of m.fireCells) {
+      const level = m.fire[c];
+      const x = ((c % m.w) + 0.5) * TILE;
+      const y = (((c / m.w) | 0) + 0.5) * TILE;
+      const flick = 0.85 + 0.15 * Math.sin(t + c * 1.7);
+      const r = TILE * (0.22 + 0.1 * level) * flick;
+      g.circle(x, y, r * 1.4).fill({ color: 0xff5010, alpha: 0.25 });
+      g.circle(x, y + 2, r).fill({ color: 0xff7a20, alpha: 0.85 });
+      g.circle(x + Math.sin(t * 1.3 + c) * 2, y - 2, r * 0.55).fill({ color: 0xffd060, alpha: 0.9 });
+    }
+  }
+
   private drawNight(tick: number): void {
     const hour = (tick % TICKS_PER_DAY) / TICKS_PER_HOUR;
     // 0 at midday, 1 deep night, smooth through dusk and dawn.
     const dark = hour < 5 || hour > 21 ? 1 : hour < 7 ? (7 - hour) / 2 : hour > 19 ? (hour - 19) / 2 : 0;
-    const eclipse = store.mirror.conditions.some((c) => c.key === 'eclipse');
-    const a = Math.max(eclipse ? 0.8 : 0, dark) * 0.5;
-    this.night.clear();
-    if (a > 0.01) this.night.rect(0, 0, this.app.screen.width, this.app.screen.height).fill({ color: 0x0a1430, alpha: a });
+    const active = new Set(store.mirror.conditions.map((c) => c.key));
+    const forcedDark = active.has('eclipse') || active.has('long_night') || active.has('ash_fall');
+    const a = Math.max(forcedDark ? 0.75 : 0, dark) * 0.5;
+    const g = this.night;
+    const W = this.app.screen.width;
+    const H = this.app.screen.height;
+    g.clear();
+    if (a > 0.01) g.rect(0, 0, W, H).fill({ color: 0x0a1430, alpha: a });
+    // Weather tints.
+    const tint = (color: number, alpha: number) => alpha > 0.01 && g.rect(0, 0, W, H).fill({ color, alpha });
+    if (active.has('fog')) tint(0xc8d0d8, 0.28);
+    if (active.has('blizzard')) tint(0xe8f0ff, 0.25);
+    if (active.has('ash_fall')) tint(0x3a3634, 0.3);
+    if (active.has('spring_rains') || active.has('thunderstorm')) tint(0x203048, 0.15);
+    if (active.has('blood_moon')) tint(0x900a0a, 0.08 + 0.2 * dark);
+    if (active.has('aurora')) tint(0x20c080, 0.03 + 0.12 * dark);
+    if (active.has('heat_wave') || active.has('drought')) tint(0xffa040, 0.07);
+    if (active.has('false_spring') || active.has('warm_spell')) tint(0xfff0a0, 0.06);
+    if (active.has('cold_wind') || active.has('cold_snap') || active.has('early_frost')) tint(0xa8d8ff, 0.1);
   }
 }
 
