@@ -1,0 +1,316 @@
+{
+ "plant_oak": {
+  "seed": 1001,
+  "prompt": "Overhead top-down view of a leafy green oak tree canopy, as seen in a top-down 2D RPG or colony sim game map: a round crown of leaf clusters, perfectly circular silhouette, no trunk visible. Strict flat top-down orthographic view looking straight down, only the top surface is visible, no sides visible, no perspective",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "plant_pine": {
+  "seed": 1002,
+  "prompt": "Overhead top-down view of a dark green pine tree as seen in a top-down 2D colony sim game map: a round star-shaped crown of layered spiky needle branches radiating out from the centre, no trunk visible. Strict flat top-down orthographic view looking straight down, only the top surface is visible, no sides visible, no perspective",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "plant_bush": {
+  "seed": 1003,
+  "prompt": "Overhead top-down view of a small round leafy green shrub, as seen in a top-down 2D colony sim game map: a compact roundish clump of leaves. Strict flat top-down orthographic view looking straight down, only the top surface is visible, no sides visible, no perspective",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "plant_berry_bush": {
+  "seed": 1004,
+  "prompt": "Overhead top-down view of a small round leafy green bush dotted with many dark purple berries, as seen in a top-down 2D colony sim game map: a compact roundish clump of leaves with clusters of dark purple berries. Strict flat top-down orthographic view looking straight down, only the top surface is visible, no sides visible, no perspective",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "plant_rice": {
+  "seed": 1005,
+  "prompt": "Overhead top-down view of a single rice plant tuft as seen in a top-down 2D colony sim game map: a small clump of thin long pale green grass blades radiating outward from the centre, with drooping golden grain heads. Strict flat top-down orthographic view looking straight down, only the top surface is visible, no sides visible, no perspective",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "plant_corn": {
+  "seed": 1006,
+  "prompt": "Overhead top-down view of a single tall corn (maize) plant as seen in a top-down 2D colony sim game map: long broad green leaves radiating out from the centre like a star, a yellow tassel in the middle and a corn cob with green husk. Strict flat top-down orthographic view looking straight down, only the top surface is visible, no sides visible, no perspective",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "plant_potato": {
+  "seed": 1007,
+  "prompt": "Overhead top-down view of a single leafy potato plant as seen in a top-down 2D colony sim game map: a low rounded clump of dark green oval leaves with a few small white flowers. Strict flat top-down orthographic view looking straight down, only the top surface is visible, no sides visible, no perspective",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "item_wood": {
+  "seed": 2001,
+  "prompt": "A small neat stack of cut wooden logs: several brown bark logs lying side by side showing pale round cut ends, compact pile, slight top-down angle",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "item_stone": {
+  "seed": 2002,
+  "prompt": "A small neat stack of rough cut grey stone blocks, square bricks stacked in a compact pile, slight top-down angle",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "item_steel": {
+  "seed": 2003,
+  "prompt": "A small neat stack of shiny steel bars, grey-blue metal ingots stacked crosswise in a compact pile, slight top-down angle",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "item_cloth": {
+  "seed": 2004,
+  "prompt": "A small stack of folded beige linen cloth bolts, neatly folded fabric pieces piled up, slight top-down angle",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "item_berries": {
+  "seed": 2005,
+  "prompt": "A small heap of round dark purple-blue berries piled on the ground, compact pile, slight top-down angle",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "item_rice": {
+  "seed": 2006,
+  "prompt": "A small open burlap sack full of white rice grains with a little spilled rice beside it, slight top-down angle",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "item_corn": {
+  "seed": 2007,
+  "prompt": "A small pile of three yellow corn cobs with peeled-back green husks, compact pile, slight top-down angle",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "item_potato": {
+  "seed": 2008,
+  "prompt": "A small heap of brown potatoes piled together, compact pile, slight top-down angle",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "item_simple_meal": {
+  "seed": 2009,
+  "prompt": "A simple wooden bowl of hearty brown stew with chunks of meat and vegetables, seen from above",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "item_survival_meal": {
+  "seed": 2010,
+  "prompt": "A compact military survival ration pack: a small olive green rectangular sealed packaged box, seen from above, slight top-down angle, no writing",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "building_bed": {
+  "seed": 3001,
+  "prompt": "A single wooden bed seen from directly above (top-down floor plan view), rectangular, white pillow at the top end, blue-grey wool blanket covering the rest, wooden frame. Strict flat top-down orthographic view looking straight down, only the top surface is visible, no sides visible, no perspective",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "building_table": {
+  "seed": 3002,
+  "prompt": "A square wooden table seen from directly above (top-down floor plan view): a plain square plank tabletop with visible wood grain, nothing on it. Strict flat top-down orthographic view looking straight down, only the top surface is visible, no sides visible, no perspective",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "building_chair": {
+  "seed": 3003,
+  "prompt": "Top-down view from directly above of a simple wooden chair as in a top-down colony sim: a square wooden plank seat with a thin wooden backrest bar along the top edge. Strict flat top-down orthographic view looking straight down from the ceiling, only the top surface is visible, no sides or legs visible, no perspective",
+  "pick": {
+   "seed_offset": 100,
+   "index": 0
+  }
+ },
+ "building_campfire": {
+  "seed": 3004,
+  "prompt": "A campfire seen from directly above (top-down view): a ring of grey stones around burning crossed logs with bright orange and yellow flames in the middle. Strict flat top-down orthographic view looking straight down, only the top surface is visible, no sides visible, no perspective",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "building_stove": {
+  "seed": 3005,
+  "prompt": "Top-down view from directly above of a square black cast iron wood-burning cooking stove, as it would appear in a top-down colony sim: a square dark iron cooktop filling the frame with two round cooking hot plates, a short round chimney pipe in one corner seen as a circle, glowing orange embers visible through a small vent. Strict flat top-down orthographic view looking straight down from the ceiling, only the top surface is visible, no sides or legs visible, no perspective",
+  "pick": {
+   "seed_offset": 100,
+   "index": 0
+  }
+ },
+ "building_crafting_spot": {
+  "seed": 3006,
+  "prompt": "A crafting spot seen from directly above (top-down view): a square brown cloth mat on which lie a hammer, a knife, a saw and a coil of rope. Strict flat top-down orthographic view looking straight down, only the top surface is visible, no sides visible, no perspective",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "building_workbench": {
+  "seed": 3007,
+  "prompt": "Top-down view from directly above of a wooden crafting workbench as it would appear in a top-down colony sim: a rectangular wooden plank tabletop seen from above, with a small iron vise clamped to one edge and a hammer, a saw and some nails lying on top. Strict flat top-down orthographic view looking straight down from the ceiling, only the top surface is visible, no sides or legs visible, no perspective",
+  "pick": {
+   "seed_offset": 100,
+   "index": 0
+  }
+ },
+ "building_heater": {
+  "seed": 3008,
+  "prompt": "Top-down view from directly above of a small square iron space heater as in a top-down colony sim: dark iron box roof with a glowing orange heating grille in the middle and small bolts in the corners. Strict flat top-down orthographic view looking straight down from the ceiling, only the top surface is visible, no sides or legs visible, no perspective",
+  "pick": {
+   "seed_offset": 100,
+   "index": 1
+  }
+ },
+ "building_cooler": {
+  "seed": 3009,
+  "prompt": "A square metal air cooler vent unit seen from directly above (top-down view): grey steel box with a round fan grille and light blue accents. Strict flat top-down orthographic view looking straight down, only the top surface is visible, no sides visible, no perspective",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "building_door": {
+  "seed": 3010,
+  "prompt": "A closed wooden door seen from directly above (top-down floor plan view): a thin long rectangle of wooden planks with a small metal handle, set in a narrow wooden frame. Strict flat top-down orthographic view looking straight down, only the top surface is visible, no sides visible, no perspective",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "pawn": {
+  "seed": 4001,
+  "prompt": "A single colonist character seen from above at a slight three-quarter top-down angle, standing upright facing the viewer, cute chibi proportions with a large head, brown hair, visible face with neutral expression, wearing plain white and light grey simple work clothes (shirt and trousers), arms at the sides, full body",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "terrain_soil": {
+  "seed": 5001,
+  "kind": "terrain",
+  "prompt": "Plain brown dirt soil ground texture with small pebbles and subtle variation",
+  "style": "seamless tileable 2D game ground texture, viewed from directly above, flat orthographic, RimWorld style, hand-painted, muted earthy palette, even lighting, uniform pattern filling the whole frame edge to edge, no objects, no shadows, no text, no border, no vignette",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "terrain_rich_soil": {
+  "seed": 5002,
+  "kind": "terrain",
+  "prompt": "Dark rich fertile black-brown soil ground texture, moist loamy earth with tiny clumps",
+  "style": "seamless tileable 2D game ground texture, viewed from directly above, flat orthographic, RimWorld style, hand-painted, muted earthy palette, even lighting, uniform pattern filling the whole frame edge to edge, no objects, no shadows, no text, no border, no vignette",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "terrain_sand": {
+  "seed": 5003,
+  "kind": "terrain",
+  "prompt": "Pale yellow beige sand ground texture with soft subtle ripples",
+  "style": "seamless tileable 2D game ground texture, viewed from directly above, flat orthographic, RimWorld style, hand-painted, muted earthy palette, even lighting, uniform pattern filling the whole frame edge to edge, no objects, no shadows, no text, no border, no vignette",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "terrain_gravel": {
+  "seed": 5004,
+  "kind": "terrain",
+  "prompt": "Grey gravel ground texture, many small rounded grey and brown pebbles",
+  "style": "seamless tileable 2D game ground texture, viewed from directly above, flat orthographic, RimWorld style, hand-painted, muted earthy palette, even lighting, uniform pattern filling the whole frame edge to edge, no objects, no shadows, no text, no border, no vignette",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "terrain_marsh": {
+  "seed": 5005,
+  "kind": "terrain",
+  "prompt": "Muddy marsh ground texture, dark wet mud with small puddles of murky water and tufts of green grass",
+  "style": "seamless tileable 2D game ground texture, viewed from directly above, flat orthographic, RimWorld style, hand-painted, muted earthy palette, even lighting, uniform pattern filling the whole frame edge to edge, no objects, no shadows, no text, no border, no vignette",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "terrain_rough_stone": {
+  "seed": 5006,
+  "kind": "terrain",
+  "prompt": "Rough natural grey stone ground texture, uneven cracked rocky surface",
+  "style": "seamless tileable 2D game ground texture, viewed from directly above, flat orthographic, RimWorld style, hand-painted, muted earthy palette, even lighting, uniform pattern filling the whole frame edge to edge, no objects, no shadows, no text, no border, no vignette",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ },
+ "terrain_wood_floor": {
+  "seed": 5007,
+  "kind": "terrain",
+  "prompt": "Wooden plank floor texture made of exactly 6 wide straight horizontal brown wooden floorboards of equal width stacked top to bottom, thin dark gaps between boards, subtle wood grain, a few staggered board joints",
+  "pick": {
+   "seed_offset": 100,
+   "index": 0
+  },
+  "post": "--grid y --crop 0.6"
+ },
+ "terrain_stone_tile": {
+  "seed": 5008,
+  "kind": "terrain",
+  "prompt": "Grey stone tile floor texture made of exactly 4 by 4 large square cut stone flagstones of equal size in a perfectly regular straight grid, thin dark grout lines, subtle stone surface variation",
+  "pick": {
+   "seed_offset": 100,
+   "index": 0
+  },
+  "post": "--grid xy --crop 0.35"
+ },
+ "rock_granite": {
+  "seed": 5009,
+  "kind": "terrain",
+  "prompt": "Solid granite rock wall top surface texture, speckled pink-grey granite with dark cracks, rough mountain rock",
+  "style": "seamless tileable 2D game ground texture, viewed from directly above, flat orthographic, RimWorld style, hand-painted, muted earthy palette, even lighting, uniform pattern filling the whole frame edge to edge, no objects, no shadows, no text, no border, no vignette",
+  "pick": {
+   "seed_offset": 0,
+   "index": 0
+  }
+ }
+}
