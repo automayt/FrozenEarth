@@ -20,7 +20,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "bots": "tsx tools/bots/src/main.ts",
-    "docs:events": "tsx tools/docs/events-doc.ts"
+    "docs:events": "tsx tools/docs/events-doc.ts",
+    "bench": "tsx tools/bench/sim.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.14.0",

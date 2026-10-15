@@ -106,7 +106,7 @@ export function maybeReachable(w: World, start: number, goal: number, adj: boole
   for (let k = 0; k < 8; k++) {
     const x = gx + DX[k];
     const y = gy + DY[k];
-    if (m.inBounds(x, y) && m.comp[m.idx(x, y)] === sc) return true;
+    if (m.inBounds(x, y) && m.component(m.idx(x, y)) === sc) return true;
   }
   return false;
 }

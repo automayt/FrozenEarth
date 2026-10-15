@@ -4,7 +4,7 @@ import { maybeReachable } from './pathfinding';
 import { canUseItem } from './pawns';
 import type { Building, Construct, Item, Job, Pawn, Plant, Zone } from './types';
 import { DESIG } from './types';
-import type { World } from './world';
+import { rk, type World } from './world';
 
 type Giver = (w: World, p: Pawn) => Job | null;
 
@@ -30,16 +30,34 @@ export function findWork(w: World, p: Pawn): Job | null {
   return null;
 }
 
-/** Candidates sorted by distance from the pawn, skipping known-unreachable cells. */
+/**
+ * The `limit` closest candidates (stable on ties, like a sort), skipping known-unreachable cells.
+ * A bounded insertion keeps this O(n * limit) with no full sort or per-item allocation.
+ */
 function nearest<T>(w: World, p: Pawn, items: T[], cellOf: (t: T) => number, adj: boolean, limit = 25): T[] {
   const here = w.cellOf(p);
-  return items
-    .map((t) => ({ t, c: cellOf(t), d: w.dist(here, cellOf(t)) }))
-    .filter((x) => !w.isUnreachable(p.faction, x.c))
-    .sort((a, b) => a.d - b.d)
-    .slice(0, limit)
-    .filter((x) => maybeReachable(w, here, x.c, adj))
-    .map((x) => x.t);
+  const top: T[] = [];
+  const dists: number[] = [];
+  const cells: number[] = [];
+  for (const t of items) {
+    const c = cellOf(t);
+    const d = w.dist(here, c);
+    if (top.length === limit && d >= dists[limit - 1]) continue;
+    if (w.isUnreachable(p.faction, c)) continue;
+    let k = top.length;
+    while (k > 0 && dists[k - 1] > d) k--;
+    top.splice(k, 0, t);
+    dists.splice(k, 0, d);
+    cells.splice(k, 0, c);
+    if (top.length > limit) {
+      top.pop();
+      dists.pop();
+      cells.pop();
+    }
+  }
+  const out: T[] = [];
+  for (let k = 0; k < top.length; k++) if (maybeReachable(w, here, cells[k], adj)) out.push(top[k]);
+  return out;
 }
 
 // ---------------------------------------------------------------- firefighting
@@ -53,7 +71,7 @@ function giveFirefight(w: World, p: Pawn): Job | null {
   const home = m.idx(f.home.x, f.home.y);
   const fires: number[] = [];
   for (const c of w.fireCells) {
-    if (w.reservedByOther('f' + c, p.id)) continue;
+    if (w.reservedByOther(rk.f(c), p.id)) continue;
     let ours = w.dist(c, home) <= 25;
     if (!ours) {
       const x = m.cx(c);
@@ -72,7 +90,7 @@ function giveFirefight(w: World, p: Pawn): Job | null {
   }
   const best = nearest(w, p, fires, (c) => c, true, 10)[0];
   if (best === undefined) return null;
-  w.reserve('f' + best, p.id);
+  w.reserve(rk.f(best), p.id);
   return { type: 'extinguish', stage: 0, cell: best, progress: 0 };
 }
 
@@ -92,7 +110,7 @@ export function findStorageCell(w: World, faction: number, it: Item, pawn: numbe
   for (const z of w.zones.values()) {
     if (z.faction !== faction || z.kind !== 'stockpile' || !z.allow.includes(cat)) continue;
     for (const c of z.cells) {
-      if (c === from || w.reservedByOther('c' + c, pawn) || w.map.constructAt[c]) continue;
+      if (c === from || w.reservedByOther(rk.c(c), pawn) || w.map.constructAt[c]) continue;
       if (w.roomFor(c, it.def) <= 0) continue;
       const score = w.dist(from, c) - (w.map.itemAt[c] ? 3 : 0);
       if (score < bestScore) {
@@ -104,21 +122,31 @@ export function findStorageCell(w: World, faction: number, it: Item, pawn: numbe
   return best;
 }
 
+let looseCache: { world: World; version: number; items: Item[] } | null = null;
+
+/** Items sitting outside any stockpile that accepts them. Cached until items or zones change. */
+function looseItems(w: World): Item[] {
+  if (looseCache && looseCache.world === w && looseCache.version === w.haulVersion) return looseCache.items;
+  const items: Item[] = [];
+  for (const id of w.kinds.item) {
+    const it = w.get<Item>(id)!;
+    if (!isStored(w, it)) items.push(it);
+  }
+  looseCache = { world: w, version: w.haulVersion, items };
+  return items;
+}
+
 function giveHaul(w: World, p: Pawn): Job | null {
   let hasStockpile = false;
   for (const z of w.zones.values()) if (z.faction === p.faction && z.kind === 'stockpile') hasStockpile = true;
   if (!hasStockpile) return null;
   const cands: Item[] = [];
-  for (const id of w.kinds.item) {
-    const it = w.get<Item>(id)!;
-    if (!canUseItem(w, p, it) || isStored(w, it)) continue;
-    cands.push(it);
-  }
+  for (const it of looseItems(w)) if (canUseItem(w, p, it)) cands.push(it);
   for (const it of nearest(w, p, cands, (i) => w.cellOf(i), false, 12)) {
     const dest = findStorageCell(w, p.faction, it, p.id);
     if (dest < 0) continue;
-    w.reserve('e' + it.id, p.id);
-    w.reserve('c' + dest, p.id);
+    w.reserve(rk.e(it.id), p.id);
+    w.reserve(rk.c(dest), p.id);
     return { type: 'haul', stage: 0, item: it.id, dest };
   }
   return null;
@@ -157,7 +185,7 @@ function giveConstruct(w: World, p: Pawn): Job | null {
   for (const con of nearest(w, p, mine, (c) => w.cellOf(c), true, 40)) {
     const cell = w.cellOf(con);
     if (fullyDelivered(con)) {
-      if (w.reservedByOther('e' + con.id, p.id)) continue;
+      if (w.reservedByOther(rk.e(con.id), p.id)) continue;
       const plantId = w.map.plantAt[cell];
       if (plantId && BUILDINGS[con.def].blocksMovement) {
         const plant = w.get<Plant>(plantId)!;
@@ -166,18 +194,18 @@ function giveConstruct(w: World, p: Pawn): Job | null {
           continue;
         }
       }
-      w.reserve('e' + con.id, p.id);
+      w.reserve(rk.e(con.id), p.id);
       return { type: 'build', stage: 0, target: con.id };
     }
-    if (w.reservedByOther('d' + con.id, p.id)) continue;
+    if (w.reservedByOther(rk.d(con.id), p.id)) continue;
     const cost = BUILDINGS[con.def].cost;
     for (const def in cost) {
       const rem = cost[def] - (con.delivered[def] ?? 0);
       if (rem <= 0) continue;
       const it = findMaterial(w, p, def, cell);
       if (!it) continue;
-      w.reserve('d' + con.id, p.id);
-      w.reserve('e' + it.id, p.id);
+      w.reserve(rk.d(con.id), p.id);
+      w.reserve(rk.e(it.id), p.id);
       return { type: 'deliver', stage: 0, item: it.id, target: con.id, count: Math.min(rem, it.count, ITEMS[def].stackLimit) };
     }
   }
@@ -191,12 +219,12 @@ function giveMine(w: World, p: Pawn): Job | null {
   const cells: number[] = [];
   for (const c of w.desigCells) {
     if (m.desig[c] !== DESIG.mine || m.desigFaction[c] !== p.faction || !m.rock[c]) continue;
-    if (w.reservedByOther('c' + c, p.id)) continue;
+    if (w.reservedByOther(rk.c(c), p.id)) continue;
     cells.push(c);
   }
   const best = nearest(w, p, cells, (c) => c, true, 15)[0];
   if (best === undefined) return null;
-  w.reserve('c' + best, p.id);
+  w.reserve(rk.c(best), p.id);
   return { type: 'mine', stage: 0, cell: best, progress: 0 };
 }
 
@@ -207,13 +235,13 @@ function giveCut(w: World, p: Pawn): Job | null {
     const k = m.desig[c];
     if ((k !== DESIG.cut && k !== DESIG.harvest) || m.desigFaction[c] !== p.faction) continue;
     const plant = m.plantAt[c] ? w.get<Plant>(m.plantAt[c]) : undefined;
-    if (!plant || w.reservedByOther('e' + plant.id, p.id)) continue;
+    if (!plant || w.reservedByOther(rk.e(plant.id), p.id)) continue;
     if (k === DESIG.harvest && plant.growth < PLANTS[plant.def].harvestMin) continue;
     plants.push(plant);
   }
   const best = nearest(w, p, plants, (pl) => w.cellOf(pl), true, 15)[0];
   if (!best) return null;
-  w.reserve('e' + best.id, p.id);
+  w.reserve(rk.e(best.id), p.id);
   return { type: 'cut', stage: 0, target: best.id, progress: 0, harvest: m.desig[w.cellOf(best)] === DESIG.harvest };
 }
 
@@ -237,22 +265,22 @@ function giveGrow(w: World, p: Pawn): Job | null {
     for (const c of z.cells) {
       const plant = m.plantAt[c] ? w.get<Plant>(m.plantAt[c]) : undefined;
       if (plant) {
-        if (w.reservedByOther('e' + plant.id, p.id)) continue;
+        if (w.reservedByOther(rk.e(plant.id), p.id)) continue;
         if (plant.def !== z.plant) clear.push(plant);
         else if (plant.growth >= 1 || plant.blighted) harvest.push(plant);
-      } else if (!w.reservedByOther('c' + c, p.id) && canSowAt(w, z, c)) {
+      } else if (!w.reservedByOther(rk.c(c), p.id) && canSowAt(w, z, c)) {
         sow.push(c);
       }
     }
   }
   const h = nearest(w, p, [...harvest, ...clear], (pl) => w.cellOf(pl), true, 10)[0];
   if (h) {
-    w.reserve('e' + h.id, p.id);
+    w.reserve(rk.e(h.id), p.id);
     return { type: 'cut', stage: 0, target: h.id, progress: 0, harvest: h.def === w.zoneAt(w.cellOf(h))?.plant };
   }
   const s = nearest(w, p, sow, (c) => c, false, 10)[0];
   if (s !== undefined) {
-    w.reserve('c' + s, p.id);
+    w.reserve(rk.c(s), p.id);
     return { type: 'sow', stage: 0, cell: s, plant: w.zoneAt(s)!.plant, progress: 0 };
   }
   return null;
@@ -282,7 +310,7 @@ function giveBill(w: World, p: Pawn, type: WorkType): Job | null {
   const benches: Building[] = [];
   for (const id of w.kinds.building) {
     const b = w.get<Building>(id)!;
-    if (b.faction === p.faction && b.bills.length && !w.reservedByOther('e' + b.id, p.id)) benches.push(b);
+    if (b.faction === p.faction && b.bills.length && !w.reservedByOther(rk.e(b.id), p.id)) benches.push(b);
   }
   for (const bench of nearest(w, p, benches, (b) => w.cellOf(b), true, 10)) {
     for (const bill of bench.bills) {
@@ -290,8 +318,8 @@ function giveBill(w: World, p: Pawn, type: WorkType): Job | null {
       if (bill.suspended || recipe.workType !== type || !billWanted(w, p.faction, bill.mode, bill.target, recipe)) continue;
       const sources = gatherSources(w, p, recipe, w.cellOf(bench));
       if (!sources) continue;
-      w.reserve('e' + bench.id, p.id);
-      for (const s of sources) w.reserve('e' + s.item, p.id);
+      w.reserve(rk.e(bench.id), p.id);
+      for (const s of sources) w.reserve(rk.e(s.item), p.id);
       return { type: 'bill', stage: 0, bench: bench.id, bill: bill.id, sources, gathered: [], progress: 0 };
     }
   }

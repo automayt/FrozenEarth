@@ -20,6 +20,9 @@ function normalize(e: Entity): unknown {
       delete job.progress;
       c.job = job;
     }
+    // Needs and conditions are resent when they move a visible step, not every tick.
+    c.needs = Object.fromEntries(Object.entries(e.needs).map(([k, v]) => [k, Math.round(v * 50)]));
+    c.conditions = e.conditions.map((x) => ({ ...x, severity: Math.round(x.severity * 20), immunity: Math.round(x.immunity * 20) }));
   }
   if (e.kind === 'construct') delete c.progress;
   if (e.kind === 'plant') c.growth = Math.floor(e.growth * 20);

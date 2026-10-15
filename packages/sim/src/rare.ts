@@ -15,6 +15,7 @@ export function rareTick(w: World): void {
   }
   if (t % RARE_TICK !== 0) return;
   if (w.map.roomsDirty) rebuildRooms(w);
+  else if (w.map.wallChanges.length) updateRooms(w);
   roomTemps(w);
   plantsTick(w);
   rotTick(w);
@@ -62,7 +63,7 @@ function needsTick(w: World, p: Pawn): void {
   const seekWarmth =
     (busy || (jt === 'sleep' && exposureSeverity(p) > 0.3)) && needsWarmth(w, p, e) && warmthJob(w, p, e) !== null;
   if (seekWarmth || (busy && (n.food < 0.12 || n.rest < 0.08 || e.bedRest || (e.noWork && jt !== 'wander')))) endJob(w, p);
-  w.markDirty(p);
+  w.markPawnIfChanged(p);
 }
 
 // ---------------------------------------------------------------- plants
@@ -179,6 +180,87 @@ export function rebuildRooms(w: World): void {
     w.rooms.set(room.id, room);
   }
   m.roomsDirty = false;
+  m.wallChanges = [];
+  w.dirty.rooms = true;
+}
+
+/**
+ * Re-detect only the rooms around changed walls. Each flood stops as soon as it proves a region
+ * is outdoors (too big, touches the map edge, or reaches a region already proven outdoors),
+ * so the open world is never flooded in full.
+ */
+export function updateRooms(w: World): void {
+  const m = w.map;
+  const changes = m.wallChanges;
+  m.wallChanges = [];
+  const outdoor = w.outdoorTemp();
+  const seeds = new Set<number>();
+  for (const c of changes) {
+    seeds.add(c);
+    const x = m.cx(c);
+    const y = m.cy(c);
+    for (const [dx, dy] of NEIGHBORS4) if (m.inBounds(x + dx, y + dy)) seeds.add(m.idx(x + dx, y + dy));
+  }
+  // Dissolve every room touching a change, remembering its temperature per cell.
+  const oldTemp = new Map<number, number>();
+  for (const c of [...seeds]) {
+    const id = m.roomAt[c];
+    const room = id ? w.rooms.get(id) : undefined;
+    if (!room) continue;
+    for (const rc of room.cells) {
+      oldTemp.set(rc, room.temp);
+      m.roomAt[rc] = 0;
+      seeds.add(rc);
+    }
+    w.rooms.delete(id);
+  }
+  // 0 = unseen, 1 = seen in the current flood, 2 = proven outdoors.
+  const state = new Map<number, number>();
+  const stack: number[] = [];
+  for (const s of seeds) {
+    if (m.wall[s] || state.has(s)) continue;
+    const cells: number[] = [];
+    let outside = false;
+    stack.length = 0;
+    stack.push(s);
+    state.set(s, 1);
+    while (stack.length) {
+      const c = stack.pop()!;
+      cells.push(c);
+      const x = m.cx(c);
+      const y = m.cy(c);
+      if (x === 0 || y === 0 || x === m.w - 1 || y === m.h - 1 || cells.length > MAX_ROOM_CELLS) {
+        outside = true;
+        break;
+      }
+      for (const [dx, dy] of NEIGHBORS4) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (!m.inBounds(nx, ny)) continue;
+        const ni = m.idx(nx, ny);
+        if (m.wall[ni]) continue;
+        const st = state.get(ni);
+        if (st === 2) {
+          outside = true;
+          break;
+        }
+        if (st === 1) continue;
+        state.set(ni, 1);
+        stack.push(ni);
+      }
+      if (outside) break;
+    }
+    if (outside) {
+      for (const c of cells) state.set(c, 2);
+      for (const c of stack) state.set(c, 2);
+      continue;
+    }
+    let sum = 0;
+    for (const c of cells) sum += oldTemp.get(c) ?? outdoor;
+    const room: Room = { id: w.nextRoomId++, cells, temp: sum / cells.length };
+    for (const c of cells) m.roomAt[c] = room.id;
+    w.rooms.set(room.id, room);
+  }
   w.dirty.rooms = true;
 }
 

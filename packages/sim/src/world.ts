@@ -64,11 +64,13 @@ export class World {
   factions = new Map<number, Faction>();
   zones = new Map<number, Zone>();
   nextZoneId = 1;
+  /** Bumped whenever items appear or vanish or stockpiles change; invalidates haul caches. */
+  haulVersion = 0;
   nextBillId = 1;
-  /** Reservation key ("e<id>" entity, "c<cell>" cell, "d<id>" delivery) -> pawn id. */
-  reservations = new Map<string, EntityId>();
-  /** "<faction>:<cell>" -> tick until which pathing there is known to fail. */
-  unreachable = new Map<string, number>();
+  /** Reservation key (see rk) -> pawn id. */
+  reservations = new Map<number, EntityId>();
+  /** unreachableKey(faction, cell) -> tick until which pathing there is known to fail. */
+  unreachable = new Map<number, number>();
   desigCells = new Set<number>();
   rooms = new Map<number, Room>();
   nextRoomId = 1;
@@ -189,6 +191,7 @@ export class World {
   }
 
   add<T extends Entity>(e: T): T {
+    if (e.kind === 'item') this.haulVersion++;
     this.entities.set(e.id, e);
     this.kinds[e.kind].add(e.id);
     this.index(e, true);
@@ -203,6 +206,7 @@ export class World {
   despawn(id: EntityId): void {
     const e = this.entities.get(id);
     if (!e) return;
+    if (e.kind === 'item') this.haulVersion++;
     this.index(e, false);
     this.entities.delete(id);
     this.kinds[e.kind].delete(id);
@@ -229,6 +233,20 @@ export class World {
 
   markDirty(e: Entity): void {
     this.dirty.ents.add(e.id);
+  }
+
+  /** Network-only memo of what each pawn last looked like to clients. Never affects the sim. */
+  private pawnLooks = new Map<EntityId, string>();
+
+  /** Mark a pawn dirty only if something a player can see has changed meaningfully. */
+  markPawnIfChanged(p: Pawn): void {
+    const n = p.needs;
+    let sig = `${Math.round(n.food * 50)},${Math.round(n.rest * 50)},${Math.round(n.mood * 50)}|${p.thoughts.join(';')}|`;
+    for (const c of p.conditions) sig += `${c.key}:${Math.round(c.severity * 20)}:${Math.round(c.immunity * 20)};`;
+    if (this.pawnLooks.get(p.id) !== sig) {
+      this.pawnLooks.set(p.id, sig);
+      this.markDirty(p);
+    }
   }
 
   private index(e: Entity, add: boolean): void {
@@ -282,12 +300,13 @@ export class World {
     const s = solid ? 1 : 0;
     if (m.solid[i] !== s) {
       m.solid[i] = s;
-      m.compDirty = true;
+      if (s) m.cellClosed(i);
+      else m.cellOpened(i);
     }
     const wv = wall ? 1 : 0;
     if (m.wall[i] !== wv) {
       m.wall[i] = wv;
-      m.roomsDirty = true;
+      m.wallChanges.push(i);
     }
     m.doorFaction[i] = door;
     m.extraCost[i] = extra;
@@ -504,6 +523,7 @@ export class World {
     };
     this.zones.set(z.id, z);
     this.dirty.zones.add(z.id);
+    this.haulVersion++;
     return z;
   }
 
@@ -511,6 +531,7 @@ export class World {
     if (this.map.zoneAt[cell]) return;
     this.map.zoneAt[cell] = z.id;
     z.cells.push(cell);
+    this.haulVersion++;
     this.dirty.zones.add(z.id);
   }
 
@@ -519,6 +540,7 @@ export class World {
     if (!zid) return;
     const z = this.zones.get(zid)!;
     this.map.zoneAt[cell] = 0;
+    this.haulVersion++;
     const k = z.cells.indexOf(cell);
     if (k >= 0) z.cells.splice(k, 1);
     if (z.cells.length === 0) {
@@ -537,14 +559,14 @@ export class World {
 
   // ---------------------------------------------------------------- reservations
 
-  reserve(key: string, pawn: EntityId): boolean {
+  reserve(key: number, pawn: EntityId): boolean {
     const cur = this.reservations.get(key);
     if (cur !== undefined && cur !== pawn && this.entities.has(cur)) return false;
     this.reservations.set(key, pawn);
     return true;
   }
 
-  reservedByOther(key: string, pawn: EntityId): boolean {
+  reservedByOther(key: number, pawn: EntityId): boolean {
     const cur = this.reservations.get(key);
     return cur !== undefined && cur !== pawn && this.entities.has(cur);
   }
@@ -554,14 +576,16 @@ export class World {
   }
 
   markUnreachable(faction: number, cell: number): void {
-    this.unreachable.set(`${faction}:${cell}`, this.tick + 2500);
+    this.unreachable.set(unreachableKey(faction, cell), this.tick + 2500);
   }
 
   isUnreachable(faction: number, cell: number): boolean {
-    const until = this.unreachable.get(`${faction}:${cell}`);
+    if (this.unreachable.size === 0) return false;
+    const key = unreachableKey(faction, cell);
+    const until = this.unreachable.get(key);
     if (until === undefined) return false;
     if (until <= this.tick) {
-      this.unreachable.delete(`${faction}:${cell}`);
+      this.unreachable.delete(key);
       return false;
     }
     return true;
@@ -596,6 +620,31 @@ export class World {
     this.dirty = new Dirty();
     return delta;
   }
+}
+
+/**
+ * Numeric reservation keys. Kept numeric because they are built in the hottest loops;
+ * saves still store the readable string form ("e12", "c3401", ...).
+ */
+export const rk = {
+  e: (id: number) => id * 4,
+  c: (cell: number) => cell * 4 + 1,
+  d: (id: number) => id * 4 + 2,
+  f: (cell: number) => cell * 4 + 3,
+};
+const RK_PREFIX = ['e', 'c', 'd', 'f'];
+
+export function rkToString(key: number): string {
+  return RK_PREFIX[key % 4] + Math.floor(key / 4);
+}
+
+export function rkFromString(s: string): number {
+  return Number(s.slice(1)) * 4 + RK_PREFIX.indexOf(s[0]);
+}
+
+/** Cells fit in 20 bits for any map up to 1024x1024. */
+export function unreachableKey(faction: number, cell: number): number {
+  return faction * 1_048_576 + cell;
 }
 
 export const NEIGHBORS4: [number, number][] = [

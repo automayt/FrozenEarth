@@ -1,6 +1,6 @@
 import type { Choice, Condition, Entity, Faction, Pawn, Room, Snapshot, Zone } from './types';
 import { upgradeStoryState, type StoryState } from './schedule';
-import { Dirty, World } from './world';
+import { Dirty, rkFromString, rkToString, unreachableKey, World } from './world';
 
 export const SAVE_VERSION = 2;
 
@@ -32,6 +32,8 @@ export interface SaveData {
   nextChoiceId: number;
   coldOffset: number;
   story: StoryState;
+  /** Wall edits not yet folded into rooms (optional: older saves lack it). */
+  wallChanges?: number[];
 }
 
 /** Deep copy via structuredClone so saves never alias live state. */
@@ -55,8 +57,8 @@ export function serializeWorld(w: World): SaveData {
     zones: [...w.zones.values()],
     nextZoneId: w.nextZoneId,
     nextBillId: w.nextBillId,
-    reservations: [...w.reservations],
-    unreachable: [...w.unreachable],
+    reservations: [...w.reservations].map(([k, v]) => [rkToString(k), v] as [string, number]),
+    unreachable: [...w.unreachable].map(([k, v]) => [`${Math.floor(k / 1_048_576)}:${k % 1_048_576}`, v] as [string, number]),
     rooms: [...w.rooms.values()],
     nextRoomId: w.nextRoomId,
     conditions: w.conditions,
@@ -65,6 +67,7 @@ export function serializeWorld(w: World): SaveData {
     nextChoiceId: w.nextChoiceId,
     coldOffset: w.coldOffset,
     story: w.story,
+    wallChanges: m.wallChanges,
   });
 }
 
@@ -114,8 +117,13 @@ export function deserializeWorld(data: SaveData): World {
   }
   w.nextZoneId = d.nextZoneId;
   w.nextBillId = d.nextBillId;
-  w.reservations = new Map(d.reservations);
-  w.unreachable = new Map(d.unreachable);
+  w.reservations = new Map(d.reservations.map(([k, v]) => [rkFromString(k), v]));
+  w.unreachable = new Map(
+    d.unreachable.map(([k, v]) => {
+      const [f, c] = k.split(':').map(Number);
+      return [unreachableKey(f, c), v];
+    }),
+  );
   for (const r of d.rooms) {
     w.rooms.set(r.id, r);
     for (const c of r.cells) m.roomAt[c] = r.id;
@@ -129,6 +137,7 @@ export function deserializeWorld(data: SaveData): World {
   w.story = upgradeStoryState(d.story);
   m.compDirty = true;
   m.roomsDirty = false;
+  m.wallChanges = d.wallChanges ?? [];
   w.dirty = new Dirty();
   return w;
 }

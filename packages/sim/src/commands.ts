@@ -37,6 +37,7 @@ export function applyCommand(w: World, faction: number, cmd: Command): void {
       if (cmd.allow && z.kind === 'stockpile') {
         const valid = new Set(ITEM_CATEGORIES.map((c) => c.key));
         z.allow = cmd.allow.filter((a) => valid.has(a));
+        w.haulVersion++;
       }
       w.dirty.zones.add(z.id);
       return;

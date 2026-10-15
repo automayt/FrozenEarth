@@ -4,7 +4,7 @@ import { atGoal, findPath, makePathState } from './pathfinding';
 import { runJob } from './jobs';
 import { findWork } from './work';
 import type { Building, Item, Job, Pawn } from './types';
-import { NEIGHBORS8, type World } from './world';
+import { NEIGHBORS8, rk, type World } from './world';
 
 export function tickPawn(w: World, p: Pawn): void {
   tickMovement(w, p);
@@ -157,7 +157,7 @@ export function warmthJob(w: World, p: Pawn, e: Effects): Job | null {
 /** True when this pawn may take this item: not reserved, not rotten, not in someone else's stockpile. */
 export function canUseItem(w: World, p: Pawn, it: Item): boolean {
   if (it.rot >= 1) return false;
-  if (w.reservedByOther('e' + it.id, p.id)) return false;
+  if (w.reservedByOther(rk.e(it.id), p.id)) return false;
   const z = w.zoneAt(w.cellOf(it));
   if (z && z.kind === 'stockpile' && z.faction !== p.faction) return false;
   return true;
@@ -182,7 +182,7 @@ function findFood(w: World, p: Pawn): Job | null {
   if (!best) return null;
   const def = ITEMS[best.def];
   const count = def.category === 'meal' ? 1 : Math.min(best.count, Math.ceil((1 - p.needs.food) / def.nutrition!));
-  w.reserve('e' + best.id, p.id);
+  w.reserve(rk.e(best.id), p.id);
   return { type: 'eat', stage: 0, item: best.id, count, progress: 0 };
 }
 
@@ -243,7 +243,7 @@ function wanderJob(w: World, p: Pawn): Job {
     const y = cy + w.rng.int(radius * 2 + 1) - radius;
     if (!m.inBounds(x, y)) continue;
     const c = m.idx(x, y);
-    if (!w.passable(c, p.faction) || m.comp[c] !== comp) continue;
+    if (!w.passable(c, p.faction) || m.component(c) !== comp) continue;
     return { type: 'wander', stage: 0, dest: c, until: 0 };
   }
   return { type: 'wander', stage: 0, dest: here, until: 0 };

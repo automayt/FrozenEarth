@@ -204,9 +204,7 @@ function mine(w: World, p: Pawn, j: J<'mine'>): JobResult {
     j.stage = 1;
   }
   const rd = ROCKS[rock];
-  const before = j.progress;
   j.progress += workSpeed(w, p);
-  bumpProgress(w, p, before, j.progress, rd.mineWork);
   if (j.progress < rd.mineWork) return 'continue';
   w.setRock(j.cell, 0);
   w.setDesig(j.cell, 0, 0);
@@ -223,9 +221,7 @@ function cut(w: World, p: Pawn, j: J<'cut'>): JobResult {
     j.stage = 1;
   }
   const def = PLANTS[plant.def];
-  const before = j.progress;
   j.progress += workSpeed(w, p);
-  bumpProgress(w, p, before, j.progress, def.work);
   if (j.progress < def.work) return 'continue';
   harvestPlant(w, plant, j.harvest);
   return 'done';
@@ -256,9 +252,7 @@ function sow(w: World, p: Pawn, j: J<'sow'>): JobResult {
     if (r !== 'arrived') return r === 'fail' ? 'fail' : 'continue';
     j.stage = 1;
   }
-  const before = j.progress;
   j.progress += workSpeed(w, p);
-  bumpProgress(w, p, before, j.progress, SOW_WORK);
   if (j.progress < SOW_WORK) return 'continue';
   w.spawnPlant(j.plant, j.cell, 0.05);
   return 'done';
@@ -353,9 +347,7 @@ function bill(w: World, p: Pawn, j: J<'bill'>): JobResult {
     }
     j.stage = 3;
   }
-  const before = j.progress;
   j.progress += workSpeed(w, p);
-  bumpProgress(w, p, before, j.progress, recipe.work);
   if (j.progress < recipe.work) return 'continue';
   j.gathered = [];
   w.placeItemNear(recipe.product.item, recipe.product.count, benchCell);

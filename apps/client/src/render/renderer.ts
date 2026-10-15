@@ -1,4 +1,4 @@
-import { Application, Container, Graphics, Sprite, Text, Texture } from 'pixi.js';
+import { Application, BitmapText, Container, Graphics, Sprite, Texture } from 'pixi.js';
 import { BUILDINGS, PLANTS, ROCKS, TERRAINS, type TerrainDef } from '@fe/defs';
 import { pawnPosition } from '@fe/protocol';
 import { DESIG, TICKS_PER_DAY, TICKS_PER_HOUR, hash2, type Construct, type Entity, type Pawn } from '@fe/sim';
@@ -8,6 +8,10 @@ import { Input } from './input';
 
 /** World units per cell. */
 export const TILE = 32;
+/** Cells per culling chunk. */
+const CHUNK = 16;
+/** Bitmap text is generated at 2x and drawn at half scale so it stays sharp when zoomed. */
+const LABEL_STYLE = { fontFamily: 'IBM Plex Sans', fontSize: 22, fill: 0xffffff, stroke: { color: 0x000000, width: 5 } };
 /** Pixels per cell in the terrain and overlay canvases. */
 const PX = 8;
 /** Texture pixels skipped per canvas pixel when sampling terrain art (texture repeats every 128/(PX*STEP) cells). */
@@ -45,6 +49,9 @@ export class GameRenderer {
   ui = new Graphics();
   private night = new Graphics();
   private views = new Map<number, EntityView>();
+  private pawnIds = new Set<number>();
+  /** Static entity views are grouped into CHUNK x CHUNK cell containers so off-screen ones can be hidden. */
+  private chunks = new Map<string, Container>();
   tex!: TextureBank;
   input!: Input;
   private mapW = 0;
@@ -164,14 +171,14 @@ export class GameRenderer {
     m.changedEnts.clear();
 
     const tick = store.estTick();
-    for (const id of m.entities.keys()) {
-      const e = m.entities.get(id)!;
-      if (e.kind !== 'pawn') continue;
+    for (const id of this.pawnIds) {
+      const e = m.entities.get(id);
       const v = this.views.get(id);
-      if (!v) continue;
+      if (!e || e.kind !== 'pawn' || !v) continue;
       const pos = pawnPosition(e, tick, m.w);
       v.root.position.set((pos.x + 0.5) * TILE, (pos.y + 0.5) * TILE);
     }
+    this.cullChunks();
     this.layers.pawns.children.sort((a, b) => a.y - b.y);
     this.drawFire();
     this.drawUi();
@@ -242,12 +249,20 @@ export class GameRenderer {
         let b: number;
         let f = 1;
         if (tex) {
-          const tx = (gx * TEX_STEP) % tex.w;
-          const ty = (gy * TEX_STEP) % tex.h;
+          // Rock samples a finer, darker version so cracks don't read as huge repeating stripes.
+          const step = rock ? TEX_STEP * 2 : TEX_STEP;
+          const tx = (gx * step) % tex.w;
+          const ty = (gy * step) % tex.h;
           const o = (ty * tex.w + tx) * 4;
           r = tex.data[o];
           g = tex.data[o + 1];
           b = tex.data[o + 2];
+          if (rock) {
+            const base1 = ROCKS[1].color;
+            r = r * 0.45 + ((base1 >> 16) & 255) * 0.75;
+            g = g * 0.45 + ((base1 >> 8) & 255) * 0.75;
+            b = b * 0.45 + (base1 & 255) * 0.75;
+          }
           if (tint >= 0 && hash2(gx >> 2, gy >> 2, 3) > 0.55) {
             r = (r + ((tint >> 16) & 255) * 1.6) / 2;
             g = (g + ((tint >> 8) & 255) * 1.6) / 2;
@@ -311,6 +326,36 @@ export class GameRenderer {
     if (!v) return;
     v.root.destroy({ children: true });
     this.views.delete(id);
+    this.pawnIds.delete(id);
+  }
+
+  /** Add a static view to its layer's chunk container. */
+  private place(layer: 'plants' | 'floorThings' | 'items' | 'buildings', root: Container, x: number, y: number): void {
+    const key = `${layer}:${Math.floor(x / CHUNK)},${Math.floor(y / CHUNK)}`;
+    let chunk = this.chunks.get(key);
+    if (!chunk) {
+      chunk = new Container();
+      chunk.label = key;
+      (chunk as Container & { cx: number; cy: number }).cx = Math.floor(x / CHUNK);
+      (chunk as Container & { cx: number; cy: number }).cy = Math.floor(y / CHUNK);
+      this.layers[layer].addChild(chunk);
+      this.chunks.set(key, chunk);
+    }
+    chunk.addChild(root);
+  }
+
+  /** Hide chunks outside the camera view (plus a margin for big tree sprites). */
+  private cullChunks(): void {
+    const a = this.screenToCell(0, 0);
+    const b = this.screenToCell(this.app.screen.width, this.app.screen.height);
+    const x0 = Math.floor((a.x - 2) / CHUNK);
+    const y0 = Math.floor((a.y - 2) / CHUNK);
+    const x1 = Math.floor((b.x + 2) / CHUNK);
+    const y1 = Math.floor((b.y + 2) / CHUNK);
+    for (const c of this.chunks.values()) {
+      const { cx, cy } = c as Container & { cx: number; cy: number };
+      c.visible = cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1;
+    }
   }
 
   private viewKey(e: Entity): string {
@@ -350,7 +395,7 @@ export class GameRenderer {
         s.width = s.height = size;
         if (e.blighted) s.tint = 0x9a7a4a;
         root.addChild(s);
-        (d.tree ? this.layers.plants : this.layers.floorThings).addChild(root);
+        this.place(d.tree ? 'plants' : 'floorThings', root, e.x, e.y);
         break;
       }
       case 'item': {
@@ -360,12 +405,13 @@ export class GameRenderer {
         if (e.rot >= 0.5) s.tint = 0xa0b070;
         root.addChild(s);
         if (e.count > 1) {
-          const t = new Text({ text: String(e.count), style: { fontFamily: 'IBM Plex Mono', fontSize: 11, fill: 0xffffff, stroke: { color: 0x000000, width: 3 } }, resolution: 3 });
+          const t = new BitmapText({ text: String(e.count), style: LABEL_STYLE });
+          t.scale.set(0.5);
           t.anchor.set(1, 1);
           t.position.set(TILE / 2 - 1, TILE / 2);
           root.addChild(t);
         }
-        this.layers.items.addChild(root);
+        this.place('items', root, e.x, e.y);
         break;
       }
       case 'building': {
@@ -381,16 +427,17 @@ export class GameRenderer {
           const g = new Graphics().rect(-TILE / 2, TILE / 2 - 4, TILE, 3).fill(f?.color ?? 0xffffff);
           root.addChild(g);
         }
-        (d.floorTerrain ? this.layers.floorThings : this.layers.buildings).addChild(root);
+        this.place(d.floorTerrain ? 'floorThings' : 'buildings', root, e.x, e.y);
         break;
       }
       case 'construct':
         this.drawConstruct(root, e);
-        this.layers.buildings.addChild(root);
+        this.place('buildings', root, e.x, e.y);
         break;
       case 'pawn':
         this.drawPawn(root, e);
         this.layers.pawns.addChild(root);
+        this.pawnIds.add(e.id);
         break;
     }
     this.views.set(e.id, v);
@@ -444,11 +491,8 @@ export class GameRenderer {
       c.position.set(TILE * 0.3, -TILE * 0.05);
       root.addChild(c);
     }
-    const label = new Text({
-      text: e.name.split(' ')[0] + (e.asleep ? ' z' : ''),
-      style: { fontFamily: 'IBM Plex Sans', fontSize: 10, fill: 0xffffff, stroke: { color: 0x000000, width: 3 } },
-      resolution: 3,
-    });
+    const label = new BitmapText({ text: e.name.split(' ')[0] + (e.asleep ? ' z' : ''), style: LABEL_STYLE });
+    label.scale.set(0.45);
     label.anchor.set(0.5, 0);
     label.position.set(0, TILE * 0.42);
     root.addChild(label);
