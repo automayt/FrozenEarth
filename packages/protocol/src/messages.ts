@@ -1,7 +1,7 @@
 import type { Command, Delta, Snapshot } from '@fe/sim';
 
 /** Bump when the wire format changes incompatibly. */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 export interface PlayerInfo {
   id: number;

@@ -32,7 +32,7 @@ function spawnScore(w: World, cx: number, cy: number): number {
   }
   if (open / total < 0.8) return -1;
   let minDist = Infinity;
-  for (const f of w.factions.values()) minDist = Math.min(minDist, Math.hypot(f.home.x - cx, f.home.y - cy));
+  for (const f of w.factions.values()) if (f.isPlayer) minDist = Math.min(minDist, Math.hypot(f.home.x - cx, f.home.y - cy));
   if (minDist < 45) return -1;
   // Nearby rock and trees are good for an early colony.
   let resources = 0;
@@ -71,6 +71,9 @@ export function findSpawn(w: World): { x: number; y: number } {
   return best;
 }
 
+/** What the first colonists carry, in order. */
+const STARTING_WEAPONS = ['rifle', 'bow', 'knife'];
+
 export function addPlayerFaction(w: World, name: string, colonists = 3): Faction {
   const id = Math.max(0, ...w.factions.keys()) + 1;
   const home = findSpawn(w);
@@ -84,7 +87,9 @@ export function addPlayerFaction(w: World, name: string, colonists = 3): Faction
       if (m.inBounds(x, y) && !m.solid[m.idx(x, y)]) open.push(m.idx(x, y));
     }
   }
-  for (let k = 0; k < colonists; k++) w.spawnPawn(id, open[k % open.length] ?? m.idx(home.x, home.y), pawnName(w.rng));
+  for (let k = 0; k < colonists; k++) {
+    w.spawnPawn(id, open[k % open.length] ?? m.idx(home.x, home.y), pawnName(w.rng), undefined, STARTING_WEAPONS[k] ?? 'club');
+  }
   const supplies: [string, number][] = [
     ['survival_meal', 30],
     ['wood', 150],

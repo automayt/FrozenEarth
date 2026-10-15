@@ -98,7 +98,8 @@ function roll(w: World, scope: 'map' | 'faction', faction: number): void {
     s.lastFired[cooldownKey(def, faction)] = w.tick;
     if (def.unique) s.uniqueFired.push(def.key);
     if (def.tone === 'bad') {
-      s.threat[faction] = (s.threat[faction] ?? 0) - def.cost;
+      // Scaled events (raids) pay their own way inside the handler.
+      if (!def.scaledCost) s.threat[faction] = (s.threat[faction] ?? 0) - def.cost;
       s.lastBad[faction] = w.tick;
     }
     return;

@@ -82,6 +82,8 @@ export interface PawnCondition {
   immunity: number;
   /** Tick when a timed condition ends, or 0. */
   until: number;
+  /** Wounds: tend quality (0-1) once a doctor has dressed them. Absent while untended. */
+  tended?: number;
 }
 
 export interface Carried {
@@ -104,6 +106,12 @@ export interface Pawn extends Base {
   traits: string[];
   /** Short mood explanations, for the inspect pane. */
   thoughts: string[];
+  /** Equipped weapon key; '' = fists. */
+  weapon: string;
+  /** Under direct player control: no work, no needs-driven jobs, only orders. */
+  drafted: boolean;
+  /** Knocked down by pain or blood loss: can't move or act. */
+  downed: boolean;
 }
 
 export type Entity = Pawn | Item | Plant | Building | Construct;
@@ -124,6 +132,18 @@ export type Job =
   | (JobBase & { type: 'sleep'; bed: EntityId; cell: number; rest?: boolean })
   | (JobBase & { type: 'extinguish'; cell: number; progress: number })
   | (JobBase & { type: 'warm'; dest: number; until: number })
+  /**
+   * Fight a pawn. `forced` = an explicit player order (keeps hitting a downed target);
+   * `chase` = walk after the target instead of giving up when it is out of reach.
+   */
+  | (JobBase & { type: 'attack'; target: EntityId; forced: boolean; chase: boolean; next: number; until: number })
+  /** Drafted: walk to a cell and hold there. */
+  | (JobBase & { type: 'goto'; dest: number })
+  /** Drafted: stand ready, shooting hostiles in range. Ends now and then to rescan. */
+  | (JobBase & { type: 'hold'; until: number })
+  | (JobBase & { type: 'tend'; patient: EntityId; progress: number })
+  /** Raiders leaving the map, optionally grabbing loot on the way. */
+  | (JobBase & { type: 'flee'; dest: number; item: EntityId })
   | (JobBase & {
       type: 'bill';
       bench: EntityId;
@@ -148,12 +168,29 @@ export interface Zone {
   allow: ItemCategory[];
 }
 
+/** A hostile NPC faction's current raid. */
+export interface RaidState {
+  /** The colony being raided. */
+  target: number;
+  /** Raiders who arrived. */
+  size: number;
+  /** The raid breaks and everyone flees once this many raiders are down or dead. */
+  breakAt: number;
+  /** Raiders killed so far (ones who escaped don't count). */
+  dead: number;
+  /** Tick after which the raiders give up and leave. */
+  until: number;
+  fled: boolean;
+}
+
 export interface Faction {
   id: number;
   name: string;
   color: number;
   home: { x: number; y: number };
   isPlayer: boolean;
+  /** Set on raider factions. Hostile to every player faction. */
+  raid?: RaidState;
 }
 
 export type Tone = 'good' | 'neutral' | 'bad';
@@ -221,7 +258,10 @@ export type Command =
   | { c: 'addBill'; bench: EntityId; recipe: string; mode: BillMode; target: number }
   | { c: 'updateBill'; bench: EntityId; bill: number; mode?: BillMode; target?: number; suspended?: boolean }
   | { c: 'removeBill'; bench: EntityId; bill: number }
-  | { c: 'choose'; choice: number; option: string };
+  | { c: 'choose'; choice: number; option: string }
+  | { c: 'draft'; pawns: EntityId[]; on: boolean }
+  | { c: 'move'; pawns: EntityId[]; x: number; y: number }
+  | { c: 'attack'; pawns: EntityId[]; target: EntityId };
 
 /** Full state a client needs to render the world. */
 export interface Snapshot {
@@ -262,6 +302,10 @@ export interface Delta {
   /** Present when choices changed. Replaces the full list. */
   choices?: Choice[];
   coldOffset?: number;
+  /** Attacks this delta, flattened SHOT_FIELDS tuples: [shooter, target, sx, sy, tx, ty, hit, weapon index]. */
+  shots?: number[];
 }
+
+export const SHOT_FIELDS = 8;
 
 export const CELL_FIELDS = 6;

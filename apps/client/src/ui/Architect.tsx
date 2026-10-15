@@ -1,6 +1,6 @@
 import { BUILD_CATEGORIES, BUILDINGS, ITEMS, SOWABLE_PLANTS, type BuildCategory } from '@fe/defs';
 import { store, useStore, type Tool } from '../store';
-import { myPlayer } from '../actions';
+import { myPlayer, mySquad, toggleDraft } from '../actions';
 
 type Cat = 'orders' | 'zones' | BuildCategory;
 
@@ -26,6 +26,18 @@ function costText(cost: Record<string, number>): string {
 
 function sameTool(a: Tool, b: Tool): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** Draft or release the selected colonists (or everyone, with nobody selected). */
+function DraftButton() {
+  const squad = mySquad().filter((p) => !p.downed);
+  const allDrafted = squad.length > 0 && squad.every((p) => p.drafted);
+  const label = squad.length ? (allDrafted ? 'Undraft' : 'Draft') : 'Draft all';
+  return (
+    <button className={`draft ${allDrafted ? 'on' : ''}`} onClick={toggleDraft} title="Drafted colonists stop working and follow orders: right-click to move, right-click an enemy to attack (R)">
+      {label} <small>R</small>
+    </button>
+  );
 }
 
 export function Architect() {
@@ -61,6 +73,7 @@ export function Architect() {
           </button>
         ))}
         <span className="sep" />
+        <DraftButton />
         <button className={s.panel === 'work' ? 'on' : ''} onClick={() => store.set({ panel: s.panel === 'work' ? 'none' : 'work', menu: null })}>
           Work
         </button>
@@ -76,6 +89,9 @@ export function Architect() {
           <span className="tool-hint">
             Drag to apply · right-click or Esc to stop
           </span>
+        )}
+        {s.tool.kind === 'select' && mySquad().some((p) => p.drafted) && (
+          <span className="tool-hint">Right-click: move · right-click someone else's pawn: attack</span>
         )}
       </div>
     </div>

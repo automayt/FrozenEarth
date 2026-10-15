@@ -45,6 +45,8 @@ export class Dirty {
   conditions = false;
   choices = false;
   coldOffset = false;
+  /** Attacks, flattened SHOT_FIELDS tuples. Presentation only: never read by the sim. */
+  shots: number[] = [];
 }
 
 export class World {
@@ -468,7 +470,7 @@ export class World {
     return out;
   }
 
-  spawnPawn(faction: number, cell: number, name: string, traits?: string[]): Pawn {
+  spawnPawn(faction: number, cell: number, name: string, traits?: string[], weapon = ''): Pawn {
     const m = this.map;
     const priorities = Object.fromEntries(WORK_TYPES.map((w) => [w, START_PRIORITY[w] ?? DEFAULT_PRIORITY])) as Record<WorkType, number>;
     return this.add<Pawn>({
@@ -488,6 +490,9 @@ export class World {
       conditions: [],
       traits: traits ?? this.rollTraits(),
       thoughts: [],
+      weapon,
+      drafted: false,
+      downed: false,
     });
   }
 
@@ -593,6 +598,7 @@ export class World {
     if (d.conditions) delta.conditions = this.conditions;
     if (d.choices) delta.choices = [...this.choices.values()];
     if (d.coldOffset) delta.coldOffset = this.coldOffset;
+    if (d.shots.length) delta.shots = d.shots;
     this.dirty = new Dirty();
     return delta;
   }

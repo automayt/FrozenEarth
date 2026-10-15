@@ -2,7 +2,7 @@ import { EVENTS, type EventCategory, type Rarity } from '@fe/defs';
 import { send } from '../net';
 import { useStore } from '../store';
 
-const CATEGORIES: EventCategory[] = ['weather', 'health', 'mood', 'fortune', 'disaster', 'visitors', 'mystery'];
+const CATEGORIES: EventCategory[] = ['weather', 'health', 'mood', 'fortune', 'disaster', 'visitors', 'threat', 'mystery'];
 const RARITY_ORDER: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'unique'];
 
 /** Host-only tool: fire any event right now, targeting your own colony. */

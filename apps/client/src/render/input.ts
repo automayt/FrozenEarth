@@ -1,10 +1,10 @@
 import type { Graphics } from 'pixi.js';
 import { BUILDINGS } from '@fe/defs';
 import { pawnPosition } from '@fe/protocol';
-import type { Rect } from '@fe/sim';
+import type { Pawn, Rect } from '@fe/sim';
 import { command } from '../net';
 import { store } from '../store';
-import { setSpeed, togglePause } from '../actions';
+import { mySquad, setSpeed, toggleDraft, togglePause } from '../actions';
 import { TILE, type GameRenderer } from './renderer';
 
 interface Drag {
@@ -55,10 +55,7 @@ export class Input {
     }
     if (e.button !== 0) return;
     const cell = this.r.screenToCell(p.x, p.y);
-    if (store.tool.kind === 'select') {
-      this.select(p.x, p.y);
-      return;
-    }
+    // With the select tool a drag draws a box around colonists; a click selects what's under it.
     this.drag = { start: cell, cur: cell };
   }
 
@@ -87,7 +84,7 @@ export class Input {
       this.pan = null;
       if (clicked) {
         if (store.tool.kind !== 'select') store.set({ tool: { kind: 'select' } });
-        else store.set({ selected: null, selectedCell: null });
+        else if (!this.order(e)) store.set({ selected: null, selectedCell: null, squad: [] });
       }
       return;
     }
@@ -97,6 +94,12 @@ export class Input {
     const rect: Rect = { x0: d.start.x, y0: d.start.y, x1: d.cur.x, y1: d.cur.y };
     const t = store.tool;
     switch (t.kind) {
+      case 'select': {
+        const p = this.local(e);
+        if (d.start.x === d.cur.x && d.start.y === d.cur.y) this.select(p.x, p.y);
+        else this.boxSelect(rect);
+        break;
+      }
       case 'designate':
         command({ c: 'designate', kind: t.what, ...rect });
         break;
@@ -131,12 +134,14 @@ export class Input {
     if (k === 'escape') {
       if (store.tool.kind !== 'select') store.set({ tool: { kind: 'select' } });
       else if (store.menu || store.panel !== 'none') store.set({ menu: null, panel: 'none' });
-      else store.set({ selected: null, selectedCell: null });
+      else store.set({ selected: null, selectedCell: null, squad: [] });
     } else if (k === ' ') {
       e.preventDefault();
       togglePause();
     } else if (k === '1' || k === '2' || k === '3') {
       setSpeed(Number(k));
+    } else if (k === 'r') {
+      toggleDraft();
     } else if (k === 'h') {
       const f = store.me ? store.mirror.factions.get(store.me.faction) : undefined;
       if (f) store.set({ focus: { ...f.home } });
@@ -152,30 +157,78 @@ export class Input {
     if (k.has('d') || k.has('arrowright')) this.r.world.x -= step;
   }
 
-  private select(sx: number, sy: number): void {
+  /** Own pawn ids under a dragged box. */
+  private boxSelect(r: Rect): void {
+    const m = store.mirror;
+    const tick = store.estTick();
+    const x0 = Math.min(r.x0, r.x1);
+    const x1 = Math.max(r.x0, r.x1);
+    const y0 = Math.min(r.y0, r.y1);
+    const y1 = Math.max(r.y0, r.y1);
+    const ids: number[] = [];
+    for (const e of m.entities.values()) {
+      if (e.kind !== 'pawn' || e.faction !== store.me?.faction) continue;
+      const pos = pawnPosition(e, tick, m.w);
+      const x = Math.round(pos.x);
+      const y = Math.round(pos.y);
+      if (x >= x0 && x <= x1 && y >= y0 && y <= y1) ids.push(e.id);
+    }
+    store.set({ squad: ids, selected: ids[0] ?? null, selectedCell: null });
+  }
+
+  /** The pawn drawn closest to a screen point, if any is near enough. */
+  private pawnAt(sx: number, sy: number, prefer?: (p: Pawn) => boolean): number | null {
     const m = store.mirror;
     const wp = this.r.screenToWorld(sx, sy);
-    const cx = Math.floor(wp.x);
-    const cy = Math.floor(wp.y);
-    if (!m.inBounds(cx, cy)) {
-      store.set({ selected: null, selectedCell: null });
-      return;
-    }
     const tick = store.estTick();
     let best: number | null = null;
     let bestD = 0.7;
     for (const e of m.entities.values()) {
       if (e.kind !== 'pawn') continue;
       const pos = pawnPosition(e, tick, m.w);
-      const d = Math.hypot(pos.x + 0.5 - wp.x, pos.y + 0.5 - wp.y) - (e.faction === store.me?.faction ? 0.1 : 0);
+      const d = Math.hypot(pos.x + 0.5 - wp.x, pos.y + 0.5 - wp.y) - (prefer?.(e) ? 0.1 : 0);
       if (d < bestD) {
         bestD = d;
         best = e.id;
       }
     }
+    return best;
+  }
+
+  /** Right-click with drafted colonists selected: attack whoever is under the cursor, or move there. */
+  private order(e: PointerEvent): boolean {
+    const squad = mySquad().filter((p) => p.drafted && !p.downed);
+    if (!squad.length) return false;
+    const p = this.local(e);
+    const ids = squad.map((s) => s.id);
+    const target = this.pawnAt(p.x, p.y, (o) => o.faction !== store.me?.faction);
+    const t = target ? store.mirror.get<Pawn>(target) : undefined;
+    if (t && t.faction !== store.me?.faction) {
+      command({ c: 'attack', pawns: ids, target: t.id });
+      this.r.flashOrder(t.x, t.y, true);
+      return true;
+    }
+    const cell = this.r.screenToCell(p.x, p.y);
+    if (!store.mirror.inBounds(cell.x, cell.y)) return true;
+    command({ c: 'move', pawns: ids, x: cell.x, y: cell.y });
+    this.r.flashOrder(cell.x, cell.y, false);
+    return true;
+  }
+
+  private select(sx: number, sy: number): void {
+    const m = store.mirror;
+    const wp = this.r.screenToWorld(sx, sy);
+    const cx = Math.floor(wp.x);
+    const cy = Math.floor(wp.y);
+    if (!m.inBounds(cx, cy)) {
+      store.set({ selected: null, selectedCell: null, squad: [] });
+      return;
+    }
+    const pawn = this.pawnAt(sx, sy, (e) => e.faction === store.me?.faction);
     const c = m.idx(cx, cy);
-    best ??= m.buildingAt[c] || m.constructAt[c] || m.itemAt[c] || m.plantAt[c] || null;
-    store.set({ selected: best, selectedCell: c });
+    const best = pawn ?? (m.buildingAt[c] || m.constructAt[c] || m.itemAt[c] || m.plantAt[c] || null);
+    const own = pawn !== null && m.get(pawn)?.faction === store.me?.faction;
+    store.set({ selected: best, selectedCell: c, squad: own ? [pawn] : [] });
   }
 
   /** Draw the drag rectangle for the active tool. */
@@ -183,6 +236,16 @@ export class Input {
     const t = store.tool;
     const m = store.mirror;
     const s = 1 / this.r.world.scale.x;
+    if (this.drag && t.kind === 'select') {
+      const d = this.drag;
+      if (d.start.x === d.cur.x && d.start.y === d.cur.y) return;
+      const bx = Math.min(d.start.x, d.cur.x);
+      const by = Math.min(d.start.y, d.cur.y);
+      const bw = Math.abs(d.cur.x - d.start.x) + 1;
+      const bh = Math.abs(d.cur.y - d.start.y) + 1;
+      g.rect(bx * TILE, by * TILE, bw * TILE, bh * TILE).fill({ color: 0xffffff, alpha: 0.06 }).stroke({ width: 1.5 * s, color: 0xffffff, alpha: 0.7 });
+      return;
+    }
     if (!this.drag) {
       // Hover outline for the cell under the cursor.
       if (t.kind !== 'select' && store.hoverCell !== null) {

@@ -41,7 +41,8 @@ function randomCommand(b: Bot): Command | null {
   const y = f.home.y + rand(31) - 15;
   const r = { x0: x, y0: y, x1: x + rand(6), y1: y + rand(6) };
   const pawns = [...b.mirror.entities.values()].filter((e) => e.kind === 'pawn' && e.faction === b.faction);
-  switch (rand(7)) {
+  const foreign = [...b.mirror.entities.values()].filter((e) => e.kind === 'pawn' && e.faction !== b.faction);
+  switch (rand(10)) {
     case 0:
       return { c: 'designate', kind: pick(['mine', 'chop', 'cut', 'harvest'] as const), ...r };
     case 1:
@@ -54,10 +55,18 @@ function randomCommand(b: Bot): Command | null {
       return pawns.length ? { c: 'setPriority', pawn: pick(pawns).id, work: pick(WORK_TYPES), prio: rand(5) } : null;
     case 5:
       return { c: 'designate', kind: 'cancel', ...r };
+    case 7:
+      return pawns.length ? { c: 'draft', pawns: pawns.slice(0, 1 + rand(pawns.length)).map((p) => p.id), on: Math.random() < 0.6 } : null;
+    case 8:
+      // Combat orders: move drafted pawns around, or pick a fight with another player (explicit PvP).
+      if (!pawns.length) return null;
+      if (foreign.length && Math.random() < 0.5) return { c: 'attack', pawns: pawns.map((p) => p.id), target: pick(foreign).id };
+      return { c: 'move', pawns: pawns.map((p) => p.id), x, y };
     default: {
       // Deliberately invalid: poke at another faction's pawn. The server must ignore it.
-      const foreign = [...b.mirror.entities.values()].find((e) => e.kind === 'pawn' && e.faction !== b.faction);
-      return foreign ? { c: 'setPriority', pawn: foreign.id, work: 'haul', prio: 0 } : null;
+      if (!foreign.length) return null;
+      const f = pick(foreign);
+      return rand(2) ? { c: 'setPriority', pawn: f.id, work: 'haul', prio: 0 } : { c: 'draft', pawns: [f.id], on: true };
     }
   }
 }
@@ -106,6 +115,8 @@ async function main() {
   console.log(`Connecting ${n} bots to ${args.url} for ${minutes} min…`);
   const bots = await Promise.all(Array.from({ length: n }, (_, i) => connectBot(i + 1)));
   const end = Date.now() + minutes * 60_000;
+  // The first bot on a fresh world is the host: set raiders on it so raids get sync-checked too.
+  bots[0].ws.send(encode({ t: 'admin', action: 'event', key: 'raid' }));
   let cmds = 0;
   const timer = setInterval(() => {
     for (const b of bots) {

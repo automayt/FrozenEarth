@@ -41,6 +41,12 @@ export interface ConditionDef {
   binge?: boolean;
   /** Severity at which a disease starts. */
   startSeverity?: number;
+  /** Wounds: blood loss per in-game day per point of severity, until a doctor tends it. */
+  bleed?: number;
+  /** Wounds: pain per point of severity. Enough pain knocks a pawn down. */
+  pain?: number;
+  /** Wounds: severity healed per day once tended. Untended wounds heal at a fifth of this. */
+  healPerDay?: number;
 }
 
 export const CONDITIONS: Record<string, ConditionDef> = {
@@ -162,6 +168,49 @@ export const CONDITIONS: Record<string, ConditionDef> = {
     stages: [{ minSeverity: 0, label: '', workMult: 0.75, moveMult: 0.9, mood: -0.06 }],
   },
 
+  // ---------------------------------------------------------------- combat wounds
+  // Severity stacks with every hit of the same kind. A pawn whose wounds add up to 100% dies.
+  cut: {
+    key: 'cut',
+    label: 'Cut',
+    kind: 'injury',
+    description: 'From blades, arrows and claws. Bleeds until a doctor tends it.',
+    bleed: 4,
+    pain: 1,
+    healPerDay: 0.3,
+    stages: [
+      { minSeverity: 0, label: 'minor', workMult: 0.95, mood: -0.03 },
+      { minSeverity: 0.25, label: 'deep', workMult: 0.8, moveMult: 0.9, mood: -0.08 },
+      { minSeverity: 0.5, label: 'grievous', workMult: 0.6, moveMult: 0.75, mood: -0.15, bedRest: true },
+    ],
+  },
+  gunshot: {
+    key: 'gunshot',
+    label: 'Gunshot wound',
+    kind: 'injury',
+    description: 'Bleeds heavily until a doctor tends it.',
+    bleed: 6,
+    pain: 1.2,
+    healPerDay: 0.22,
+    stages: [
+      { minSeverity: 0, label: 'graze', workMult: 0.9, mood: -0.05 },
+      { minSeverity: 0.2, label: 'serious', workMult: 0.7, moveMult: 0.85, mood: -0.12, bedRest: true },
+      { minSeverity: 0.45, label: 'critical', workMult: 0.4, moveMult: 0.6, mood: -0.2, bedRest: true },
+    ],
+  },
+  bruise: {
+    key: 'bruise',
+    label: 'Bruises',
+    kind: 'injury',
+    description: 'From fists and clubs. Hurts, but does not bleed and heals by itself.',
+    pain: 1.1,
+    healPerDay: 0.5,
+    stages: [
+      { minSeverity: 0, label: 'sore', workMult: 0.95, mood: -0.03 },
+      { minSeverity: 0.3, label: 'battered', workMult: 0.8, moveMult: 0.85, mood: -0.08 },
+    ],
+  },
+
   // ---------------------------------------------------------------- exposure (from the environment)
   hypothermia: {
     key: 'hypothermia',
@@ -197,6 +246,20 @@ export const CONDITIONS: Record<string, ConditionDef> = {
       { minSeverity: 0, label: 'trivial', workMult: 0.9 },
       { minSeverity: 0.3, label: 'moderate', workMult: 0.7, moveMult: 0.85, mood: -0.1 },
       { minSeverity: 0.6, label: 'severe', workMult: 0.4, moveMult: 0.6, mood: -0.25 },
+    ],
+  },
+
+  blood_loss: {
+    key: 'blood_loss',
+    label: 'Blood loss',
+    kind: 'exposure',
+    description: 'From untended wounds. Recovers slowly once the bleeding stops. Fatal at 100%.',
+    lethal: true,
+    stages: [
+      { minSeverity: 0, label: 'minor', workMult: 0.95 },
+      { minSeverity: 0.2, label: 'moderate', workMult: 0.8, moveMult: 0.9, mood: -0.05 },
+      { minSeverity: 0.4, label: 'severe', workMult: 0.5, moveMult: 0.7, mood: -0.12, bedRest: true },
+      { minSeverity: 0.6, label: 'extreme', workMult: 0.2, moveMult: 0.4, mood: -0.2, bedRest: true },
     ],
   },
 
@@ -362,6 +425,11 @@ export const TRAITS: Record<string, TraitDef> = {
 };
 
 export const RANDOM_TRAITS = Object.values(TRAITS).filter((t) => !t.special);
+
+/** Pain at or above this knocks a pawn down. */
+export const DOWNED_PAIN = 0.8;
+/** Blood loss at or above this knocks a pawn down. */
+export const DOWNED_BLOOD_LOSS = 0.6;
 
 /** Comfortable temperature range before exposure conditions start building. */
 export const COMFORT_MIN = 4;

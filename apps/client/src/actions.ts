@@ -1,4 +1,5 @@
-import { send } from './net';
+import type { Pawn } from '@fe/sim';
+import { command, send } from './net';
 import { store } from './store';
 
 export function myPlayer() {
@@ -19,4 +20,30 @@ export function togglePause(): void {
     lastSpeed = me.speed;
     setSpeed(0);
   }
+}
+
+/** Own pawns currently selected (that still exist). */
+export function mySquad(): Pawn[] {
+  const out: Pawn[] = [];
+  for (const id of store.squad) {
+    const p = store.mirror.get<Pawn>(id);
+    if (p && p.kind === 'pawn' && p.faction === store.me?.faction) out.push(p);
+  }
+  return out;
+}
+
+function myPawnsAll(): Pawn[] {
+  const out: Pawn[] = [];
+  for (const e of store.mirror.entities.values()) if (e.kind === 'pawn' && e.faction === store.me?.faction) out.push(e);
+  return out;
+}
+
+/** Draft the selected colonists, or undraft them if they all already are. With nothing selected, everyone. */
+export function toggleDraft(): void {
+  const squad = mySquad();
+  const who = (squad.length ? squad : myPawnsAll()).filter((p) => !p.downed);
+  if (!who.length) return;
+  const on = !who.every((p) => p.drafted);
+  command({ c: 'draft', pawns: who.map((p) => p.id), on });
+  if (!squad.length) store.set({ squad: who.map((p) => p.id), selected: who[0].id });
 }

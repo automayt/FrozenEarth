@@ -8,7 +8,9 @@ export { serializeWorld, deserializeWorld, snapshot, hashWorld, SAVE_VERSION, ty
 export { findPath } from './pathfinding';
 export { fireEvent, eligibleEvents } from './storyteller';
 export { HANDLED_EVENTS } from './eventHandlers';
-export { effectsOf, addCondition, removeCondition, hasCondition, stageOf, killPawn, type Effects } from './health';
+export { effectsOf, addCondition, removeCondition, hasCondition, stageOf, killPawn, injure, painOf, bleedRate, woundTotal, needsTending, type Effects } from './health';
+export { lineOfSight, inCover, hitChance, hostile, isRaider, cellDistance } from './combat';
+export { startRaid, raidPoints, colonyWealth } from './raids';
 export { startFire, strike, fuelAt } from './fire';
 export { resolveChoice } from './choices';
 export { scheduleEvent } from './schedule';

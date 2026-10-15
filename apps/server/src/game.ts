@@ -126,7 +126,7 @@ export class GameServer {
     if (now - this.lastBroadcast >= BROADCAST_MS) {
       this.lastBroadcast = now;
       const d = this.world.takeDelta();
-      const empty = !d.ents.length && !d.removed.length && !d.cells.length && !d.zones.length && !d.removedZones.length && !d.factions.length && !d.msgs.length && !d.rooms && !d.roomTemps && !d.conditions;
+      const empty = !d.ents.length && !d.removed.length && !d.cells.length && !d.zones.length && !d.removedZones.length && !d.factions.length && !d.msgs.length && !d.rooms && !d.roomTemps && !d.conditions && !d.shots;
       if (!empty || timeChanged || !time.paused) this.broadcast({ t: 'delta', d, time });
     }
     if (timeChanged || now - this.lastPlayers >= PLAYERS_MS) {

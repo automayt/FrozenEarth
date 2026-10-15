@@ -4,7 +4,7 @@ A browser-based, multiplayer colony sim in the spirit of RimWorld.
 
 Winter is closing in on the world from the outside. Colonies start in the easier outer band, where the cold arrives first, and have to move inward toward the center. The center is harder to survive but is the last place to freeze. On the way there are friendly and hostile places: you can raid and loot, take jobs, help people, or trick them.
 
-**Current build:** the colony-sim core on one shared map. 2–8 players each run their own faction at the same time. The world map, the advancing winter front and combat are next (see [Roadmap](#roadmap)).
+**Current build:** the colony-sim core on one shared map. 2–8 players each run their own faction at the same time. Combat and raids are in; the world map and the advancing winter front are next (see [Roadmap](#roadmap)).
 
 ## Play
 
@@ -38,6 +38,9 @@ The first player to join a new world is the host (admin). Rejoining with the sam
 | Mouse wheel | Zoom |
 | Left click | Select (pawn, building, item, plant or cell) |
 | Left drag with a tool | Designate, build or zone a rectangle (walls are drawn as hollow rooms) |
+| Left drag (no tool) | Box-select your colonists |
+| R | Draft or undraft the selected colonists (everyone, if none is selected) |
+| Right click (drafted colonists selected) | Move there; on another faction's pawn, attack it |
 | Right click / Esc | Drop the tool, close menus, deselect |
 | Space | Request pause |
 | 1 / 2 / 3 | Vote for game speed |
@@ -59,12 +62,19 @@ The first player to join a new world is the host (admin). Rejoining with the sam
 - **Crafting:** benches with bills ("do X times", "until you have X", "forever"). Campfire and stove for cooking; crafting spot and workbench for crafting.
 - **Rooms and temperature:** enclosed rooms are detected automatically. Room temperature drifts toward the outdoors, and heaters and coolers push it back. Food spoils unless kept cold.
 - **Seasons and climate:** day/night and four seasons.
-- **Storyteller events:** 56 random events over five rarity tiers, from common migraines to once-per-world wonders such as the Sun Shard. They include weather, disease outbreaks, fires, visitors who arrive as choice letters (some hiding secrets), contested loot between colonies, and center-of-the-map mysteries. See [docs/EVENTS.md](docs/EVENTS.md).
+- **Storyteller events:** 59 random events over five rarity tiers, from common migraines to once-per-world wonders such as the Sun Shard. They include weather, disease outbreaks, fires, visitors who arrive as choice letters (some hiding secrets), contested loot between colonies, raids, and center-of-the-map mysteries. See [docs/EVENTS.md](docs/EVENTS.md).
 - **Health and personality:**
   - Diseases that spread; a race between severity and immunity that bed rest helps you win.
   - Injuries, hypothermia, heatstroke, starvation and death.
   - 18 traits, mental breaks and inspirations.
 - **Fire:** spreads through forests and wooden buildings, rain puts it out, and lightning starts it. Colonists fight fires near home.
+- **Combat:**
+  - Draft colonists to take direct control, then right-click to move or attack. Drafted colonists fire on raiders in range by themselves. They never fire on another player's pawns unless you order it.
+  - Weapons: knife, club, short bow and bolt rifle, plus fists. Each has range, damage, cooldown and accuracy.
+  - Line of sight: walls, doors and rock block shots, and a wall next to a target on the shooter's side halves the chance to hit.
+  - Wounds: cuts, gunshots and bruises. Untended cuts and gunshots bleed into blood loss, which is fatal at 100%. Enough pain or blood loss knocks a pawn down. The Doctor work type dresses wounds to stop the bleeding.
+  - Raids: raiders scaled to each colony's wealth arrive at the map edge, come for its colonists, loot if they can, and flee when half of them are down. There are also night raids and scouting parties.
+  - Hunting is deferred until there are animals.
 - **Multiplayer and persistence:** chat, a player list with speed votes, reconnect, late join, persistent worlds.
 
 ## Architecture
@@ -105,6 +115,7 @@ npm run bots -- --bots 8 --minutes 2   # against a running server; checks all cl
 - [x] **M6:** storyteller and random events: 56 events, health conditions, traits, mental states, fire, choice letters
 - [ ] **M7:** playtest polish (alerts, more UI, performance profiling, fog of war)
 - [ ] Choosing a start location in the lobby, and player-to-player trading
-- [ ] Combat, health and injuries, raids, hunting
+- [x] Combat: drafting, weapons, wounds and doctors, raids
+- [ ] Hunting (needs animals), sappers and door-bashing, weapons as items, rescuing and capturing downed pawns
 - [ ] World map: winter front advancing inward, harsher center, caravans between maps
 - [ ] NPC settlements, jobs and quests, reputation (help, betray, trick)

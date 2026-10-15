@@ -1,7 +1,7 @@
 import { Application, Container, Graphics, Sprite, Text, Texture } from 'pixi.js';
-import { BUILDINGS, PLANTS, ROCKS, TERRAINS, type TerrainDef } from '@fe/defs';
+import { BUILDINGS, PLANTS, ROCKS, TERRAINS, WEAPON_KEYS, weaponOf, type TerrainDef } from '@fe/defs';
 import { pawnPosition } from '@fe/protocol';
-import { DESIG, TICKS_PER_DAY, TICKS_PER_HOUR, hash2, type Construct, type Entity, type Pawn } from '@fe/sim';
+import { DESIG, SHOT_FIELDS, TICKS_PER_DAY, TICKS_PER_HOUR, bleedRate, hash2, woundTotal, type Construct, type Entity, type Pawn } from '@fe/sim';
 import { store } from '../store';
 import { TextureBank } from './textures';
 import { Input } from './input';
@@ -12,6 +12,23 @@ export const TILE = 32;
 const PX = 8;
 /** Texture pixels skipped per canvas pixel when sampling terrain art (texture repeats every 128/(PX*STEP) cells). */
 const TEX_STEP = 2;
+
+/** One attack being animated: a projectile flies, then its tracer fades. */
+interface ShotFx {
+  shooter: number;
+  target: number;
+  sx: number;
+  sy: number;
+  tx: number;
+  ty: number;
+  hit: boolean;
+  weapon: string;
+  born: number;
+}
+
+/** Projectile flight time and how long the tracer lingers after, in ms. */
+const SHOT_FLY_MS = 140;
+const SHOT_FADE_MS = 260;
 
 interface EntityView {
   root: Container;
@@ -42,6 +59,10 @@ export class GameRenderer {
     ui: new Container(),
   };
   private fireGfx = new Graphics();
+  private shotGfx = new Graphics();
+  private shots: ShotFx[] = [];
+  private lastShotDrain = 0;
+  private orderMark: { x: number; y: number; attack: boolean; born: number } | null = null;
   ui = new Graphics();
   private night = new Graphics();
   private views = new Map<number, EntityView>();
@@ -63,7 +84,7 @@ export class GameRenderer {
     this.app.stage.addChild(this.world, this.night);
     for (const l of Object.values(this.layers)) this.world.addChild(l);
     this.layers.ui.addChild(this.ui);
-    this.layers.fx.addChild(this.fireGfx);
+    this.layers.fx.addChild(this.fireGfx, this.shotGfx);
     this.input = new Input(this, this.app.canvas);
     this.app.ticker.add(() => this.frame());
   }
@@ -174,6 +195,7 @@ export class GameRenderer {
     }
     this.layers.pawns.children.sort((a, b) => a.y - b.y);
     this.drawFire();
+    this.drawShots();
     this.drawUi();
     this.drawNight(tick);
   }
@@ -327,7 +349,7 @@ export class GameRenderer {
         return `c:${e.def}:${got}/${total}:${Math.floor((e.progress / BUILDINGS[e.def].work) * 10)}`;
       }
       case 'pawn':
-        return `w:${e.faction}:${e.name}:${e.asleep ? 1 : 0}:${e.carrying?.def ?? ''}`;
+        return `w:${e.faction}:${e.name}:${e.asleep ? 1 : 0}:${e.carrying?.def ?? ''}:${e.weapon}:${e.drafted ? 1 : 0}:${e.downed ? 1 : 0}:${Math.ceil(woundTotal(e) * 20)}:${bleedRate(e) > 0 ? 1 : 0}`;
     }
   }
 
@@ -432,11 +454,38 @@ export class GameRenderer {
     body.anchor.set(0.5, 0.6);
     body.width = body.height = TILE * 1.05;
     if (!this.tex.hasArt('pawn')) body.tint = color;
-    if (e.asleep) {
+    if (e.asleep || e.downed) {
       body.rotation = Math.PI / 2;
       body.alpha = 0.85;
     }
+    if (e.downed) body.tint = 0xd07070;
     root.addChild(ring, body);
+    const wd = weaponOf(e.weapon);
+    if (e.weapon && !e.downed) {
+      // A small weapon glyph at the pawn's side: a bow arc, a long barrel, or a short blade.
+      const g = new Graphics();
+      if (e.weapon === 'bow') g.arc(TILE * 0.3, 0, TILE * 0.18, -Math.PI / 2.2, Math.PI / 2.2).stroke({ width: 2, color: 0xc8a070 });
+      else
+        g.moveTo(TILE * 0.22, TILE * 0.12)
+          .lineTo(TILE * (wd.melee ? 0.42 : 0.55), -TILE * (wd.melee ? 0.12 : 0.18))
+          .stroke({ width: wd.melee ? 2.5 : 2, color: wd.melee ? 0xd8d8d8 : 0x6a5a48 });
+      root.addChild(g);
+    }
+    if (e.drafted) {
+      // Drafted: a chevron over the head in the faction colour.
+      const d = new Graphics()
+        .poly([-6, -TILE * 0.62, 0, -TILE * 0.5, 6, -TILE * 0.62, 6, -TILE * 0.74, 0, -TILE * 0.62, -6, -TILE * 0.74])
+        .fill(color)
+        .stroke({ width: 1.2, color: 0x000000, alpha: 0.8 });
+      root.addChild(d);
+    }
+    const hurt = woundTotal(e);
+    if (hurt > 0.02 || e.downed) {
+      const bw = TILE * 0.7;
+      const bar = new Graphics().rect(-bw / 2, -TILE * 0.46, bw, 3).fill({ color: 0x000000, alpha: 0.6 });
+      bar.rect(-bw / 2, -TILE * 0.46, bw * Math.max(0, 1 - hurt), 3).fill(bleedRate(e) > 0 ? 0xe04040 : 0x60c060);
+      root.addChild(bar);
+    }
     if (e.carrying) {
       const c = new Sprite(this.tex.item(e.carrying.def));
       c.anchor.set(0.5);
@@ -445,7 +494,7 @@ export class GameRenderer {
       root.addChild(c);
     }
     const label = new Text({
-      text: e.name.split(' ')[0] + (e.asleep ? ' z' : ''),
+      text: e.name.split(' ')[0] + (e.downed ? ' (down)' : e.asleep ? ' z' : ''),
       style: { fontFamily: 'IBM Plex Sans', fontSize: 10, fill: 0xffffff, stroke: { color: 0x000000, width: 3 } },
       resolution: 3,
     });
@@ -460,6 +509,31 @@ export class GameRenderer {
     const g = this.ui;
     g.clear();
     const m = store.mirror;
+    const sw = 1 / this.world.scale.x;
+    for (const id of store.squad) {
+      if (id === store.selected) continue;
+      const v = this.views.get(id);
+      if (!v) continue;
+      const r = TILE * 0.5;
+      g.rect(v.root.x - r, v.root.y - r, r * 2, r * 2).stroke({ width: 1.5 * sw, color: 0xffffff, alpha: 0.6 });
+    }
+    // Who your selected fighters are going after.
+    for (const id of store.squad) {
+      const p = m.get<Pawn>(id);
+      const v = this.views.get(id);
+      if (!p || !v || p.job?.type !== 'attack') continue;
+      const tv = this.views.get(p.job.target);
+      if (tv) g.moveTo(v.root.x, v.root.y).lineTo(tv.root.x, tv.root.y).stroke({ width: 1.5 * sw, color: 0xff5040, alpha: 0.45 });
+    }
+    const om = this.orderMark;
+    if (om) {
+      const age = (performance.now() - om.born) / 500;
+      if (age >= 1) this.orderMark = null;
+      else {
+        const r = TILE * (0.25 + 0.35 * age);
+        g.circle((om.x + 0.5) * TILE, (om.y + 0.5) * TILE, r).stroke({ width: 2 * sw, color: om.attack ? 0xff4030 : 0x80d0ff, alpha: 1 - age });
+      }
+    }
     const sel = store.selected ? m.entities.get(store.selected) : undefined;
     if (sel) {
       const v = this.views.get(sel.id);
@@ -480,6 +554,58 @@ export class GameRenderer {
       g.rect((c % m.w) * TILE, ((c / m.w) | 0) * TILE, TILE, TILE).stroke({ width: 2 / this.world.scale.x, color: 0xffffff, alpha: 0.6 });
     }
     this.input.drawPreview(g);
+  }
+
+  /** Mark where a right-click order went. */
+  flashOrder(x: number, y: number, attack: boolean): void {
+    this.orderMark = { x, y, attack, born: performance.now() };
+  }
+
+  /** Pull new attacks from the mirror and animate them: a projectile then a fading tracer, or a swing. */
+  private drawShots(): void {
+    const m = store.mirror;
+    const now = performance.now();
+    const q = m.shots;
+    // After a stretch without frames (hidden tab), skip the backlog rather than replay it all at once.
+    const stale = now - this.lastShotDrain > 500;
+    this.lastShotDrain = now;
+    for (let k = stale ? q.length : 0; k + SHOT_FIELDS <= q.length; k += SHOT_FIELDS) {
+      this.shots.push({ shooter: q[k], target: q[k + 1], sx: q[k + 2], sy: q[k + 3], tx: q[k + 4], ty: q[k + 5], hit: q[k + 6] === 1, weapon: WEAPON_KEYS[q[k + 7]] ?? '', born: now });
+    }
+    q.length = 0;
+    this.shots = this.shots.filter((s) => now - s.born < SHOT_FLY_MS + SHOT_FADE_MS).slice(-300);
+    const g = this.shotGfx;
+    g.clear();
+    for (const s of this.shots) {
+      const wd = weaponOf(s.weapon);
+      // Follow the drawn (interpolated) pawns while they're still around.
+      const a = this.views.get(s.shooter)?.root;
+      const b = this.views.get(s.target)?.root;
+      const ax = a ? a.x : (s.sx + 0.5) * TILE;
+      const ay = a ? a.y - TILE * 0.15 : (s.sy + 0.5) * TILE;
+      let bx = b ? b.x : (s.tx + 0.5) * TILE;
+      let by = b ? b.y - TILE * 0.15 : (s.ty + 0.5) * TILE;
+      if (!s.hit) {
+        // Misses fly wide and past the target.
+        bx += (hash2(s.shooter, Math.floor(s.born), 5) - 0.5) * TILE * 1.6 + (bx - ax) * 0.25;
+        by += (hash2(s.target, Math.floor(s.born), 9) - 0.5) * TILE * 1.6 + (by - ay) * 0.25;
+      }
+      const age = now - s.born;
+      if (wd.melee) {
+        // A swing: a short arc in front of the attacker, red if it landed.
+        const f = Math.min(1, age / (SHOT_FLY_MS + SHOT_FADE_MS));
+        const ang = Math.atan2(by - ay, bx - ax);
+        g.arc(ax, ay, TILE * 0.55, ang - 0.7, ang + 0.7).stroke({ width: 3, color: s.hit ? 0xff5040 : 0xffffff, alpha: 0.9 * (1 - f) });
+        continue;
+      }
+      const t = Math.min(1, age / SHOT_FLY_MS);
+      const hx = ax + (bx - ax) * t;
+      const hy = ay + (by - ay) * t;
+      const fade = age < SHOT_FLY_MS ? 1 : 1 - (age - SHOT_FLY_MS) / SHOT_FADE_MS;
+      g.moveTo(ax, ay).lineTo(hx, hy).stroke({ width: s.weapon === 'rifle' ? 1.5 : 1, color: wd.color, alpha: 0.55 * fade });
+      if (t < 1) g.circle(hx, hy, s.weapon === 'rifle' ? 2.2 : 1.8).fill({ color: wd.color, alpha: 1 });
+      else if (s.hit) g.circle(bx, by, 5 * fade + 1).fill({ color: 0xff3020, alpha: 0.7 * fade });
+    }
   }
 
   private drawFire(): void {
