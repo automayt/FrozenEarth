@@ -9,6 +9,7 @@ import { Feed } from './Feed';
 import { WorkPanel } from './WorkPanel';
 import { ColonistsPanel } from './ColonistsPanel';
 import { EventsPanel } from './EventsPanel';
+import { Alerts } from './Alerts';
 
 export function App() {
   const s = useStore();
@@ -21,6 +22,7 @@ export function App() {
           <TopBar />
           {s.status === 'connecting' && <div className="banner">{s.error || 'Reconnecting…'}</div>}
           <Feed />
+          <Alerts />
           <Inspect />
           {s.panel === 'work' && <WorkPanel />}
           {s.panel === 'colonists' && <ColonistsPanel />}

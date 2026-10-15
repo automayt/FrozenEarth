@@ -1,4 +1,4 @@
-import { BUILDINGS, ITEMS, PLANTS, RECIPES, ROCKS, T } from '@fe/defs';
+import { APPAREL, BUILDINGS, ITEMS, PLANTS, RECIPES, ROCKS, T } from '@fe/defs';
 import { goTo, needsWarmth, pushOut, workSpeed } from './pawns';
 import { addCondition, effectsOf } from './health';
 import type { Building, Construct, Item, Job, Pawn, Plant } from './types';
@@ -39,7 +39,34 @@ export function runJob(w: World, p: Pawn): JobResult {
       return extinguish(w, p, j);
     case 'warm':
       return warm(w, p, j);
+    case 'wear':
+      return wear(w, p, j);
   }
+}
+
+function wear(w: World, p: Pawn, j: J<'wear'>): JobResult {
+  const takeOff = () => {
+    const old = p.apparel.find((k) => APPAREL[k]?.slot === j.slot);
+    if (old) {
+      p.apparel = p.apparel.filter((k) => k !== old);
+      w.placeItemNear(old, 1, w.cellOf(p));
+    }
+  };
+  if (!j.item) {
+    takeOff();
+    w.markDirty(p);
+    return 'done';
+  }
+  const it = w.get<Item>(j.item);
+  if (!it || it.kind !== 'item' || !APPAREL[it.def]) return 'fail';
+  const r = goTo(w, p, w.cellOf(it), false);
+  if (r !== 'arrived') return r === 'fail' ? 'fail' : 'continue';
+  const def = it.def;
+  w.takeFromItem(it, 1);
+  takeOff();
+  p.apparel.push(def);
+  w.markDirty(p);
+  return 'done';
 }
 
 /** Ticks of beating at a fire to knock it down one level. */
@@ -161,7 +188,7 @@ function build(w: World, p: Pawn, j: J<'build'>): JobResult {
   }
   const total = BUILDINGS[con.def].work;
   const before = con.progress;
-  con.progress += workSpeed(w, p);
+  con.progress += workSpeed(w, p, 'construction');
   bumpProgress(w, con, before, con.progress, total);
   if (con.progress < total) return 'continue';
   completeConstruct(w, con);
@@ -204,7 +231,7 @@ function mine(w: World, p: Pawn, j: J<'mine'>): JobResult {
     j.stage = 1;
   }
   const rd = ROCKS[rock];
-  j.progress += workSpeed(w, p);
+  j.progress += workSpeed(w, p, 'mining');
   if (j.progress < rd.mineWork) return 'continue';
   w.setRock(j.cell, 0);
   w.setDesig(j.cell, 0, 0);
@@ -221,7 +248,7 @@ function cut(w: World, p: Pawn, j: J<'cut'>): JobResult {
     j.stage = 1;
   }
   const def = PLANTS[plant.def];
-  j.progress += workSpeed(w, p);
+  j.progress += workSpeed(w, p, 'plants');
   if (j.progress < def.work) return 'continue';
   harvestPlant(w, plant, j.harvest);
   return 'done';
@@ -252,7 +279,7 @@ function sow(w: World, p: Pawn, j: J<'sow'>): JobResult {
     if (r !== 'arrived') return r === 'fail' ? 'fail' : 'continue';
     j.stage = 1;
   }
-  j.progress += workSpeed(w, p);
+  j.progress += workSpeed(w, p, 'plants');
   if (j.progress < SOW_WORK) return 'continue';
   w.spawnPlant(j.plant, j.cell, 0.05);
   return 'done';
@@ -347,7 +374,7 @@ function bill(w: World, p: Pawn, j: J<'bill'>): JobResult {
     }
     j.stage = 3;
   }
-  j.progress += workSpeed(w, p);
+  j.progress += workSpeed(w, p, recipe.workType === 'cook' ? 'cooking' : 'crafting');
   if (j.progress < recipe.work) return 'continue';
   j.gathered = [];
   w.placeItemNear(recipe.product.item, recipe.product.count, benchCell);

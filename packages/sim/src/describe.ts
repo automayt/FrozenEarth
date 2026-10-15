@@ -36,6 +36,8 @@ export function describeJob(job: Job | null, lookup: (id: number) => Entity | un
       return 'Fighting a fire';
     case 'warm':
       return 'Seeking a better temperature';
+    case 'wear':
+      return `Changing into ${name(job.item)}`;
     case 'bill': {
       const b = lookup(job.bench);
       const bill = b && b.kind === 'building' ? b.bills.find((x) => x.id === job.bill) : undefined;

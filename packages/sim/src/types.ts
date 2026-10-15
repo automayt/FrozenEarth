@@ -1,4 +1,4 @@
-import type { ItemCategory, WorkType } from '@fe/defs';
+import type { ItemCategory, SkillKey, WorkType } from '@fe/defs';
 
 export type EntityId = number;
 export type Kind = 'pawn' | 'item' | 'plant' | 'building' | 'construct';
@@ -84,6 +84,11 @@ export interface PawnCondition {
   until: number;
 }
 
+export interface PawnSkill {
+  level: number;
+  xp: number;
+}
+
 export interface Carried {
   def: string;
   count: number;
@@ -102,6 +107,10 @@ export interface Pawn extends Base {
   asleep: boolean;
   conditions: PawnCondition[];
   traits: string[];
+  // -- clothing and skills
+  /** Worn apparel item keys, one per slot. */
+  apparel: string[];
+  skills: Record<SkillKey, PawnSkill>;
   /** Short mood explanations, for the inspect pane. */
   thoughts: string[];
 }
@@ -124,6 +133,7 @@ export type Job =
   | (JobBase & { type: 'sleep'; bed: EntityId; cell: number; rest?: boolean })
   | (JobBase & { type: 'extinguish'; cell: number; progress: number })
   | (JobBase & { type: 'warm'; dest: number; until: number })
+  | (JobBase & { type: 'wear'; item: EntityId; slot: string })
   | (JobBase & {
       type: 'bill';
       bench: EntityId;

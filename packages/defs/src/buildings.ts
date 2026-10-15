@@ -44,6 +44,7 @@ export const BUILDINGS: Record<string, BuildingDef> = {
   stove: { key: 'stove', label: 'Wood stove', category: 'production', color: 0x5a5050, cost: { steel: 60, wood: 20 }, work: 900, blocksMovement: true, recipes: ['cook_simple_meal', 'cook_simple_meal_x4'] },
   crafting_spot: { key: 'crafting_spot', label: 'Crafting spot', category: 'production', color: 0x9a8a6a, cost: {}, work: 30, blocksMovement: false, recipes: ['stone_blocks', 'cloth_from_plants'] },
   workbench: { key: 'workbench', label: 'Workbench', category: 'production', color: 0x6a5a40, cost: { wood: 50, steel: 20 }, work: 900, blocksMovement: true, recipes: ['stone_blocks', 'cloth_from_plants', 'survival_meal'] },
+  tailor_bench: { key: 'tailor_bench', label: "Tailor's bench", category: 'production', color: 0x8a6a8a, cost: { wood: 40, cloth: 10 }, work: 700, blocksMovement: true, recipes: ['make_tunic', 'make_parka', 'make_duster', 'make_tuque', 'make_sun_hat'] },
   heater: { key: 'heater', label: 'Wood heater', category: 'temperature', color: 0xb05030, cost: { steel: 30, wood: 10 }, work: 500, blocksMovement: true, heat: 14, targetTemp: 21 },
   sun_shard: { key: 'sun_shard', label: 'The Sun Shard', category: 'special', color: 0xffc040, cost: {}, work: 0, blocksMovement: true, special: true, heat: 60, targetTemp: 24, radiant: [24, 4] },
   whispering_stone: { key: 'whispering_stone', label: 'Whispering stone', category: 'special', color: 0x1a1a24, cost: {}, work: 0, blocksMovement: true, special: true, aweRadius: 6 },

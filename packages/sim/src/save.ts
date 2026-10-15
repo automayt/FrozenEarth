@@ -1,5 +1,6 @@
 import type { Choice, Condition, Entity, Faction, Pawn, Room, Snapshot, Zone } from './types';
 import { upgradeStoryState, type StoryState } from './schedule';
+import { SKILLS } from '@fe/defs';
 import { Dirty, rkFromString, rkToString, unreachableKey, World } from './world';
 
 export const SAVE_VERSION = 2;
@@ -108,7 +109,14 @@ export function deserializeWorld(data: SaveData): World {
     if (m.fire[i]) w.fireCells.add(i);
     w.refreshCell(i);
   }
-  for (const e of d.ents) w.add(e);
+  for (const e of d.ents) {
+    // Fields added without a version bump get defaults here.
+    if (e.kind === 'pawn') {
+      e.apparel ??= [];
+      e.skills ??= Object.fromEntries(SKILLS.map((k) => [k, { level: 3, xp: 0 }])) as Pawn['skills'];
+    }
+    w.add(e);
+  }
   w.nextId = d.nextId;
   for (const f of d.factions) w.factions.set(f.id, f);
   for (const z of d.zones) {

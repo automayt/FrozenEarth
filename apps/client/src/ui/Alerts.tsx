@@ -1,0 +1,107 @@
+import { BUILDINGS, CONDITIONS, ITEMS } from '@fe/defs';
+import { calendar, DAYS_PER_SEASON, stageOf, type Building, type Item, type Pawn } from '@fe/sim';
+import { store, useStore } from '../store';
+
+type Severity = 'critical' | 'warning' | 'info';
+
+interface Alert {
+  key: string;
+  severity: Severity;
+  title: string;
+  detail: string;
+  /** Where to jump when clicked. */
+  focus?: { x: number; y: number; select?: number };
+}
+
+const ORDER: Record<Severity, number> = { critical: 0, warning: 1, info: 2 };
+
+/** Everything worth nagging about, derived from the client's copy of the world. */
+function computeAlerts(): Alert[] {
+  const m = store.mirror;
+  const me = store.me?.faction;
+  if (!me) return [];
+  const pawns: Pawn[] = [];
+  const beds: Building[] = [];
+  let storedNutrition = 0;
+  for (const e of m.entities.values()) {
+    if (e.kind === 'pawn' && e.faction === me) pawns.push(e);
+    else if (e.kind === 'building' && e.faction === me && BUILDINGS[e.def]?.bed) beds.push(e);
+    else if (e.kind === 'item') {
+      const z = m.zoneAt[e.y * m.w + e.x];
+      if (z && m.zones.get(z)?.faction === me) storedNutrition += (ITEMS[(e as Item).def]?.nutrition ?? 0) * (e as Item).count;
+    }
+  }
+  const out: Alert[] = [];
+  const at = (p: Pawn) => ({ x: p.x, y: p.y, select: p.id });
+
+  for (const p of pawns) {
+    for (const c of p.conditions) {
+      const def = CONDITIONS[c.key];
+      if (!def) continue;
+      if (def.lethal && c.severity >= 0.6) {
+        out.push({ key: `dying-${p.id}-${c.key}`, severity: 'critical', title: `${p.name.split(' ')[0]}: ${def.label.toLowerCase()}`, detail: `${stageOf(def, c.severity).label}, ${Math.round(c.severity * 100)}%. This can kill.`, focus: at(p) });
+      } else if (def.kind === 'exposure' && c.severity >= 0.3) {
+        out.push({ key: `exp-${p.id}-${c.key}`, severity: 'warning', title: `${p.name.split(' ')[0]}: ${def.label.toLowerCase()}`, detail: c.key === 'hypothermia' ? 'Needs a heated room or a campfire.' : c.key === 'heatstroke' ? 'Needs a cooler room.' : 'Needs food.', focus: at(p) });
+      } else if (def.kind === 'mental') {
+        out.push({ key: `mental-${p.id}`, severity: 'warning', title: `${p.name.split(' ')[0]}: ${def.label.toLowerCase()}`, detail: 'Mental break. Improve their mood.', focus: at(p) });
+      }
+    }
+    if (p.needs.food < 0.1 && !p.conditions.some((c) => c.key === 'malnutrition')) {
+      out.push({ key: `hungry-${p.id}`, severity: 'warning', title: `${p.name.split(' ')[0]} is starving`, detail: 'No food they can reach.', focus: at(p) });
+    }
+  }
+  const sick = pawns.filter((p) => p.conditions.some((c) => CONDITIONS[c.key]?.kind === 'disease'));
+  if (sick.length) out.push({ key: 'sick', severity: 'info', title: `${sick.length} sick`, detail: sick.map((p) => p.name.split(' ')[0]).join(', '), focus: at(sick[0]) });
+
+  const idle = pawns.filter((p) => !p.job || p.job.type === 'wander');
+  if (idle.length) out.push({ key: 'idle', severity: 'info', title: `${idle.length} idle colonist${idle.length > 1 ? 's' : ''}`, detail: 'Give them orders or check work priorities.', focus: at(idle[0]) });
+
+  if (beds.length < pawns.length) out.push({ key: 'beds', severity: 'info', title: 'Need beds', detail: `${pawns.length - beds.length} colonist${pawns.length - beds.length > 1 ? 's' : ''} sleep on the ground.` });
+
+  const daysOfFood = pawns.length ? storedNutrition / (pawns.length * 0.8) : 99;
+  if (daysOfFood < 2) out.push({ key: 'food', severity: daysOfFood < 0.7 ? 'critical' : 'warning', title: 'Low food', detail: `About ${daysOfFood.toFixed(1)} days of food in stockpiles.` });
+
+  const f = m.factions.get(me);
+  if (f && m.fireCells.size) {
+    for (const c of m.fireCells) {
+      const x = c % m.w;
+      const y = Math.floor(c / m.w);
+      if (Math.max(Math.abs(x - f.home.x), Math.abs(y - f.home.y)) <= 25) {
+        out.push({ key: 'fire', severity: 'critical', title: 'Fire near your colony', detail: 'Make sure colonists have firefighting enabled.', focus: { x, y } });
+        break;
+      }
+    }
+  }
+
+  // Winter warning in the last 3 days of fall.
+  const cal = calendar(store.estTick());
+  if (cal.season === 'Fall' && cal.dayOfSeason > DAYS_PER_SEASON - 3) {
+    const daysLeft = DAYS_PER_SEASON - cal.dayOfSeason + (1 - cal.hour / 24);
+    out.push({ key: 'winter', severity: 'warning', title: `Winter in ${daysLeft.toFixed(1)} days`, detail: 'Build heated rooms, stock food and harvest crops before they freeze.' });
+  }
+
+  const letters = m.choices.filter((c) => c.faction === me).length;
+  if (letters) out.push({ key: 'letters', severity: 'info', title: `${letters} decision${letters > 1 ? 's' : ''} waiting`, detail: 'See the letters on the left.' });
+
+  return out.sort((a, b) => ORDER[a.severity] - ORDER[b.severity]);
+}
+
+export function Alerts() {
+  useStore();
+  const alerts = computeAlerts();
+  if (!alerts.length) return null;
+  return (
+    <div className="alerts">
+      {alerts.slice(0, 10).map((a) => (
+        <button
+          key={a.key}
+          className={`alert ${a.severity}`}
+          title={a.detail}
+          onClick={() => a.focus && store.set({ focus: { x: a.focus.x, y: a.focus.y }, selected: a.focus.select ?? store.selected })}
+        >
+          {a.title}
+        </button>
+      ))}
+    </div>
+  );
+}

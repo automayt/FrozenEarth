@@ -1,4 +1,4 @@
-import { BUILDINGS, DEFAULT_PRIORITY, ITEMS, PLANTS, RANDOM_TRAITS, START_PRIORITY, TERRAINS, WEATHER, WORK_TYPES, type WorkType } from '@fe/defs';
+import { BUILDINGS, DEFAULT_PRIORITY, ITEMS, PLANTS, RANDOM_TRAITS, SKILLS, START_PRIORITY, TERRAINS, WEATHER, WORK_TYPES, type SkillKey, type WorkType } from '@fe/defs';
 import * as C from './constants';
 import { GameMap } from './map';
 import { Rng } from './rng';
@@ -487,6 +487,14 @@ export class World {
     return out;
   }
 
+  /** Starting skills: mostly modest, with one thing they're good at. */
+  rollSkills(): Pawn['skills'] {
+    const best = this.rng.pick(SKILLS);
+    return Object.fromEntries(
+      SKILLS.map((k) => [k, { level: k === best ? 6 + this.rng.int(7) : this.rng.int(7), xp: 0 }]),
+    ) as Record<SkillKey, { level: number; xp: number }>;
+  }
+
   spawnPawn(faction: number, cell: number, name: string, traits?: string[]): Pawn {
     const m = this.map;
     const priorities = Object.fromEntries(WORK_TYPES.map((w) => [w, START_PRIORITY[w] ?? DEFAULT_PRIORITY])) as Record<WorkType, number>;
@@ -506,6 +514,8 @@ export class World {
       asleep: false,
       conditions: [],
       traits: traits ?? this.rollTraits(),
+      apparel: ['tunic'],
+      skills: this.rollSkills(),
       thoughts: [],
     });
   }
@@ -519,7 +529,7 @@ export class World {
       kind,
       cells: [],
       plant,
-      allow: ['resource', 'raw_food', 'meal'],
+      allow: ['resource', 'raw_food', 'meal', 'apparel'],
     };
     this.zones.set(z.id, z);
     this.dirty.zones.add(z.id);

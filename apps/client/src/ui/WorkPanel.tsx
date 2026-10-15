@@ -1,4 +1,13 @@
-import { WORK_LABELS, WORK_TYPES } from '@fe/defs';
+import { WORK_LABELS, WORK_TYPES, type SkillKey, type WorkType } from '@fe/defs';
+
+const WORK_SKILL: Partial<Record<WorkType, SkillKey>> = {
+  construct: 'construction',
+  mine: 'mining',
+  grow: 'plants',
+  plantcut: 'plants',
+  cook: 'cooking',
+  craft: 'crafting',
+};
 import type { Pawn } from '@fe/sim';
 import { command } from '../net';
 import { store, useStore } from '../store';
@@ -34,11 +43,14 @@ export function WorkPanel() {
               </td>
               {WORK_TYPES.map((w) => {
                 const v = p.priorities[w];
+                const skill = WORK_SKILL[w];
+                const level = skill ? (p.skills?.[skill]?.level ?? 0) : null;
                 const next = v === 0 ? 1 : v === 4 ? 0 : v + 1;
                 const prev = v === 0 ? 4 : v === 1 ? 0 : v - 1;
                 return (
                   <td key={w}>
                     <button
+                      title={level !== null ? `Skill level ${level}` : undefined}
                       className={`prio p${v}`}
                       onClick={() => command({ c: 'setPriority', pawn: p.id, work: w, prio: next })}
                       onContextMenu={(e) => {
@@ -47,6 +59,7 @@ export function WorkPanel() {
                       }}
                     >
                       {v || ''}
+                      {level !== null && <sub className={level >= 10 ? 'skilled' : ''}>{level}</sub>}
                     </button>
                   </td>
                 );

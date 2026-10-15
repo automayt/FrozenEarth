@@ -1,4 +1,4 @@
-import { BUILDINGS, COMFORT_MAX, COMFORT_MIN, CONDITIONS, TRAITS, WEATHER, type ConditionDef, type ConditionStage } from '@fe/defs';
+import { APPAREL, BUILDINGS, COMFORT_MAX, COMFORT_MIN, CONDITIONS, TRAITS, WEATHER, type ConditionDef, type ConditionStage } from '@fe/defs';
 import { RARE_TICK, TICKS_PER_DAY, TICKS_PER_HOUR } from './constants';
 import { scheduleEvent } from './schedule';
 import type { Building, Pawn, PawnCondition } from './types';
@@ -45,6 +45,13 @@ export function effectsOf(w: World, p: Pawn): Effects {
       e.mood += t.mood;
       e.thoughts.push([t.label, t.mood]);
     }
+  }
+  for (const key of p.apparel) {
+    const a = APPAREL[key];
+    if (!a) continue;
+    e.coldShift += a.coldShift;
+    e.heatShift += a.heatShift;
+    e.move *= a.moveMult ?? 1;
   }
   for (const c of p.conditions) {
     const def = CONDITIONS[c.key];
@@ -226,6 +233,7 @@ export function killPawn(w: World, p: Pawn, cause: string): void {
   const faction = p.faction;
   const fname = w.factions.get(faction)?.name ?? 'the colony';
   if (p.carrying) w.placeItemNear(p.carrying.def, p.carrying.count, cell, p.carrying.rot);
+  for (const a of p.apparel) w.placeItemNear(a, 1, cell);
   w.despawn(p.id);
   w.message(0, `${p.name} of ${fname} has died of ${cause}.`, 'bad', cell);
   let left = 0;

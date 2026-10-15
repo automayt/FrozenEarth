@@ -757,3 +757,90 @@ td.name {
   color: var(--amber);
   font-weight: 600;
 }
+
+/* ------------------------------------------------------------------ alerts */
+
+.alerts {
+  position: absolute;
+  top: 70px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  max-width: 260px;
+  pointer-events: none;
+}
+
+.alert {
+  pointer-events: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-right: 3px solid var(--muted);
+  padding: 4px 9px;
+  font-size: 12px;
+  text-align: right;
+}
+
+.alert.warning {
+  border-right-color: var(--amber);
+}
+
+.alert.critical {
+  border-right-color: var(--bad);
+  color: #ffd0c4;
+  animation: alert-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes alert-pulse {
+  50% {
+    background: rgba(120, 30, 20, 0.85);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .alert.critical {
+    animation: none;
+  }
+}
+
+/* ------------------------------------------------------------------ skills */
+
+.skills {
+  margin: 8px 0;
+}
+
+.skill {
+  display: grid;
+  grid-template-columns: 82px 1fr 22px;
+  gap: 6px;
+  align-items: center;
+  font-size: 11px;
+  margin: 2px 0;
+}
+
+.skill .meter div {
+  background: var(--amber);
+}
+
+.skill small {
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--muted);
+  text-align: right;
+}
+
+.prio {
+  position: relative;
+}
+
+.prio sub {
+  position: absolute;
+  right: 2px;
+  bottom: 0;
+  font-size: 8px;
+  color: var(--muted);
+}
+
+.prio sub.skilled {
+  color: var(--amber);
+}

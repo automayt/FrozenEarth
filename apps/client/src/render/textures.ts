@@ -123,6 +123,17 @@ export class TextureBank {
     return this.draw(`item_${def}`, (g) => {
       if (d?.category === 'resource') {
         for (let k = 0; k < 3; k++) g.roundRect(12, 14 + k * 12, 40, 10, 3).fill(shade(c, 0.85 + k * 0.1)).stroke({ width: 1.5, color: shade(c, 0.5) });
+      } else if (d?.category === 'apparel') {
+        if (def === 'tuque' || def === 'sun_hat') {
+          g.ellipse(32, 40, 22, 10).fill(shade(c, 0.85)).stroke({ width: 2, color: shade(c, 0.5) });
+          g.ellipse(32, 30, 15, 14).fill(c).stroke({ width: 2, color: shade(c, 0.5) });
+          if (def === 'tuque') g.circle(32, 15, 5).fill(0xf0f0f0);
+        } else {
+          // A folded garment: body, sleeves, collar.
+          g.poly([16, 14, 26, 10, 38, 10, 48, 14, 58, 26, 50, 32, 46, 28, 46, 54, 18, 54, 18, 28, 14, 32, 6, 26]).fill(c).stroke({ width: 2, color: shade(c, 0.5) });
+          g.rect(28, 10, 8, 6).fill(shade(c, 0.7));
+          if (def === 'parka') g.rect(18, 12, 28, 6).fill(0xe8e0d0);
+        }
       } else if (d?.category === 'meal') {
         g.circle(32, 34, 20).fill(0xe8e0d0).stroke({ width: 2, color: 0x6a5a48 });
         g.circle(32, 34, 14).fill(c);

@@ -1,4 +1,4 @@
-export type ItemCategory = 'resource' | 'raw_food' | 'meal';
+export type ItemCategory = 'resource' | 'raw_food' | 'meal' | 'apparel';
 
 export interface ItemDef {
   key: string;
@@ -24,6 +24,11 @@ export const ITEMS: Record<string, ItemDef> = {
   corn: { key: 'corn', label: 'Corn', category: 'raw_food', stackLimit: 75, color: 0xe6c84a, nutrition: 0.05, spoilDays: 60, marketValue: 1.1 },
   potato: { key: 'potato', label: 'Potatoes', category: 'raw_food', stackLimit: 75, color: 0xb08a5a, nutrition: 0.05, spoilDays: 30, marketValue: 1.1 },
   simple_meal: { key: 'simple_meal', label: 'Simple meal', category: 'meal', stackLimit: 10, color: 0xd9a05b, nutrition: 0.9, spoilDays: 4, marketValue: 15 },
+  tunic: { key: 'tunic', label: 'Cloth tunic', category: 'apparel', stackLimit: 10, color: 0xb8a888, marketValue: 30 },
+  parka: { key: 'parka', label: 'Parka', category: 'apparel', stackLimit: 5, color: 0x6a8aa8, marketValue: 80 },
+  duster: { key: 'duster', label: 'Duster', category: 'apparel', stackLimit: 5, color: 0xa88a5a, marketValue: 55 },
+  tuque: { key: 'tuque', label: 'Tuque', category: 'apparel', stackLimit: 10, color: 0xa84a4a, marketValue: 20 },
+  sun_hat: { key: 'sun_hat', label: 'Sun hat', category: 'apparel', stackLimit: 10, color: 0xd8c070, marketValue: 18 },
   survival_meal: { key: 'survival_meal', label: 'Packaged survival meal', category: 'meal', stackLimit: 20, color: 0x7a8a5a, nutrition: 0.9, marketValue: 24 },
 };
 
@@ -31,4 +36,5 @@ export const ITEM_CATEGORIES: { key: ItemCategory; label: string }[] = [
   { key: 'resource', label: 'Resources' },
   { key: 'raw_food', label: 'Raw food' },
   { key: 'meal', label: 'Meals' },
+  { key: 'apparel', label: 'Clothing' },
 ];

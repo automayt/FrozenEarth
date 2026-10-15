@@ -1,4 +1,4 @@
-import { BUILDINGS, COMFORT_MAX, COMFORT_MIN, ITEMS } from '@fe/defs';
+import { APPAREL, BUILDINGS, COMFORT_MAX, COMFORT_MIN, ITEMS, MAX_SKILL, SKILL_LABELS, skillSpeed, xpToNext, type SkillKey } from '@fe/defs';
 import { conditionOf, effectsOf, type Effects } from './health';
 import { atGoal, findPath, makePathState } from './pathfinding';
 import { runJob } from './jobs';
@@ -24,11 +24,28 @@ export function pawnSpeed(w: World, p: Pawn): number {
 }
 
 /** Work speed multiplier. */
-export function workSpeed(w: World, p: Pawn): number {
+export function workSpeed(w: World, p: Pawn, skill?: SkillKey): number {
   let s = Math.max(0.1, effectsOf(w, p).work);
   if (p.needs.mood < 0.2) s *= 0.8;
   if (p.needs.rest < 0.1) s *= 0.8;
+  if (skill) {
+    s *= skillSpeed(p.skills[skill]?.level ?? 0);
+    learn(w, p, skill, 1);
+  }
   return s;
+}
+
+/** Practice makes perfect. Milestone levels get a letter. */
+export function learn(w: World, p: Pawn, skill: SkillKey, xp: number): void {
+  const sk = p.skills[skill];
+  if (!sk || sk.level >= MAX_SKILL) return;
+  sk.xp += xp;
+  const need = xpToNext(sk.level);
+  if (sk.xp < need) return;
+  sk.xp -= need;
+  sk.level++;
+  w.markDirty(p);
+  if (sk.level % 5 === 0) w.message(p.faction, `${p.name} has reached level ${sk.level} in ${SKILL_LABELS[skill].toLowerCase()}.`, 'good', w.cellOf(p));
 }
 
 function tickMovement(w: World, p: Pawn): void {
@@ -104,6 +121,7 @@ function think(w: World, p: Pawn): void {
   if (!job && e.bedRest) job = findSleep(w, p, true);
   if (!job && needsWarmth(w, p, e)) job = warmthJob(w, p, e);
   if (!job && (n.rest < 0.2 || (w.isNight() && n.rest < 0.8))) job = findSleep(w, p, false);
+  if (!job && !e.noWork) job = findApparel(w, p);
   if (!job && !e.noWork) job = findWork(w, p);
   if (!job) job = wanderJob(w, p);
   p.job = job;
@@ -152,6 +170,58 @@ export function warmthJob(w: World, p: Pawn, e: Effects): Job | null {
   }
   if (best < 0) return null;
   return { type: 'warm', stage: 0, dest: best, until: 0 };
+}
+
+/** Put on clothing that suits the season, or take off clothing that doesn't. */
+function findApparel(w: World, p: Pawn): Job | null {
+  const season = w.seasonIndex();
+  const cold = season === 2 || season === 3;
+  const value = (key: string) => {
+    const a = APPAREL[key];
+    if (!a || !a.seasons.includes(season)) return -Infinity;
+    return cold ? -a.coldShift : a.heatShift;
+  };
+  for (const slot of ['torso', 'outer', 'head']) {
+    const current = p.apparel.find((k) => APPAREL[k]?.slot === slot);
+    const currentValue = current ? value(current) : 0;
+    let best: Item | null = null;
+    let bestValue = Math.max(0, currentValue);
+    let bestD = Infinity;
+    const here = w.cellOf(p);
+    for (const it of apparelItems(w)) {
+      const a = APPAREL[it.def];
+      if (!a || a.slot !== slot || !canUseItem(w, p, it)) continue;
+      const v = value(it.def);
+      const d = w.dist(here, w.cellOf(it));
+      if (v > bestValue || (v === bestValue && best && d < bestD)) {
+        if (w.isUnreachable(p.faction, w.cellOf(it))) continue;
+        best = it;
+        bestValue = v;
+        bestD = d;
+      }
+    }
+    if (best) {
+      w.reserve(rk.e(best.id), p.id);
+      return { type: 'wear', stage: 0, item: best.id, slot };
+    }
+    // Out of season and nothing better: take it off rather than roast or freeze in it.
+    if (current && currentValue === -Infinity) return { type: 'wear', stage: 0, item: 0, slot };
+  }
+  return null;
+}
+
+let apparelCache: { world: World; version: number; items: Item[] } | null = null;
+
+/** All clothing items on the map. Cached until items change. */
+function apparelItems(w: World): Item[] {
+  if (apparelCache && apparelCache.world === w && apparelCache.version === w.haulVersion) return apparelCache.items;
+  const items: Item[] = [];
+  for (const id of w.kinds.item) {
+    const it = w.get<Item>(id)!;
+    if (APPAREL[it.def]) items.push(it);
+  }
+  apparelCache = { world: w, version: w.haulVersion, items };
+  return items;
 }
 
 /** True when this pawn may take this item: not reserved, not rotten, not in someone else's stockpile. */

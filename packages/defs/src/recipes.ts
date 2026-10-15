@@ -16,6 +16,11 @@ export interface RecipeDef {
 }
 
 export const RECIPES: Record<string, RecipeDef> = {
+  make_tunic: { key: 'make_tunic', label: 'Sew a cloth tunic', work: 600, workType: 'craft', ingredients: [{ of: 'cloth', count: 20 }], product: { item: 'tunic', count: 1 } },
+  make_parka: { key: 'make_parka', label: 'Sew a parka', work: 1400, workType: 'craft', ingredients: [{ of: 'cloth', count: 45 }], product: { item: 'parka', count: 1 } },
+  make_duster: { key: 'make_duster', label: 'Sew a duster', work: 1000, workType: 'craft', ingredients: [{ of: 'cloth', count: 35 }], product: { item: 'duster', count: 1 } },
+  make_tuque: { key: 'make_tuque', label: 'Knit a tuque', work: 450, workType: 'craft', ingredients: [{ of: 'cloth', count: 15 }], product: { item: 'tuque', count: 1 } },
+  make_sun_hat: { key: 'make_sun_hat', label: 'Weave a sun hat', work: 400, workType: 'craft', ingredients: [{ of: 'cloth', count: 12 }], product: { item: 'sun_hat', count: 1 } },
   cook_simple_meal: {
     key: 'cook_simple_meal',
     label: 'Cook simple meal',

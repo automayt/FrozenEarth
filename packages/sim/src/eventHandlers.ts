@@ -156,8 +156,11 @@ const LOOT_COMMON: Loot[] = [
   ['survival_meal', 5, 12],
   ['stone', 30, 60],
   ['simple_meal', 3, 8],
+  ['tuque', 1, 3],
+  ['tunic', 1, 2],
 ];
 const LOOT_RICH: Loot[] = [
+  ['parka', 1, 3],
   ['gold', 5, 15],
   ['steel', 50, 75],
   ['survival_meal', 10, 20],
@@ -603,6 +606,8 @@ const OFFERS: Offer[] = [
   { give: ['wood', 75], want: [['steel', 30], ['gold', 3], ['cloth', 45]] },
   { give: ['simple_meal', 6], want: [['wood', 30], ['cloth', 20]] },
   { give: ['steel', 25], want: [['potato', 40], ['rice', 40], ['corn', 40], ['berries', 40]] },
+  { give: ['parka', 2], want: [['wood', 80], ['steel', 45], ['gold', 6]] },
+  { give: ['tuque', 3], want: [['wood', 30], ['cloth', 25]] },
 ];
 
 HANDLERS.peddler = (w, faction) => {

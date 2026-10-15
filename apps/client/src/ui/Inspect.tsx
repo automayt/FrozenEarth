@@ -1,4 +1,4 @@
-import { BUILDINGS, CONDITIONS, ITEM_CATEGORIES, ITEMS, PLANTS, RECIPES, ROCKS, SOWABLE_PLANTS, TERRAINS, TRAITS } from '@fe/defs';
+import { APPAREL, BUILDINGS, CONDITIONS, ITEM_CATEGORIES, ITEMS, MAX_SKILL, PLANTS, RECIPES, ROCKS, SKILL_LABELS, SKILLS, SOWABLE_PLANTS, TERRAINS, TRAITS } from '@fe/defs';
 import { describeJob, outdoorTempAt, stageOf, TICKS_PER_HOUR, type Building, type Construct, type Entity, type Pawn, type Zone } from '@fe/sim';
 import { command } from '../net';
 import { store, useStore } from '../store';
@@ -93,6 +93,22 @@ function PawnInfo({ p }: { p: Pawn }) {
           Carrying {p.carrying.count} {ITEMS[p.carrying.def]?.label.toLowerCase()}
         </p>
       )}
+      {p.apparel.length > 0 && (
+        <p className="muted small">
+          Wearing {p.apparel.map((a) => APPAREL[a]?.label.toLowerCase() ?? a).join(', ')}
+        </p>
+      )}
+      <div className="skills">
+        {SKILLS.map((k) => (
+          <div key={k} className="skill" title={`${SKILL_LABELS[k]} level ${p.skills?.[k]?.level ?? 0} of ${MAX_SKILL}`}>
+            <span>{SKILL_LABELS[k]}</span>
+            <div className="meter">
+              <div style={{ width: `${((p.skills?.[k]?.level ?? 0) / MAX_SKILL) * 100}%` }} />
+            </div>
+            <small>{p.skills?.[k]?.level ?? 0}</small>
+          </div>
+        ))}
+      </div>
       {p.traits.length > 0 && (
         <div className="traits">
           {p.traits.map((t) => (
