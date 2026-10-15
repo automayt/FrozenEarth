@@ -228,3 +228,55 @@ describe('storyteller', () => {
     expect(new Set(a.w.story.uniqueFired).size).toBe(a.w.story.uniqueFired.length);
   });
 });
+
+describe('player trading', () => {
+  function twoColonies() {
+    const w = livelyWorld(31);
+    return { w, a: 1, b: 2 };
+  }
+  const stored = (w: World, f: number, def: string) => {
+    let n = 0;
+    for (const id of w.kinds.item) {
+      const it = w.get<Item>(id)!;
+      const z = w.zoneAt(w.cellOf(it));
+      if (it.def === def && z && z.faction === f && z.kind === 'stockpile') n += it.count;
+    }
+    return n;
+  };
+
+  it('accepted offers swap goods between colonies', () => {
+    const { w, a, b } = twoColonies();
+    const goldA = stored(w, a, 'gold');
+    const steelB = stored(w, b, 'steel');
+    expect(goldA).toBeGreaterThanOrEqual(5);
+    w.enqueue(a, { c: 'offerTrade', to: b, give: [['gold', 5]], want: [['steel', 30]], note: 'fair deal' });
+    run(w, 2);
+    const c = [...w.choices.values()].find((x) => x.event === 'trade')!;
+    expect(c.faction).toBe(b);
+    expect(c.text).toContain('fair deal');
+    w.enqueue(b, { c: 'choose', choice: c.id, option: 'accept' });
+    run(w, 2);
+    expect(stored(w, a, 'gold')).toBe(goldA - 5);
+    expect(stored(w, b, 'steel')).toBe(steelB - 30);
+    expect(count(w, 'gold')).toBeGreaterThanOrEqual(goldA);
+  });
+
+  it("can't offer what you don't have, or trade with yourself", () => {
+    const { w, a } = twoColonies();
+    w.enqueue(a, { c: 'offerTrade', to: 2, give: [['gold', 9999]], want: [] });
+    w.enqueue(a, { c: 'offerTrade', to: a, give: [['gold', 1]], want: [] });
+    run(w, 2);
+    expect([...w.choices.values()].some((x) => x.event === 'trade')).toBe(false);
+  });
+
+  it('declined or unaffordable deals move nothing', () => {
+    const { w, a, b } = twoColonies();
+    const before = count(w, 'gold') + count(w, 'steel');
+    w.enqueue(a, { c: 'offerTrade', to: b, give: [['gold', 2]], want: [['steel', 999]] });
+    run(w, 2);
+    const c = [...w.choices.values()].find((x) => x.event === 'trade')!;
+    w.enqueue(b, { c: 'choose', choice: c.id, option: 'accept' });
+    run(w, 2);
+    expect(count(w, 'gold') + count(w, 'steel')).toBe(before);
+  });
+});

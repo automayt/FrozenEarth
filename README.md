@@ -65,6 +65,11 @@ The first player to join a new world is the host (admin). Rejoining with the sam
   - Injuries, hypothermia, heatstroke, starvation and death.
   - 18 traits, mental breaks and inspirations.
 - **Fire:** spreads through forests and wooden buildings, rain puts it out, and lightning starts it. Colonists fight fires near home.
+- **Clothing:** tunics, parkas, dusters and hats from a tailor's bench. Colonists dress for the season, and a parka is the difference between life and death outdoors in winter.
+- **Skills:** construction, mining, plants, cooking and crafting. Each colonist is good at something, and practice levels them up (0.6× to 1.4× speed).
+- **Choose where to settle:** five suggested sites, or click anywhere. The outer band is easier now but freezes first.
+- **Trading:** offer goods from your stockpiles to another player for theirs. They accept or decline by letter.
+- **Alerts:** a list of what needs attention, such as freezing colonists, low food, fires, idle colonists and missing beds.
 - **Multiplayer and persistence:** chat, a player list with speed votes, reconnect, late join, persistent worlds.
 
 ## Architecture
@@ -83,7 +88,7 @@ tools/art          how the sprites were generated with ComfyUI
 - **Deltas.** The server sends changes about 15 times a second as idempotent upserts. A client that joins late gets a full snapshot, then deltas.
 - **Pawn movement.** Movement is sent as a timed path, which the client interpolates, instead of a position every tick.
 - **Deterministic.** The sim uses a seeded RNG and never reads the wall clock. The same seed and command log give a byte-identical world, which is what makes save/load and replays reliable. A test enforces it.
-- **Timing.** 60 ticks = 1 game-second at 1×, and one in-game hour is 1,250 ticks. A 3×, 8-player world costs well under 1 ms per tick.
+- **Timing.** 60 ticks = 1 game-second at 1×, and one in-game hour is 1,250 ticks. An 8-colony, 40-colonist world costs about 0.05–0.12 ms per tick, and each client receives about 20 KB/s at 3× speed (compressed).
 - **Winter hook.** `World.coldOffset` shifts the outdoor temperature. The future winter front will drive it per map.
 
 ## Testing
@@ -92,6 +97,7 @@ tools/art          how the sprites were generated with ComfyUI
 npm test             # sim, pathfinding, jobs, determinism, save/load, delta replication
 npm run typecheck
 npm run bots -- --bots 8 --minutes 2   # against a running server; checks all clients agree
+npm run bench                          # sim cost per tick, snapshot size and delta bandwidth
 ```
 
 ## Roadmap
@@ -104,7 +110,8 @@ npm run bots -- --bots 8 --minutes 2   # against a running server; checks all cl
 - [x] **M5:** factions per player, speed vote and pause budget, chat, persistence
 - [x] **M6:** storyteller and random events: 56 events, health conditions, traits, mental states, fire, choice letters
 - [ ] **M7:** playtest polish (alerts, more UI, performance profiling, fog of war)
-- [ ] Choosing a start location in the lobby, and player-to-player trading
+- [x] Choosing a start location in the lobby, and player-to-player trading
+- [x] Performance pass: incremental connectivity and rooms, haul caching, leaner deltas, chunk culling
 - [ ] Combat, health and injuries, raids, hunting
 - [ ] World map: winter front advancing inward, harsher center, caravans between maps
 - [ ] NPC settlements, jobs and quests, reputation (help, betray, trick)

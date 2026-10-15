@@ -125,12 +125,12 @@ function storedItems(w: World, faction: number, ok: (it: Item) => boolean = () =
   return out;
 }
 
-function storedCount(w: World, faction: number, def: string): number {
+export function storedCount(w: World, faction: number, def: string): number {
   return storedItems(w, faction, (it) => it.def === def).reduce((a, it) => a + it.count, 0);
 }
 
 /** Remove n of an item (or category "cat:x") from a faction's stockpiles. Returns how many were taken. */
-function takeStored(w: World, faction: number, of: string, n: number): number {
+export function takeStored(w: World, faction: number, of: string, n: number): number {
   const cat = of.startsWith('cat:') ? of.slice(4) : null;
   let left = n;
   for (const it of storedItems(w, faction, (i) => (cat ? ITEMS[i.def].category === cat : i.def === of))) {
@@ -140,7 +140,7 @@ function takeStored(w: World, faction: number, of: string, n: number): number {
   return n - left;
 }
 
-function giveNearHome(w: World, faction: number, def: string, n: number): void {
+export function giveNearHome(w: World, faction: number, def: string, n: number): void {
   w.placeItemNear(def, n, homeCell(w, faction));
 }
 
@@ -861,6 +861,3 @@ export function fireEvent(w: World, key: string, faction: number, data: Data = {
 }
 
 export const HANDLED_EVENTS = Object.keys(HANDLERS);
-
-/** For tests and admin tools: the item count a faction has stored. */
-export { storedCount as storedCountOf };

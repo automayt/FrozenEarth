@@ -18,7 +18,7 @@ export interface ChatLine {
 }
 
 export type Status = 'join' | 'connecting' | 'playing' | 'error';
-export type Panel = 'none' | 'work' | 'colonists' | 'events';
+export type Panel = 'none' | 'work' | 'colonists' | 'events' | 'trade';
 
 /** All client state. React reads it through useStore; the renderer reads it directly. */
 class Store {

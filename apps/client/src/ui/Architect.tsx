@@ -67,6 +67,9 @@ export function Architect() {
         <button className={s.panel === 'colonists' ? 'on' : ''} onClick={() => store.set({ panel: s.panel === 'colonists' ? 'none' : 'colonists', menu: null })}>
           Colonists
         </button>
+        <button className={s.panel === 'trade' ? 'on' : ''} onClick={() => store.set({ panel: s.panel === 'trade' ? 'none' : 'trade', menu: null })}>
+          Trade
+        </button>
         {myPlayer()?.admin && (
           <button className={s.panel === 'events' ? 'on' : ''} onClick={() => store.set({ panel: s.panel === 'events' ? 'none' : 'events', menu: null })} title="Host tool: trigger events">
             Events

@@ -231,7 +231,8 @@ export type Command =
   | { c: 'addBill'; bench: EntityId; recipe: string; mode: BillMode; target: number }
   | { c: 'updateBill'; bench: EntityId; bill: number; mode?: BillMode; target?: number; suspended?: boolean }
   | { c: 'removeBill'; bench: EntityId; bill: number }
-  | { c: 'choose'; choice: number; option: string };
+  | { c: 'choose'; choice: number; option: string }
+  | { c: 'offerTrade'; to: number; give: [string, number][]; want: [string, number][]; note?: string };
 
 /** Full state a client needs to render the world. */
 export interface Snapshot {

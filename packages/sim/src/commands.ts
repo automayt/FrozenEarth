@@ -4,6 +4,7 @@ import type { Building, Command, Construct, Pawn, Plant, Rect, Zone } from './ty
 import { DESIG } from './types';
 import { NEIGHBORS4, type World } from './world';
 import { resolveChoice } from './choices';
+import { offerTrade } from './trade';
 
 /** Validate and apply one player command. Invalid commands are silently ignored. */
 export function applyCommand(w: World, faction: number, cmd: Command): void {
@@ -61,6 +62,9 @@ export function applyCommand(w: World, faction: number, cmd: Command): void {
     }
     case 'choose':
       resolveChoice(w, Number(cmd.choice), String(cmd.option), faction);
+      return;
+    case 'offerTrade':
+      offerTrade(w, faction, Number(cmd.to), cmd.give, cmd.want, cmd.note);
       return;
     case 'removeBill': {
       const b = ownBench(w, faction, cmd.bench);

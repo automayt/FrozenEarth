@@ -886,3 +886,53 @@ td.name {
 .settle-actions .primary {
   flex: 1;
 }
+
+/* ------------------------------------------------------------------ trade */
+
+.trade-panel {
+  position: absolute;
+  left: 50%;
+  bottom: 70px;
+  transform: translateX(-50%);
+  width: min(560px, calc(100vw - 16px));
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.trade-panel .partners {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.trade-panel .partners i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.trade-sides {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.trade-line {
+  display: grid;
+  grid-template-columns: 1fr 58px auto;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.trade-note {
+  width: 100%;
+}
+
+@media (max-width: 560px) {
+  .trade-sides {
+    grid-template-columns: 1fr;
+  }
+}
