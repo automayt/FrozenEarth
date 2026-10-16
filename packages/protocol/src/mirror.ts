@@ -1,4 +1,4 @@
-import { CELL_FIELDS, type Choice, type Condition, type Delta, type Entity, type Faction, type GameMessage, type Pawn, type Room, type Snapshot, type Zone } from '@fe/sim';
+import { CELL_FIELDS, DEFAULT_FROST, type FrostParams, type Choice, type Condition, type Delta, type Entity, type Faction, type GameMessage, type Pawn, type Room, type Snapshot, type Zone } from '@fe/sim';
 import { toU8 } from './codec';
 
 /**
@@ -30,6 +30,8 @@ export class Mirror {
   conditions: Condition[] = [];
   choices: Choice[] = [];
   coldOffset = 0;
+  /** Frost line settings, from the snapshot. */
+  frost: FrostParams = { ...DEFAULT_FROST };
   messages: GameMessage[] = [];
   /** Attacks since the renderer last drained them, flattened SHOT_FIELDS tuples. */
   shots: number[] = [];
@@ -70,6 +72,7 @@ export class Mirror {
     this.conditions = s.conditions;
     this.choices = s.choices ?? [];
     this.coldOffset = s.coldOffset;
+    this.frost = { ...DEFAULT_FROST, ...(s.frost ?? {}) };
     this.allCellsChanged = true;
     this.zonesChanged = true;
   }

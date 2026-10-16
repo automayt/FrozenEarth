@@ -316,6 +316,8 @@ export interface Snapshot {
   conditions: Condition[];
   choices: Choice[];
   coldOffset: number;
+  /** Frost line settings; the client computes the line itself from these. */
+  frost?: import('./frost').FrostParams;
 }
 
 /** Changes since the previous delta. Every field is an idempotent upsert or removal. */

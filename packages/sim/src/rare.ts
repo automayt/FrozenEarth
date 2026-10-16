@@ -1,5 +1,6 @@
 import { BUILDINGS, COMFORT_MAX, COMFORT_MIN, EVENTS, ITEMS, PLANTS, TERRAINS } from '@fe/defs';
 import { RARE_TICK, TICKS_PER_DAY } from './constants';
+import { FROST_COLD } from './frost';
 import { effectsOf, healthTick } from './health';
 import { endJob, exposureSeverity, needsWarmth, warmthJob } from './pawns';
 import { isRaider } from './combat';
@@ -92,7 +93,7 @@ function plantsTick(w: World): void {
     const p = w.get<Plant>(id)!;
     const def = PLANTS[p.def];
     const cell = w.cellOf(p);
-    const temp = m.roomAt[cell] ? w.tempAt(cell) : outdoor;
+    const temp = m.roomAt[cell] ? w.tempAt(cell) : outdoor - FROST_COLD * w.frostAt(cell);
     if (p.blighted) {
       p.growth -= 0.08;
       w.markDirty(p);
@@ -118,7 +119,7 @@ function plantsTick(w: World): void {
   // Wild plants slowly reseed so wood stays renewable.
   if (outdoor > 5 && w.rng.chance(0.5)) {
     const c = w.rng.int(m.n);
-    if (!m.plantAt[c] && !m.solid[c] && !m.zoneAt[c] && !m.buildingAt[c] && !m.constructAt[c] && !m.itemAt[c]) {
+    if (!m.plantAt[c] && !m.solid[c] && !m.zoneAt[c] && !m.buildingAt[c] && !m.constructAt[c] && !m.itemAt[c] && !w.frostAt(c)) {
       const fert = TERRAINS[m.terrain[c]].fertility;
       if (fert >= 0.9) w.spawnPlant(w.rng.chance(0.5) ? (w.rng.chance(0.5) ? 'oak' : 'pine') : 'bush', c, 0.05);
     }
@@ -158,7 +159,6 @@ export function rebuildRooms(w: World): void {
   w.rooms = new Map();
   const seen = new Uint8Array(m.n);
   const stack: number[] = [];
-  const outdoor = w.outdoorTemp();
   for (let s = 0; s < m.n; s++) {
     if (seen[s] || m.wall[s]) continue;
     const cells: number[] = [];
@@ -186,7 +186,7 @@ export function rebuildRooms(w: World): void {
     let sum = 0;
     for (const c of cells) {
       const r = old[c] ? oldRooms.get(old[c]) : undefined;
-      sum += r ? r.temp : outdoor;
+      sum += r ? r.temp : w.outdoorTempAtCell(c);
     }
     const room: Room = { id: w.nextRoomId++, cells, temp: sum / cells.length };
     for (const c of cells) m.roomAt[c] = room.id;
@@ -206,7 +206,6 @@ export function updateRooms(w: World): void {
   const m = w.map;
   const changes = m.wallChanges;
   m.wallChanges = [];
-  const outdoor = w.outdoorTemp();
   const seeds = new Set<number>();
   for (const c of changes) {
     seeds.add(c);
@@ -269,7 +268,7 @@ export function updateRooms(w: World): void {
       continue;
     }
     let sum = 0;
-    for (const c of cells) sum += oldTemp.get(c) ?? outdoor;
+    for (const c of cells) sum += oldTemp.get(c) ?? w.outdoorTempAtCell(c);
     const room: Room = { id: w.nextRoomId++, cells, temp: sum / cells.length };
     for (const c of cells) m.roomAt[c] = room.id;
     w.rooms.set(room.id, room);
@@ -294,7 +293,9 @@ function roomTemps(w: World): void {
   for (const room of w.rooms.values()) {
     const size = room.cells.length;
     const leak = 0.04 / (1 + size / 60);
-    room.temp += (outdoor - room.temp) * leak + ((heat.get(room.id) ?? 0) * 2) / size;
+    // Rooms out in the frozen zone leak toward much colder air.
+    const outside = outdoor - FROST_COLD * w.frostAt(room.cells[0]);
+    room.temp += (outside - room.temp) * leak + ((heat.get(room.id) ?? 0) * 2) / size;
   }
   w.dirty.roomTemps = true;
 }

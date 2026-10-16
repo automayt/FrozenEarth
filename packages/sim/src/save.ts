@@ -1,6 +1,7 @@
 import { DEFAULT_PRIORITY, maxHp, START_PRIORITY } from '@fe/defs';
 import type { Choice, Condition, Entity, Faction, Pawn, Room, Snapshot, Zone } from './types';
 import { upgradeStoryState, type StoryState } from './schedule';
+import { DEFAULT_FROST, type FrostParams } from './frost';
 import { SKILLS } from '@fe/defs';
 import { Dirty, rkFromString, rkToString, unreachableKey, World } from './world';
 
@@ -36,6 +37,8 @@ export interface SaveData {
   story: StoryState;
   /** Wall edits not yet folded into rooms (optional: older saves lack it). */
   wallChanges?: number[];
+  /** Frost line settings (optional: older saves use the defaults). */
+  frost?: FrostParams;
 }
 
 /** Deep copy via structuredClone so saves never alias live state. */
@@ -70,6 +73,7 @@ export function serializeWorld(w: World): SaveData {
     coldOffset: w.coldOffset,
     story: w.story,
     wallChanges: m.wallChanges,
+    frost: w.frost,
   });
 }
 
@@ -171,6 +175,7 @@ export function deserializeWorld(data: SaveData): World {
   m.compDirty = true;
   m.roomsDirty = false;
   m.wallChanges = d.wallChanges ?? [];
+  w.frost = { ...DEFAULT_FROST, ...(d.frost ?? {}) };
   w.dirty = new Dirty();
   return w;
 }
@@ -195,6 +200,7 @@ export function snapshot(w: World): Snapshot {
     conditions: w.conditions,
     choices: [...w.choices.values()],
     coldOffset: w.coldOffset,
+    frost: w.frost,
   };
 }
 

@@ -30,6 +30,7 @@ import { tickStoryteller } from './storyteller';
 import { newStoryState, type StoryState } from './schedule';
 import { fireTick } from './fire';
 import { outdoorTempAt } from './time';
+import { DEFAULT_FROST, FROST_COLD, FROST_MAX, frostLevel, frostRadius, type FrostParams } from './frost';
 
 /** Everything that changed since the last delta was taken. */
 export class Dirty {
@@ -86,6 +87,10 @@ export class World {
   radiant = new Map<number, [number, number]>();
   /** Server-only data for open choices (kept off the wire so players can't peek). */
   choiceData = new Map<number, Record<string, unknown>>();
+  /** How the frost line advances in this world. */
+  frost: FrostParams = { ...DEFAULT_FROST };
+  private frostTick = -1;
+  private frostR = FROST_MAX;
   /** Degrees added to outdoor temperature. The future winter front drives this. */
   coldOffset = 0;
   story: StoryState = newStoryState();
@@ -167,11 +172,31 @@ export class World {
     return g;
   }
 
+  /** The frost line's radius right now (fraction of half-size from the center). */
+  frostRadius(): number {
+    if (this.frostTick !== this.tick) {
+      this.frostR = frostRadius(this.tick, this.frost);
+      this.frostTick = this.tick;
+    }
+    return this.frostR;
+  }
+
+  /** How frozen a cell is: 0 untouched, 1 deep in the frozen zone. */
+  frostAt(cell: number): number {
+    const m = this.map;
+    return frostLevel(m.cx(cell), m.cy(cell), m.w, m.h, this.frostRadius());
+  }
+
+  /** Open-air temperature at a cell, including the frost line's bite. */
+  outdoorTempAtCell(cell: number): number {
+    return this.outdoorTemp() - FROST_COLD * this.frostAt(cell);
+  }
+
   /** Temperature at a cell: its room's, or outdoors. */
   tempAt(cell: number): number {
     const r = this.map.roomAt[cell];
     const room = r ? this.rooms.get(r) : undefined;
-    let t = room ? room.temp : this.outdoorTemp();
+    let t = room ? room.temp : this.outdoorTempAtCell(cell);
     for (const [c, [deg, radius]] of this.radiant) {
       const d = this.dist(c, cell);
       if (d <= radius) t = Math.max(t, Math.min(26, t + deg * (1 - d / (radius + 1))));

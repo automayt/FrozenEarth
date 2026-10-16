@@ -20,3 +20,4 @@ export { canPlace, rectCells } from './commands';
 export { FACTION_COLORS } from './names';
 export { describeJob } from './describe';
 export * from './time';
+export * from './frost';

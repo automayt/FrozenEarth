@@ -1,6 +1,7 @@
 import { EVENTS, RARITY_WEIGHT, WEATHER, type EventDef } from '@fe/defs';
 import { SEASONS, START_TICK, TICKS_PER_DAY, TICKS_PER_HOUR } from './constants';
 import { tickChoices } from './choices';
+import { daysUntilFrost, FROST_MAX } from './frost';
 import { fireEvent } from './eventHandlers';
 import type { World } from './world';
 
@@ -32,6 +33,7 @@ export function tickStoryteller(w: World): void {
   s.nextCheck = w.tick + TICKS_PER_HOUR * CHECK_HOURS;
   const players = [...w.factions.values()].filter((f) => f.isPlayer);
   if (players.length === 0) return;
+  frostNotices(w, players);
 
   const day = gameDay(w);
   const ramp = Math.min(2.2, 0.5 + day / 8);
@@ -40,6 +42,28 @@ export function tickStoryteller(w: World): void {
 
   if (w.rng.chance(MAP_CHANCE)) roll(w, 'map', 0);
   for (const f of players) if (w.rng.chance(FACTION_CHANCE)) roll(w, 'faction', f.id);
+}
+
+/** Tell colonies when the frost line starts moving, when it's close, and when it arrives. */
+function frostNotices(w: World, players: { id: number; name: string; home: { x: number; y: number } }[]): void {
+  const s = w.story;
+  s.frostNotice ??= {};
+  const m = w.map;
+  if (!s.frostNotice[0] && w.frostRadius() < FROST_MAX - 0.001) {
+    s.frostNotice[0] = 1;
+    w.message(0, 'The frost line has begun to move. Permanent winter is creeping in from the edges of the world. Colonies will have to move inward to survive.', 'bad');
+  }
+  for (const f of players) {
+    const days = daysUntilFrost(f.home.x, f.home.y, m.w, m.h, w.tick, w.frost, 4);
+    const notice = s.frostNotice[f.id] ?? 0;
+    if (days === 0 && notice < 2) {
+      s.frostNotice[f.id] = 2;
+      w.message(f.id, 'The frost line has reached your colony. Outdoors it will never be warm again. Heat your rooms, or move toward the center.', 'bad', m.idx(f.home.x, f.home.y));
+    } else if (days <= 3 && notice < 1) {
+      s.frostNotice[f.id] = 1;
+      w.message(f.id, `The frost line will reach your colony in about ${days} day${days === 1 ? '' : 's'}. Prepare heated shelter or start moving inward.`, 'bad', m.idx(f.home.x, f.home.y));
+    }
+  }
 }
 
 function runScheduled(w: World): void {

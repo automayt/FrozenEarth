@@ -1,7 +1,7 @@
 import { Application, BitmapText, Container, Graphics, Sprite, Texture } from 'pixi.js';
 import { BUILDINGS, maxHp, PLANTS, ROCKS, TERRAINS, WEAPON_KEYS, weaponOf, type TerrainDef } from '@fe/defs';
 import { pawnPosition } from '@fe/protocol';
-import { DESIG, MIN_COLONY_GAP, SHOT_FIELDS, TICKS_PER_DAY, TICKS_PER_HOUR, bleedRate, calendar, hash2, outdoorTempAt, woundTotal, type Construct, type Entity, type Pawn } from '@fe/sim';
+import { DESIG, FROST_BAND, MIN_COLONY_GAP, SHOT_FIELDS, TICKS_PER_DAY, TICKS_PER_HOUR, bleedRate, calendar, frostLevel, frostRadius, hash2, outdoorTempAt, woundTotal, type Construct, type Entity, type Pawn } from '@fe/sim';
 import { ease, Particles, Tweens, Weather, type Precip } from './fx';
 import { store } from '../store';
 import { TextureBank } from './textures';
@@ -74,6 +74,8 @@ export class GameRenderer {
     items: new Container(),
     buildings: new Container(),
     plants: new Container(),
+    /** Frost over the frozen zone: whitens ground, buildings and trees alike. */
+    frost: new Container(),
     pawns: new Container(),
     fx: new Container(),
     ui: new Container(),
@@ -92,6 +94,11 @@ export class GameRenderer {
   private prevRock = new Uint8Array(0);
   private glide: { fx: number; fy: number; tx: number; ty: number; t0: number } | null = null;
   private lastFrame = performance.now();
+  private frostCanvas = document.createElement('canvas');
+  private frostTex: Texture | null = null;
+  /** Radius the frost overlay was last drawn at. */
+  private frostDrawn = -1;
+  private frostRing = new Graphics();
   ui = new Graphics();
   private night = new Graphics();
   private views = new Map<number, EntityView>();
@@ -117,6 +124,7 @@ export class GameRenderer {
     for (const l of Object.values(this.layers)) this.world.addChild(l);
     this.layers.ui.addChild(this.ui);
     this.layers.fx.addChild(this.fireGfx, this.particles.g, this.shotGfx);
+    this.layers.frost.addChild(this.frostRing);
     this.input = new Input(this, this.app.canvas);
     this.app.ticker.add(() => this.frame());
   }
@@ -268,6 +276,7 @@ export class GameRenderer {
       this.animatePawn(e, v, now);
     }
     this.cullChunks();
+    this.drawFrost(tick);
     this.swayPlants(now);
     this.layers.pawns.children.sort((a, b) => a.y - b.y);
     this.drawFire(dt);
@@ -1021,8 +1030,61 @@ export class GameRenderer {
     }
   }
 
+  /** Redraw the frost overlay when the line has moved a little, plus a faint ring along its edge. */
+  private drawFrost(tick: number): void {
+    const m = store.mirror;
+    const r = frostRadius(tick, m.frost);
+    if (Math.abs(r - this.frostDrawn) > 0.001) {
+      this.frostDrawn = r;
+      const c = this.frostCanvas;
+      if (c.width !== m.w || c.height !== m.h) {
+        c.width = m.w;
+        c.height = m.h;
+      }
+      const ctx = c.getContext('2d')!;
+      const img = ctx.createImageData(m.w, m.h);
+      const d = img.data;
+      for (let y = 0; y < m.h; y++) {
+        for (let x = 0; x < m.w; x++) {
+          const f = frostLevel(x, y, m.w, m.h, r);
+          if (!f) continue;
+          const o = (y * m.w + x) * 4;
+          // A little per-cell sparkle so it reads as snow, not paint.
+          const k = 0.92 + hash2(x, y, 17) * 0.08;
+          d[o] = 232 * k;
+          d[o + 1] = 242 * k;
+          d[o + 2] = 255;
+          d[o + 3] = 175 * f;
+        }
+      }
+      ctx.putImageData(img, 0, 0);
+      if (!this.frostTex) {
+        this.frostTex = Texture.from(c);
+        const s = new Sprite(this.frostTex);
+        s.scale.set(TILE);
+        this.layers.frost.addChildAt(s, 0);
+      } else {
+        this.frostTex.source.update();
+      }
+      const ring = this.frostRing;
+      ring.clear();
+      if (r < 1.42) {
+        const half = Math.min(m.w, m.h) / 2;
+        ring.circle((m.w / 2) * TILE, (m.h / 2) * TILE, r * half * TILE).stroke({ width: 3, color: 0xcfe8ff, alpha: 0.35 });
+        ring.circle((m.w / 2) * TILE, (m.h / 2) * TILE, (r + FROST_BAND) * half * TILE).stroke({ width: 2, color: 0xffffff, alpha: 0.18 });
+      }
+    }
+  }
+
   private drawWeather(tick: number, dt: number): void {
-    const { kind, wind } = precipFor(tick);
+    let { kind, wind } = precipFor(tick);
+    // Looking out over frozen ground: it's always snowing out there.
+    const m = store.mirror;
+    const c = this.screenToCell(this.app.screen.width / 2, this.app.screen.height / 2);
+    if (kind === 'none' && m.w && frostLevel(c.x, c.y, m.w, m.h, frostRadius(tick, m.frost)) > 0.5) {
+      kind = 'snow';
+      wind = 0.6;
+    }
     this.weather.update(dt, kind, this.app.screen.width, this.app.screen.height, wind);
   }
 

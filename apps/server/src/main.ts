@@ -14,6 +14,8 @@ const { values: args } = parseArgs({
     password: { type: 'string', default: process.env.FE_PASSWORD },
     seed: { type: 'string' },
     size: { type: 'string', default: '200' },
+    'frost-start': { type: 'string', default: process.env.FE_FROST_START },
+    'frost-pace': { type: 'string', default: process.env.FE_FROST_PACE },
     saves: { type: 'string', default: 'saves' },
   },
 });
@@ -24,6 +26,8 @@ const game = new GameServer({
   password: args.password || undefined,
   seed: args.seed ? Number(args.seed) : undefined,
   size: Math.max(60, Math.min(400, Number(args.size) || 200)),
+  frostStart: args['frost-start'] !== undefined ? Number(args['frost-start']) : undefined,
+  frostPace: args['frost-pace'] !== undefined ? Number(args['frost-pace']) : undefined,
 });
 
 const http = createServer(staticHandler(resolve(import.meta.dirname, '../../client/dist')));

@@ -3,6 +3,7 @@ import { generateMap } from './mapgen';
 import { FACTION_COLORS, pawnName } from './names';
 import type { Faction } from './types';
 import { Rng } from './rng';
+import { FROST_MAX, frostLevel } from './frost';
 import { World } from './world';
 
 export interface WorldOptions {
@@ -55,6 +56,7 @@ export const MIN_COLONY_GAP = 35;
 export function siteProblem(w: World, x: number, y: number): string | null {
   const m = w.map;
   if (x < 6 || y < 6 || x >= m.w - 6 || y >= m.h - 6) return 'Too close to the edge of the map.';
+  if (frostLevel(x, y, m.w, m.h, w.frostRadius()) > 0) return 'That land has already frozen over.';
   let open = 0;
   let total = 0;
   for (let yy = y - 5; yy <= y + 5; yy++) {
@@ -84,12 +86,26 @@ export function suggestSites(w: World, count = 5): { x: number; y: number; regio
   const rng = new Rng(w.seed ^ (w.tick * 2654435761) ^ (w.factions.size * 97));
   const band = Math.max(12, Math.floor(Math.min(m.w, m.h) * 0.2));
   const cands: { x: number; y: number; score: number }[] = [];
+  // Once the frost is moving, suggest the band just inside it rather than the map edge.
+  const r = w.frostRadius();
+  const half = Math.min(m.w, m.h) / 2;
   for (let tries = 0; tries < 600; tries++) {
-    const side = rng.int(4);
-    const along = 10 + rng.int((side < 2 ? m.w : m.h) - 20);
-    const depth = 10 + rng.int(band);
-    const x = side < 2 ? along : side === 2 ? depth : m.w - 1 - depth;
-    const y = side === 0 ? depth : side === 1 ? m.h - 1 - depth : along;
+    let x: number;
+    let y: number;
+    if (r < FROST_MAX - 0.05) {
+      const a = rng.next() * Math.PI * 2;
+      const d = Math.max(0.15, r - 0.45 + rng.next() * 0.33) * half;
+      x = Math.round(m.w / 2 + Math.cos(a) * d);
+      y = Math.round(m.h / 2 + Math.sin(a) * d);
+      if (x < 8 || y < 8 || x >= m.w - 8 || y >= m.h - 8) continue;
+    } else {
+      const side = rng.int(4);
+      const along = 10 + rng.int((side < 2 ? m.w : m.h) - 20);
+      const depth = 10 + rng.int(band);
+      x = side < 2 ? along : side === 2 ? depth : m.w - 1 - depth;
+      y = side === 0 ? depth : side === 1 ? m.h - 1 - depth : along;
+    }
+    if (siteProblem(w, x, y)) continue;
     const score = spawnScore(w, x, y);
     if (score > 0) cands.push({ x, y, score });
   }

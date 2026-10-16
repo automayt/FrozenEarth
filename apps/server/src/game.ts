@@ -45,6 +45,9 @@ export interface GameOptions {
   password?: string;
   seed?: number;
   size?: number;
+  /** New worlds only: days before the frost line moves, and its speed multiplier. */
+  frostStart?: number;
+  frostPace?: number;
   log?: (msg: string) => void;
 }
 
@@ -79,6 +82,8 @@ export class GameServer {
     } else {
       const size = opts.size ?? 200;
       this.world = createWorld({ seed: opts.seed, width: size, height: size });
+      if (opts.frostStart !== undefined && Number.isFinite(opts.frostStart)) this.world.frost.startDay = Math.max(0, opts.frostStart);
+      if (opts.frostPace !== undefined && Number.isFinite(opts.frostPace)) this.world.frost.pace = Math.max(0, opts.frostPace);
       this.log(`Generated new ${size}x${size} world, seed ${this.world.seed}`);
     }
     this.lastDay = this.world.day();

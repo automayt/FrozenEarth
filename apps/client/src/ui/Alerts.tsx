@@ -1,5 +1,5 @@
 import { BUILDINGS, CONDITIONS, ITEMS } from '@fe/defs';
-import { calendar, DAYS_PER_SEASON, stageOf, type Building, type Item, type Pawn } from '@fe/sim';
+import { calendar, daysUntilFrost, DAYS_PER_SEASON, stageOf, type Building, type Item, type Pawn } from '@fe/sim';
 import { store, useStore } from '../store';
 
 type Severity = 'critical' | 'warning' | 'info';
@@ -82,6 +82,13 @@ function computeAlerts(): Alert[] {
   if (cal.season === 'Fall' && cal.dayOfSeason > DAYS_PER_SEASON - 3) {
     const daysLeft = DAYS_PER_SEASON - cal.dayOfSeason + (1 - cal.hour / 24);
     out.push({ key: 'winter', severity: 'warning', title: `Winter in ${daysLeft.toFixed(1)} days`, detail: 'Build heated rooms, stock food and harvest crops before they freeze.' });
+  }
+
+  // The frost line: the clock every colony is racing.
+  if (f) {
+    const days = daysUntilFrost(f.home.x, f.home.y, m.w, m.h, store.estTick(), m.frost, 8);
+    if (days === 0) out.push({ key: 'frost', severity: 'critical', title: 'Your colony is in the frozen zone', detail: 'It will never warm up outside again. Keep rooms heated and wear parkas, or move toward the center.', focus: { x: f.home.x, y: f.home.y } });
+    else if (days <= 8) out.push({ key: 'frost', severity: days <= 3 ? 'critical' : 'warning', title: `Frost line in ${days} day${days === 1 ? '' : 's'}`, detail: 'Permanent winter is closing in on your colony. Heat your rooms, make parkas, or start moving inward.', focus: { x: f.home.x, y: f.home.y } });
   }
 
   const letters = m.choices.filter((c) => c.faction === me).length;

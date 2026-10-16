@@ -20,11 +20,13 @@ export interface StoryState {
   uniqueFired: string[];
   /** Follow-up events waiting to fire. Server-side only. */
   scheduled: ScheduledEvent[];
+  /** Frost line notices: faction -> 1 warned, 2 reached. Key 0 = the "front is moving" notice. */
+  frostNotice: Record<number, number>;
 }
 
 export function newStoryState(): StoryState {
   // A quiet first day to get settled.
-  return { nextCheck: START_TICK + TICKS_PER_DAY, lastFired: {}, threat: {}, lastBad: {}, lastSeason: 0, uniqueFired: [], scheduled: [] };
+  return { nextCheck: START_TICK + TICKS_PER_DAY, lastFired: {}, threat: {}, lastBad: {}, lastSeason: 0, uniqueFired: [], scheduled: [], frostNotice: {} };
 }
 
 /** Fill in fields added after a save was written. */
