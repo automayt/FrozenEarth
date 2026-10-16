@@ -21,6 +21,8 @@ export const TERRAINS: TerrainDef[] = [
   { id: 7, key: 'rough_stone', label: 'Rough stone', color: 0x5d5d5d, moveCost: 1, fertility: 0, buildable: true, passable: true },
   { id: 8, key: 'wood_floor', label: 'Wood floor', color: 0x8b6a43, moveCost: 0.9, fertility: 0, buildable: true, passable: true },
   { id: 9, key: 'stone_tile', label: 'Stone tile', color: 0x7d7a74, moveCost: 0.9, fertility: 0, buildable: true, passable: true },
+  /** Water the frost has frozen solid. Slippery to cross, too thin to build on. */
+  { id: 10, key: 'ice', label: 'Ice', color: 0xb4cfe2, moveCost: 1.6, fertility: 0, buildable: false, passable: true },
 ];
 
 export const TERRAIN_BY_KEY: Record<string, TerrainDef> = Object.fromEntries(TERRAINS.map((t) => [t.key, t]));

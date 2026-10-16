@@ -14,7 +14,8 @@ import {
   suggestSites,
   TICKS_PER_DAY,
 } from '../src';
-import { run } from './helpers';
+import { T } from '@fe/defs';
+import { flatWorld, run } from './helpers';
 
 const day = (d: number) => START_TICK + d * TICKS_PER_DAY;
 
@@ -85,6 +86,36 @@ describe('frost line', () => {
     w.frost = { ...DEFAULT_FROST, pace: 1.7, startDay: 3 };
     const b = deserializeWorld(serializeWorld(w));
     expect(b.frost).toEqual(w.frost);
+    expect(hashWorld(b)).toBe(hashWorld(w));
+  });
+
+  it('freezes lakes into walkable ice behind the front, but not ahead of it', () => {
+    const w = flatWorld(40, 40);
+    const m = w.map;
+    // A moat cutting off the west edge, and a pond in the middle of the map.
+    for (let y = 0; y < 40; y++) w.setTerrain(m.idx(3, y), T.deep_water);
+    for (const [x, y] of [[20, 20], [21, 20], [20, 21], [21, 21]]) w.setTerrain(m.idx(x, y), T.deep_water);
+    m.rebuildComponents();
+    const west = m.idx(1, 20);
+    const east = m.idx(10, 20);
+    expect(m.component(west)).not.toBe(m.component(east));
+
+    w.tick = day(400) - (day(400) % 250);
+    run(w, 250);
+    for (let y = 0; y < 40; y++) expect(m.terrain[m.idx(3, y)]).toBe(T.ice);
+    expect(m.terrain[m.idx(20, 20)]).toBe(T.deep_water);
+    expect(m.component(west)).toBe(m.component(east));
+    const incremental = Array.from({ length: m.n }, (_, i) => (m.solid[i] ? -1 : m.component(i)));
+    m.rebuildComponents();
+    const fresh = Array.from({ length: m.n }, (_, i) => (m.solid[i] ? -1 : m.component(i)));
+    // Same partition: two cells share a region in one exactly when they do in the other.
+    const pairs = (a: number[]) => a.map((c) => (c < 0 ? -1 : a.indexOf(c)));
+    expect(pairs(incremental)).toEqual(pairs(fresh));
+
+    // Freezing is derived from the map, so a reloaded world carries on identically.
+    const b = deserializeWorld(serializeWorld(w));
+    run(w, 2000);
+    run(b, 2000);
     expect(hashWorld(b)).toBe(hashWorld(w));
   });
 });

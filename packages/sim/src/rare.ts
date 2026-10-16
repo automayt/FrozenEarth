@@ -1,6 +1,6 @@
-import { BUILDINGS, COMFORT_MAX, COMFORT_MIN, EVENTS, ITEMS, PLANTS, TERRAINS } from '@fe/defs';
+import { BUILDINGS, COMFORT_MAX, COMFORT_MIN, EVENTS, ITEMS, PLANTS, T, TERRAINS } from '@fe/defs';
 import { RARE_TICK, TICKS_PER_DAY } from './constants';
-import { FROST_COLD } from './frost';
+import { FROST_BAND, FROST_COLD, frostDistance } from './frost';
 import { effectsOf, healthTick } from './health';
 import { endJob, exposureSeverity, needsWarmth, warmthJob } from './pawns';
 import { isRaider } from './combat';
@@ -22,8 +22,42 @@ export function rareTick(w: World): void {
   else if (w.map.wallChanges.length) updateRooms(w);
   roomTemps(w);
   plantsTick(w);
+  freezeWater(w);
   rotTick(w);
   conditionsTick(w);
+}
+
+// ---------------------------------------------------------------- ice
+
+/** How far into the frost band water must be before it freezes hard enough to walk on. */
+const FREEZE_LEVEL = 0.75;
+
+/**
+ * Lakes and rivers well inside the frost freeze into walkable ice, opening new paths across the map.
+ * The front only ever advances, so ice never thaws: a pointer walks a list sorted outermost-first.
+ */
+function freezeWater(w: World): void {
+  const m = w.map;
+  let q = w.waterQueue;
+  if (!q) {
+    const dist = new Float64Array(m.w * m.h);
+    q = [];
+    for (let i = 0; i < m.w * m.h; i++) {
+      if (m.terrain[i] !== T.deep_water && m.terrain[i] !== T.shallow_water) continue;
+      dist[i] = frostDistance(m.cx(i), m.cy(i), m.w, m.h);
+      q.push(i);
+    }
+    q.sort((a, b) => dist[b] - dist[a] || a - b);
+    w.waterQueue = q;
+    w.waterNext = 0;
+  }
+  const edge = w.frostRadius() + FROST_BAND * FREEZE_LEVEL;
+  while (w.waterNext < q.length) {
+    const c = q[w.waterNext];
+    if (frostDistance(m.cx(c), m.cy(c), m.w, m.h) < edge) break;
+    w.waterNext++;
+    if (m.terrain[c] === T.deep_water || m.terrain[c] === T.shallow_water) w.setTerrain(c, T.ice);
+  }
 }
 
 // ---------------------------------------------------------------- needs & mood

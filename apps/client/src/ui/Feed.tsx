@@ -3,6 +3,7 @@ import { calendar, TICKS_PER_HOUR } from '@fe/sim';
 import { command, send } from '../net';
 import { store, useStore } from '../store';
 import { hex } from './util';
+import { Checklist } from './Checklist';
 
 /** Event letters and chat in one column on the left. */
 export function Feed() {
@@ -17,6 +18,7 @@ export function Feed() {
   return (
     <div className="feed">
       <div className="letters">
+        <Checklist />
         {m.choices
           .filter((c) => c.faction === s.me?.faction)
           .map((c) => (

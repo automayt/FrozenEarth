@@ -91,6 +91,9 @@ export class World {
   frost: FrostParams = { ...DEFAULT_FROST };
   private frostTick = -1;
   private frostR = FROST_MAX;
+  /** Unfrozen water cells, outermost first, and how far freezing has got. Derived from the map, so not saved. */
+  waterQueue: number[] | null = null;
+  waterNext = 0;
   /** Degrees added to outdoor temperature. The future winter front drives this. */
   coldOffset = 0;
   story: StoryState = newStoryState();

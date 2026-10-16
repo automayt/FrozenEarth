@@ -555,6 +555,11 @@ export class GameRenderer {
           b = base & 255;
           f = 0.92 + hash2(gx, gy, 7) * 0.16;
           if (rock > 1 && hash2(gx, gy, 3) > 0.8) f *= 1.6;
+          // Ice: a smoother sheen with pale cracks running across it.
+          if (terrain.key === 'ice') {
+            f = 0.97 + hash2(gx >> 2, gy >> 2, 7) * 0.06;
+            if (hash2((gx + gy) >> 2, (gx - gy * 2) >> 4, 5) > 0.93) f *= 1.18;
+          }
         }
         if (rock) {
           // Bevel rock edges that face open ground.
