@@ -276,6 +276,11 @@ export class GameRenderer {
       this.animatePawn(e, v, now);
     }
     this.cullChunks();
+    {
+      const a = this.screenToWorld(0, 0);
+      const b = this.screenToWorld(this.app.screen.width, this.app.screen.height);
+      store.view = { x0: a.x, y0: a.y, x1: b.x, y1: b.y };
+    }
     this.drawFrost(tick);
     this.swayPlants(now);
     this.layers.pawns.children.sort((a, b) => a.y - b.y);

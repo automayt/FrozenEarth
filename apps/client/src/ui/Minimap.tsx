@@ -1,0 +1,100 @@
+import { useEffect, useRef } from 'react';
+import { ROCKS, TERRAINS } from '@fe/defs';
+import { frostLevel, frostRadius } from '@fe/sim';
+import { store } from '../store';
+
+const SIZE = 180;
+
+/** A small overview: terrain, the frost line, colonists, fires and the camera. Click to jump there. */
+export function Minimap() {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = ref.current!;
+    const ctx = canvas.getContext('2d')!;
+    const base = document.createElement('canvas');
+    let baseSig = '';
+    const draw = () => {
+      const m = store.mirror;
+      if (!m.w) return;
+      // Terrain is redrawn only when the map changes shape or rock/terrain edits pile up.
+      const sig = `${m.w}x${m.h}:${m.rock.reduce((a, v, i) => (v ? a + i : a), 0) % 1e9}`;
+      if (sig !== baseSig) {
+        baseSig = sig;
+        base.width = m.w;
+        base.height = m.h;
+        const bctx = base.getContext('2d')!;
+        const img = bctx.createImageData(m.w, m.h);
+        for (let i = 0; i < m.w * m.h; i++) {
+          const c = m.rock[i] ? ROCKS[m.rock[i]].color : TERRAINS[m.terrain[i]].color;
+          img.data[i * 4] = (c >> 16) & 255;
+          img.data[i * 4 + 1] = (c >> 8) & 255;
+          img.data[i * 4 + 2] = c & 255;
+          img.data[i * 4 + 3] = 255;
+        }
+        bctx.putImageData(img, 0, 0);
+      }
+      const sx = SIZE / m.w;
+      const sy = SIZE / m.h;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(base, 0, 0, SIZE, SIZE);
+      // Frost: whiten everything past the line.
+      const r = frostRadius(store.estTick(), m.frost);
+      if (r < 1.44) {
+        ctx.fillStyle = 'rgba(232,242,255,0.6)';
+        const step = 2;
+        for (let y = 0; y < m.h; y += step) {
+          for (let x = 0; x < m.w; x += step) {
+            if (frostLevel(x, y, m.w, m.h, r) > 0.5) ctx.fillRect(x * sx, y * sy, step * sx + 0.5, step * sy + 0.5);
+          }
+        }
+        const half = Math.min(m.w, m.h) / 2;
+        ctx.strokeStyle = 'rgba(200,230,255,0.9)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.ellipse((m.w / 2) * sx, (m.h / 2) * sy, r * half * sx, r * half * sy, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      // Fires.
+      ctx.fillStyle = '#ff6a20';
+      for (const c of m.fireCells) ctx.fillRect((c % m.w) * sx - 1, Math.floor(c / m.w) * sy - 1, 3, 3);
+      // Colonists, in their faction colour; yours drawn last and bigger.
+      const mine = store.me?.faction;
+      for (const pass of [0, 1]) {
+        for (const e of m.entities.values()) {
+          if (e.kind !== 'pawn') continue;
+          const own = e.faction === mine;
+          if ((pass === 1) !== own) continue;
+          const f = m.factions.get(e.faction);
+          ctx.fillStyle = f ? `#${f.color.toString(16).padStart(6, '0')}` : '#c04040';
+          const s = own ? 4 : 3;
+          ctx.fillRect(e.x * sx - s / 2, e.y * sy - s / 2, s, s);
+        }
+      }
+      // The camera's view.
+      const v = store.view;
+      if (v) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(v.x0 * sx, v.y0 * sy, (v.x1 - v.x0) * sx, (v.y1 - v.y0) * sy);
+      }
+    };
+    draw();
+    const timer = window.setInterval(draw, 400);
+    return () => clearInterval(timer);
+  }, []);
+
+  const jump = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const m = store.mirror;
+    if (!m.w) return;
+    const b = e.currentTarget.getBoundingClientRect();
+    const x = Math.floor(((e.clientX - b.left) / b.width) * m.w);
+    const y = Math.floor(((e.clientY - b.top) / b.height) * m.h);
+    store.set({ focus: { x, y } });
+  };
+
+  return (
+    <div className="panel minimap" title="Click to jump there">
+      <canvas ref={ref} width={SIZE} height={SIZE} onMouseDown={jump} />
+    </div>
+  );
+}

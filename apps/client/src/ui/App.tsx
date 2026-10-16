@@ -11,6 +11,7 @@ import { WorkPanel } from './WorkPanel';
 import { ColonistsPanel } from './ColonistsPanel';
 import { EventsPanel } from './EventsPanel';
 import { Alerts } from './Alerts';
+import { Minimap } from './Minimap';
 import { SettlePanel } from './SettlePanel';
 import { TradePanel } from './TradePanel';
 
@@ -31,6 +32,7 @@ export function App() {
           <TopBar />
           {s.status === 'connecting' && <div className="banner">{s.error || 'Reconnecting…'}</div>}
           <Feed />
+          <Minimap />
           <Alerts />
           <Inspect />
           {s.panel === 'work' && <WorkPanel />}

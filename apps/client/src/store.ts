@@ -41,6 +41,8 @@ class Store {
   /** Camera jump requests from UI to renderer. */
   focus: { x: number; y: number } | null = null;
   ping = 0;
+  /** Visible cell rectangle, written by the renderer each frame (no re-render). */
+  view: { x0: number; y0: number; x1: number; y1: number } | null = null;
   /** Suggested starting spots while unsettled. */
   sites: Site[] = [];
   /** Spot the player clicked while choosing where to settle. */

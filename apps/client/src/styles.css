@@ -935,6 +935,8 @@ td.name {
   .trade-sides {
     grid-template-columns: 1fr;
   }
+}
+
 /* ------------------------------------------------------------------ combat */
 
 .combat-row {
@@ -961,4 +963,36 @@ td.name {
 
 .architect .draft.on {
   color: #ffb070;
+}
+
+/* ------------------------------------------------------------------ minimap */
+
+.minimap {
+  position: absolute;
+  top: 70px;
+  right: 8px;
+  padding: 4px;
+  line-height: 0;
+}
+
+.minimap canvas {
+  width: 180px;
+  height: 180px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+/* Alerts sit under the minimap. */
+.alerts {
+  top: 268px;
+}
+
+@media (max-width: 720px) {
+  .minimap {
+    display: none;
+  }
+
+  .alerts {
+    top: 70px;
+  }
 }
