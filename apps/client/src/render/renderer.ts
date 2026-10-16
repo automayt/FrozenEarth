@@ -324,8 +324,8 @@ export class GameRenderer {
         v.nextZ = now + 1300 + Math.random() * 500;
       }
     } else if (moved > 0.02) {
-      // A step every half cell or so.
-      v.phase = ((v.phase ?? 0) + (moved / TILE) * Math.PI * 2.2) % (Math.PI * 2);
+      // About one step per cell (half a cycle): faster and the walk frames flicker past.
+      v.phase = ((v.phase ?? 0) + (moved / TILE) * Math.PI * 1.2) % (Math.PI * 2);
       bob = -Math.abs(Math.sin(v.phase)) * 3.2;
       lean = Math.sin(v.phase) * 0.06;
       this.setWalkFrame(v, v.phase);
