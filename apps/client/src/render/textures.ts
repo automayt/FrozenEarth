@@ -74,6 +74,17 @@ export class TextureBank {
     return this.art.has(key);
   }
 
+  private walk: Texture[] | null = null;
+
+  /** Colonist walk-cycle frames (pawn_walk_0, pawn_walk_1, ...), or none if the art isn't there. */
+  walkFrames(): Texture[] {
+    if (!this.walk) {
+      this.walk = [];
+      for (let k = 0; this.art.has(`pawn_walk_${k}`); k++) this.walk.push(this.art.get(`pawn_walk_${k}`)!);
+    }
+    return this.walk;
+  }
+
   private draw(key: string, fn: (g: Graphics) => void): Texture {
     const art = this.art.get(key);
     if (art) return art;

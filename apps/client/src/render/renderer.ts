@@ -1,7 +1,8 @@
 import { Application, BitmapText, Container, Graphics, Sprite, Texture } from 'pixi.js';
 import { BUILDINGS, maxHp, PLANTS, ROCKS, TERRAINS, WEAPON_KEYS, weaponOf, type TerrainDef } from '@fe/defs';
 import { pawnPosition } from '@fe/protocol';
-import { DESIG, MIN_COLONY_GAP, SHOT_FIELDS, TICKS_PER_DAY, TICKS_PER_HOUR, bleedRate, hash2, woundTotal, type Construct, type Entity, type Pawn } from '@fe/sim';
+import { DESIG, MIN_COLONY_GAP, SHOT_FIELDS, TICKS_PER_DAY, TICKS_PER_HOUR, bleedRate, calendar, hash2, outdoorTempAt, woundTotal, type Construct, type Entity, type Pawn } from '@fe/sim';
+import { ease, Particles, Tweens, Weather, type Precip } from './fx';
 import { store } from '../store';
 import { TextureBank } from './textures';
 import { Input } from './input';
@@ -36,13 +37,28 @@ const SHOT_FADE_MS = 260;
 
 interface EntityView {
   root: Container;
-  sprite?: Sprite;
-  label?: Text;
-  extra?: Graphics;
   key: string;
+  kind: Entity['kind'];
+  def: string;
   /** Set for walls, so neighbours can re-join when this one goes away. */
   wallCell?: number;
+  // Pawn animation state (purely visual).
+  /** Inner container for body, weapon and carried item: bobs, leans and flips without moving the label. */
+  rig?: Container;
+  body?: Sprite;
+  baseTint?: number;
+  lastX?: number;
+  lastY?: number;
+  /** Walk cycle phase in radians. */
+  phase?: number;
+  facing?: number;
+  flashUntil?: number;
+  nextFx?: number;
+  nextZ?: number;
 }
+
+/** What a working pawn is working on, and what that throws up. */
+type WorkFx = 'stone' | 'wood' | 'leaf' | 'build' | 'soil' | 'craft' | 'steam' | 'tend';
 
 export class GameRenderer {
   app = new Application();
@@ -67,6 +83,15 @@ export class GameRenderer {
   private shots: ShotFx[] = [];
   private lastShotDrain = 0;
   private orderMark: { x: number; y: number; attack: boolean; born: number } | null = null;
+  private particles = new Particles();
+  private tweens = new Tweens();
+  private weather = new Weather();
+  /** True once the first snapshot has been drawn; only later arrivals and departures animate. */
+  private built = false;
+  /** Rock layer as last drawn, to spot freshly mined cells. */
+  private prevRock = new Uint8Array(0);
+  private glide: { fx: number; fy: number; tx: number; ty: number; t0: number } | null = null;
+  private lastFrame = performance.now();
   ui = new Graphics();
   private night = new Graphics();
   private views = new Map<number, EntityView>();
@@ -88,10 +113,10 @@ export class GameRenderer {
     el.appendChild(this.app.canvas);
     this.tex = new TextureBank(this.app.renderer);
     await this.tex.loadArt();
-    this.app.stage.addChild(this.world, this.night);
+    this.app.stage.addChild(this.world, this.night, this.weather.g);
     for (const l of Object.values(this.layers)) this.world.addChild(l);
     this.layers.ui.addChild(this.ui);
-    this.layers.fx.addChild(this.fireGfx, this.shotGfx);
+    this.layers.fx.addChild(this.fireGfx, this.particles.g, this.shotGfx);
     this.input = new Input(this, this.app.canvas);
     this.app.ticker.add(() => this.frame());
   }
@@ -124,6 +149,23 @@ export class GameRenderer {
     this.world.y = this.app.screen.height / 2 - (y + 0.5) * TILE * s;
   }
 
+  /** The cell at the centre of the screen. */
+  private viewCenter(): { x: number; y: number } {
+    const s = this.world.scale.x;
+    return { x: (this.app.screen.width / 2 - this.world.x) / s / TILE - 0.5, y: (this.app.screen.height / 2 - this.world.y) / s / TILE - 0.5 };
+  }
+
+  /** Smoothly pan to a cell (jumps if it's far away). */
+  glideTo(x: number, y: number): void {
+    const c = this.viewCenter();
+    if (Math.hypot(c.x - x, c.y - y) > 80) {
+      this.centerOn(x, y);
+      this.glide = null;
+      return;
+    }
+    this.glide = { fx: c.x, fy: c.y, tx: x, ty: y, t0: performance.now() };
+  }
+
   zoomAt(sx: number, sy: number, factor: number): void {
     const old = this.world.scale.x;
     const s = Math.max(0.15, Math.min(3, old * factor));
@@ -138,9 +180,19 @@ export class GameRenderer {
     const m = store.mirror;
     if (!m.w) return;
     if (m.w !== this.mapW || m.h !== this.mapH) this.setupMap();
+    const now = performance.now();
+    const dt = Math.min(100, now - this.lastFrame);
+    this.lastFrame = now;
     if (store.focus) {
-      this.centerOn(store.focus.x, store.focus.y);
+      if (this.built) this.glideTo(store.focus.x, store.focus.y);
+      else this.centerOn(store.focus.x, store.focus.y);
       store.focus = null;
+    }
+    if (this.glide) {
+      const k = Math.min(1, (now - this.glide.t0) / 380);
+      const e = ease.outQuad(k);
+      this.centerOn(this.glide.fx + (this.glide.tx - this.glide.fx) * e, this.glide.fy + (this.glide.ty - this.glide.fy) * e);
+      if (k >= 1) this.glide = null;
     }
     this.input.update(this.app.ticker.deltaMS);
 
@@ -152,6 +204,19 @@ export class GameRenderer {
       for (const id of [...this.views.keys()]) if (!m.entities.has(id)) this.removeView(id);
       for (const id of m.entities.keys()) m.changedEnts.add(id);
     }
+    if (this.prevRock.length !== m.w * m.h) this.prevRock = m.rock.slice();
+    if (m.changedCells.size && this.built) {
+      // Freshly mined rock bursts into dust and chips.
+      for (const c of m.changedCells) {
+        if (this.prevRock[c] && !m.rock[c]) {
+          const x = ((c % m.w) + 0.5) * TILE;
+          const y = (((c / m.w) | 0) + 0.5) * TILE;
+          this.particles.burst(x, y, { count: 14, color: [0x8a8580, 0x6a6560, 0xa8a49c], speed: 70, size: 2.2, life: 700, gravity: 60, drag: 3, chips: true });
+          this.particles.burst(x, y, { count: 8, color: 0xb0aaa0, speed: 25, size: 4, grow: 6, life: 900, lift: 10, alpha: 0.5 });
+        }
+      }
+    }
+    for (const c of m.changedCells) this.prevRock[c] = m.rock[c];
     if (m.changedCells.size) {
       const ctx = this.terrainCanvas.getContext('2d')!;
       // Neighbours below and right re-bevel when rock next to them changes.
@@ -183,13 +248,15 @@ export class GameRenderer {
         if (id && isWall(m.entities.get(id))) m.changedEnts.add(id);
       }
     }
-    for (const id of m.removedEnts) this.removeView(id);
+    for (const id of m.removedEnts) this.removeView(id, true);
     m.removedEnts.clear();
     for (const id of m.changedEnts) {
       const e = m.entities.get(id);
       if (e) this.updateView(e);
     }
     m.changedEnts.clear();
+
+    if (!this.built && m.entities.size) this.built = true;
 
     const tick = store.estTick();
     for (const id of this.pawnIds) {
@@ -198,14 +265,186 @@ export class GameRenderer {
       if (!e || e.kind !== 'pawn' || !v) continue;
       const pos = pawnPosition(e, tick, m.w);
       v.root.position.set((pos.x + 0.5) * TILE, (pos.y + 0.5) * TILE);
+      this.animatePawn(e, v, now);
     }
     this.cullChunks();
+    this.swayPlants(now);
     this.layers.pawns.children.sort((a, b) => a.y - b.y);
-    this.drawFire();
+    this.drawFire(dt);
     this.drawShots();
+    this.particles.update(dt);
+    this.tweens.update(now);
     this.drawUi();
     this.drawNight(tick);
+    this.drawWeather(tick, dt);
   }
+
+  // ---------------------------------------------------------------- animation
+
+  /** Bob while walking, face the direction of travel, swing at work, breathe in sleep, flash when hit. */
+  private animatePawn(e: Pawn, v: EntityView, now: number): void {
+    const rig = v.rig;
+    if (!rig) return;
+    const x = v.root.x;
+    const y = v.root.y;
+    const dx = v.lastX === undefined ? 0 : x - v.lastX;
+    const dy = v.lastY === undefined ? 0 : y - v.lastY;
+    v.lastX = x;
+    v.lastY = y;
+    const moved = Math.hypot(dx, dy);
+    if (Math.abs(dx) > 0.05) v.facing = dx > 0 ? 1 : -1;
+    let bob = 0;
+    let lean = 0;
+    let sx = 1;
+    let sy = 1;
+    if (e.asleep || e.downed) {
+      // Slow breathing; a "z" now and then for sleepers.
+      const b = Math.sin(now / 700 + e.id) * 0.04;
+      sx = 1 + b;
+      sy = 1 - b;
+      if (e.asleep && !e.downed && now >= (v.nextZ ?? 0)) {
+        this.particles.zed(x + 6, y - TILE * 0.4);
+        v.nextZ = now + 1300 + Math.random() * 500;
+      }
+    } else if (moved > 0.02) {
+      // A step every half cell or so.
+      v.phase = ((v.phase ?? 0) + (moved / TILE) * Math.PI * 2.2) % (Math.PI * 2);
+      bob = -Math.abs(Math.sin(v.phase)) * 3.2;
+      lean = Math.sin(v.phase) * 0.06;
+      this.setWalkFrame(v, v.phase);
+    } else {
+      this.setWalkFrame(v, -1);
+      const work = this.workTarget(e);
+      if (work) {
+        // Face the work and swing at it.
+        const tx = (work.cell % store.mirror.w) + 0.5;
+        const ty = Math.floor(work.cell / store.mirror.w) + 0.5;
+        if (Math.abs(tx * TILE - x) > 2) v.facing = tx * TILE > x ? 1 : -1;
+        const gentle = work.fx === 'soil' || work.fx === 'tend' || work.fx === 'craft';
+        const swing = Math.sin((now / 1000) * (gentle ? 7 : 11) + e.id);
+        lean = swing * (work.fx === 'tend' || work.fx === 'craft' ? 0.08 : 0.22);
+        bob = -Math.max(0, swing) * 1.5;
+        if (now >= (v.nextFx ?? 0)) {
+          this.workParticles(work.fx, tx * TILE, ty * TILE);
+          v.nextFx = now + 280 + Math.random() * 200;
+        }
+      } else {
+        // Idle: a slight sway.
+        lean = Math.sin(now / 900 + e.id) * 0.02;
+      }
+    }
+    const facing = v.facing ?? 1;
+    rig.position.y = bob;
+    rig.rotation = lean * facing;
+    rig.scale.set(facing * sx, sy);
+    if (v.body) v.body.tint = (v.flashUntil ?? 0) > now ? 0xff7060 : (v.baseTint ?? 0xffffff);
+  }
+
+  /** Swap the body texture for walk-cycle frames, if the art exists. phase < 0 = standing. */
+  private setWalkFrame(v: EntityView, phase: number): void {
+    if (!v.body) return;
+    const frames = this.tex.walkFrames();
+    if (!frames.length) return;
+    v.body.texture = phase < 0 ? this.tex.pawn() : frames[Math.floor((phase / (Math.PI * 2)) * frames.length * 2) % frames.length];
+  }
+
+  /** The cell a pawn is working on right now, if it's standing next to it. */
+  private workTarget(e: Pawn): { cell: number; fx: WorkFx } | null {
+    const j = e.job;
+    if (!j || e.path) return null;
+    const m = store.mirror;
+    const cellOf = (id: number) => {
+      const t = m.entities.get(id);
+      return t ? t.y * m.w + t.x : -1;
+    };
+    let cell = -1;
+    let fx: WorkFx = 'build';
+    switch (j.type) {
+      case 'mine':
+        cell = j.cell;
+        fx = 'stone';
+        break;
+      case 'cut': {
+        cell = cellOf(j.target);
+        const t = m.entities.get(j.target);
+        fx = t && t.kind === 'plant' && PLANTS[t.def]?.tree ? 'wood' : 'leaf';
+        break;
+      }
+      case 'build':
+        cell = cellOf(j.target);
+        break;
+      case 'sow':
+        cell = j.cell;
+        fx = 'soil';
+        break;
+      case 'bill':
+        if (j.stage !== 3) return null;
+        cell = cellOf(j.bench);
+        fx = 'craft';
+        break;
+      case 'extinguish':
+        cell = j.cell;
+        fx = 'steam';
+        break;
+      case 'tend':
+        cell = cellOf(j.patient);
+        fx = 'tend';
+        break;
+      default:
+        return null;
+    }
+    if (cell < 0) return null;
+    const px = cell % m.w;
+    const py = Math.floor(cell / m.w);
+    return Math.max(Math.abs(px - e.x), Math.abs(py - e.y)) <= 1 ? { cell, fx } : null;
+  }
+
+  private workParticles(fx: WorkFx, x: number, y: number): void {
+    const p = this.particles;
+    switch (fx) {
+      case 'stone':
+        p.burst(x, y, { count: 4, color: [0x8a8580, 0xa8a49c], speed: 60, size: 1.6, life: 450, gravity: 120, chips: true });
+        break;
+      case 'wood':
+        p.burst(x, y + 6, { count: 4, color: [0xc89058, 0xe0b078, 0x8a5a30], speed: 70, size: 1.8, life: 500, gravity: 140, chips: true });
+        break;
+      case 'leaf':
+        p.burst(x, y, { count: 3, color: [0x6aa040, 0x4a8030], speed: 40, size: 1.8, life: 700, gravity: 30, chips: true });
+        break;
+      case 'build':
+        p.burst(x, y, { count: 3, color: [0xd8c8a0, 0xffe090], speed: 55, size: 1.4, life: 350, gravity: 60 });
+        break;
+      case 'soil':
+        p.burst(x, y + 4, { count: 3, color: [0x6b5a3e, 0x4f4128], speed: 35, size: 1.6, life: 400, gravity: 90 });
+        break;
+      case 'craft':
+        p.burst(x, y - 4, { count: 2, color: [0xffd070, 0xfff0c0], speed: 45, size: 1.2, life: 300, gravity: 40 });
+        break;
+      case 'steam':
+        p.burst(x, y, { count: 3, color: 0xe8eef4, speed: 20, size: 3, grow: 8, life: 900, lift: 25, alpha: 0.6 });
+        break;
+      case 'tend':
+        break;
+    }
+  }
+
+  /** Trees and crops sway gently in the wind; storms push harder. Visible chunks only. */
+  private swayPlants(now: number): void {
+    const windy = store.mirror.conditions.some((c) => c.key === 'thunderstorm' || c.key === 'blizzard' || c.key === 'cold_wind') ? 2.6 : 1;
+    const t = now / 1000;
+    for (const layer of [this.layers.plants, this.layers.floorThings]) {
+      const tree = layer === this.layers.plants;
+      for (const chunk of layer.children) {
+        if (!chunk.visible) continue;
+        for (const root of chunk.children) {
+          if (root.label !== 'plant') continue;
+          const s = root.children[0];
+          if (s) s.rotation = Math.sin(t * (tree ? 1.3 : 2.1) + root.x * 0.031 + root.y * 0.047) * (tree ? 0.03 : 0.07) * windy;
+        }
+      }
+    }
+  }
+
 
   private setupMap(): void {
     const m = store.mirror;
@@ -343,12 +582,54 @@ export class GameRenderer {
 
   // ---------------------------------------------------------------- entities
 
-  private removeView(id: number): void {
+  /** Drop a view. With `leaving`, the entity left the world, so play an exit if it has one. */
+  private removeView(id: number, leaving = false): void {
     const v = this.views.get(id);
     if (!v) return;
-    v.root.destroy({ children: true });
     this.views.delete(id);
     this.pawnIds.delete(id);
+    const root = v.root;
+    if (!leaving || !this.built || !root.visible || !root.parent?.visible) {
+      root.destroy({ children: true });
+      return;
+    }
+    const kill = () => root.destroy({ children: true });
+    if (v.kind === 'plant' && PLANTS[v.def]?.tree) {
+      // Timber: the tree tips over from its base and fades, shedding leaves.
+      const s = root.children[0] as Sprite | undefined;
+      if (s) {
+        const h = s.height;
+        s.anchor.set(0.5, 0.92);
+        s.position.y = h * 0.42;
+      }
+      const dir = Math.random() < 0.5 ? -1 : 1;
+      this.particles.burst(root.x, root.y, { count: 10, color: [0x4a8030, 0x6aa040, 0x2f5a2a], speed: 50, size: 2, life: 900, gravity: 40, chips: true });
+      this.tweens.add(
+        800,
+        (k) => {
+          if (s) s.rotation = dir * ease.inQuad(k) * 1.45;
+          root.alpha = k < 0.6 ? 1 : 1 - (k - 0.6) / 0.4;
+        },
+        kill,
+      );
+    } else if (v.kind === 'building') {
+      // Collapse into a puff of dust and debris.
+      this.particles.burst(root.x, root.y, { count: 14, color: [0x8a7a68, 0x6a5a48, 0xa89880], speed: 60, size: 2, life: 700, gravity: 80, chips: true });
+      this.particles.burst(root.x, root.y, { count: 6, color: 0xb0a898, speed: 20, size: 5, grow: 8, life: 900, lift: 12, alpha: 0.45 });
+      this.tweens.add(220, (k) => root.scale.set(1 - 0.4 * k, 1 - 0.7 * k), kill);
+    } else if (v.kind === 'item') {
+      // Picked up: a quick shrink.
+      this.tweens.add(140, (k) => root.scale.set(1 - k), kill);
+    } else if (v.kind === 'pawn') {
+      this.tweens.add(600, (k) => (root.alpha = 1 - k), kill);
+    } else {
+      kill();
+    }
+  }
+
+  /** Arrivals pop in with a little overshoot. */
+  private popIn(root: Container, dur = 260): void {
+    this.tweens.add(dur, (k) => root.scale.set(0.35 + 0.65 * ease.outBack(k)));
   }
 
   /** Add a static view to its layer's chunk container. */
@@ -407,7 +688,7 @@ export class GameRenderer {
     if (old && old.key === key) return;
     if (old) this.removeView(e.id);
     const root = new Container();
-    const v: EntityView = { root, key };
+    const v: EntityView = { root, key, kind: e.kind, def: 'def' in e ? e.def : '' };
     const cx = (e.x + 0.5) * TILE;
     const cy = (e.y + 0.5) * TILE;
     root.position.set(cx, cy);
@@ -420,6 +701,7 @@ export class GameRenderer {
         s.width = s.height = size;
         if (e.blighted) s.tint = 0x9a7a4a;
         root.addChild(s);
+        root.label = 'plant';
         this.place(d.tree ? 'plants' : 'floorThings', root, e.x, e.y);
         break;
       }
@@ -473,12 +755,16 @@ export class GameRenderer {
         this.place('buildings', root, e.x, e.y);
         break;
       case 'pawn':
-        this.drawPawn(root, e);
+        this.drawPawn(root, e, v);
         this.layers.pawns.addChild(root);
         this.pawnIds.add(e.id);
         break;
     }
     this.views.set(e.id, v);
+    if (!old && this.built) {
+      if (e.kind === 'pawn') this.tweens.add(400, (k) => (root.alpha = k));
+      else this.popIn(root);
+    }
   }
 
   /** Bits: 1 = wall above, 2 = right, 4 = below, 8 = left. */
@@ -508,7 +794,7 @@ export class GameRenderer {
     if (p > 0) root.addChild(new Graphics().rect(-TILE / 2 + 3, TILE / 2 - 6, (TILE - 6) * Math.min(1, p), 3).fill(ready ? 0xf0c060 : 0x8ac8ff));
   }
 
-  private drawPawn(root: Container, e: Pawn): void {
+  private drawPawn(root: Container, e: Pawn, v: EntityView): void {
     const f = store.mirror.factions.get(e.faction);
     const color = f?.color ?? 0xffffff;
     const ring = new Graphics().ellipse(0, TILE * 0.3, TILE * 0.38, TILE * 0.16).fill({ color: 0x000000, alpha: 0.35 });
@@ -522,7 +808,13 @@ export class GameRenderer {
       body.alpha = 0.85;
     }
     if (e.downed) body.tint = 0xd07070;
-    root.addChild(ring, body);
+    // Body, weapon and load ride on a rig so they can bob and swing together.
+    const rig = new Container();
+    rig.addChild(body);
+    root.addChild(ring, rig);
+    v.rig = rig;
+    v.body = body;
+    v.baseTint = body.tint;
     const wd = weaponOf(e.weapon);
     if (e.weapon && !e.downed) {
       // A small weapon glyph at the pawn's side: a bow arc, a long barrel, or a short blade.
@@ -532,7 +824,7 @@ export class GameRenderer {
         g.moveTo(TILE * 0.22, TILE * 0.12)
           .lineTo(TILE * (wd.melee ? 0.42 : 0.55), -TILE * (wd.melee ? 0.12 : 0.18))
           .stroke({ width: wd.melee ? 2.5 : 2, color: wd.melee ? 0xd8d8d8 : 0x6a5a48 });
-      root.addChild(g);
+      rig.addChild(g);
     }
     if (e.drafted) {
       // Drafted: a chevron over the head in the faction colour.
@@ -554,7 +846,7 @@ export class GameRenderer {
       c.anchor.set(0.5);
       c.width = c.height = TILE * 0.45;
       c.position.set(TILE * 0.3, -TILE * 0.05);
-      root.addChild(c);
+      rig.addChild(c);
     }
     const label = new BitmapText({ text: e.name.split(' ')[0] + (e.prisoner ? ' (prisoner)' : '') + (e.downed ? ' (down)' : e.asleep ? ' z' : ''), style: LABEL_STYLE });
     label.scale.set(0.45);
@@ -656,7 +948,17 @@ export class GameRenderer {
     const stale = now - this.lastShotDrain > 500;
     this.lastShotDrain = now;
     for (let k = stale ? q.length : 0; k + SHOT_FIELDS <= q.length; k += SHOT_FIELDS) {
-      this.shots.push({ shooter: q[k], target: q[k + 1], sx: q[k + 2], sy: q[k + 3], tx: q[k + 4], ty: q[k + 5], hit: q[k + 6] === 1, weapon: WEAPON_KEYS[q[k + 7]] ?? '', born: now });
+      const shot = { shooter: q[k], target: q[k + 1], sx: q[k + 2], sy: q[k + 3], tx: q[k + 4], ty: q[k + 5], hit: q[k + 6] === 1, weapon: WEAPON_KEYS[q[k + 7]] ?? '', born: now };
+      this.shots.push(shot);
+      if (shot.hit && !stale) {
+        const melee = weaponOf(shot.weapon).melee;
+        this.tweens.add(melee ? 60 : SHOT_FLY_MS, () => {}, () => {
+          const tv = this.views.get(shot.target);
+          if (!tv) return;
+          tv.flashUntil = performance.now() + 160;
+          this.particles.burst(tv.root.x, tv.root.y - TILE * 0.15, { count: 6, color: [0xc02020, 0x901010], speed: 55, size: 1.5, life: 450, gravity: 120 });
+        });
+      }
     }
     q.length = 0;
     this.shots = this.shots.filter((s) => now - s.born < SHOT_FLY_MS + SHOT_FADE_MS).slice(-300);
@@ -694,7 +996,7 @@ export class GameRenderer {
     }
   }
 
-  private drawFire(): void {
+  private drawFire(dt = 16): void {
     const g = this.fireGfx;
     g.clear();
     const m = store.mirror;
@@ -704,12 +1006,24 @@ export class GameRenderer {
       const level = m.fire[c];
       const x = ((c % m.w) + 0.5) * TILE;
       const y = (((c / m.w) | 0) + 0.5) * TILE;
+      // Smoke and the odd ember, more for bigger fires.
+      if (Math.random() < (dt / 1000) * (1.5 + level * 1.5)) {
+        this.particles.burst(x, y - 6, { count: 1, color: [0x3a3634, 0x5a5450], speed: 10, size: 4, grow: 10, life: 1800, lift: 28, alpha: 0.45, drag: 0.5 });
+      }
+      if (Math.random() < (dt / 1000) * level) {
+        this.particles.burst(x, y, { count: 1, color: [0xffb040, 0xff7020], speed: 30, size: 1.2, life: 700, lift: 50, drag: 1 });
+      }
       const flick = 0.85 + 0.15 * Math.sin(t + c * 1.7);
       const r = TILE * (0.22 + 0.1 * level) * flick;
       g.circle(x, y, r * 1.4).fill({ color: 0xff5010, alpha: 0.25 });
       g.circle(x, y + 2, r).fill({ color: 0xff7a20, alpha: 0.85 });
       g.circle(x + Math.sin(t * 1.3 + c) * 2, y - 2, r * 0.55).fill({ color: 0xffd060, alpha: 0.9 });
     }
+  }
+
+  private drawWeather(tick: number, dt: number): void {
+    const { kind, wind } = precipFor(tick);
+    this.weather.update(dt, kind, this.app.screen.width, this.app.screen.height, wind);
   }
 
   private drawNight(tick: number): void {
@@ -736,6 +1050,20 @@ export class GameRenderer {
     if (active.has('false_spring') || active.has('warm_spell')) tint(0xfff0a0, 0.06);
     if (active.has('cold_wind') || active.has('cold_snap') || active.has('early_frost')) tint(0xa8d8ff, 0.1);
   }
+}
+
+function precipFor(tick: number): { kind: Precip; wind: number } {
+  const m = store.mirror;
+  const active = new Set(m.conditions.map((c) => c.key));
+  if (active.has('blizzard')) return { kind: 'blizzard', wind: 1 };
+  if (active.has('thunderstorm')) return { kind: 'storm', wind: 0.8 };
+  if (active.has('spring_rains')) return { kind: 'rain', wind: 0.3 };
+  if (active.has('ash_fall')) return { kind: 'ash', wind: 0.4 };
+  // Light snow on most winter days, whenever it's below freezing.
+  const cal = calendar(tick);
+  const cold = outdoorTempAt(tick, m.coldOffset, m.conditions) < 0;
+  if (cold && (cal.season === 'Winter' || active.has('cold_snap') || active.has('early_frost')) && hash2(cal.day, 7, m.seed) < 0.6) return { kind: 'snow', wind: 0.35 };
+  return { kind: 'none', wind: 0 };
 }
 
 function isWall(e: Entity | undefined): boolean {

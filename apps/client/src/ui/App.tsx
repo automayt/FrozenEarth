@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { GameRenderer } from '../render/renderer';
 import { store, useStore } from '../store';
+import { command } from '../net';
 import { JoinScreen } from './JoinScreen';
 import { TopBar } from './TopBar';
 import { Architect } from './Architect';
@@ -50,7 +51,7 @@ function GameView() {
   useEffect(() => {
     const r = new GameRenderer();
     r.init(host.current!);
-    if (import.meta.env.DEV) Object.assign(window, { __fe: { store, renderer: r } });
+    if (import.meta.env.DEV) Object.assign(window, { __fe: { store, renderer: r, command } });
     return () => r.destroy();
   }, []);
   return <div className="game" ref={host} />;
