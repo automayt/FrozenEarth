@@ -8,6 +8,7 @@ import { bedFor } from './work';
 import { DESIG } from './types';
 import { NEIGHBORS4, rk, type World } from './world';
 import { resolveChoice } from './choices';
+import { siteProblem } from './setup';
 import { offerTrade } from './trade';
 
 /** Validate and apply one player command. Invalid commands are silently ignored. */
@@ -28,6 +29,31 @@ export function applyCommand(w: World, faction: number, cmd: Command): void {
       return;
     case 'deconstruct':
       return deconstruct(w, faction, cmd);
+    case 'packUp':
+      for (const c of rectCells(w, cmd)) {
+        const z = w.zoneAt(c);
+        if (z && z.faction === faction) w.removeZoneCell(c);
+      }
+      deconstruct(w, faction, cmd);
+      designate(w, faction, 'cancel', cmd);
+      return;
+    case 'setHome': {
+      const f = w.factions.get(faction)!;
+      const x = Math.round(Number(cmd.x));
+      const y = Math.round(Number(cmd.y));
+      if (!w.map.inBounds(x, y)) return;
+      const problem = siteProblem(w, x, y, faction);
+      if (problem) {
+        w.message(faction, `Can't move the colony there: ${problem}`, 'neutral');
+        return;
+      }
+      f.home = { x, y };
+      w.dirty.factions.add(faction);
+      // Frost warnings start over for the new site.
+      if (w.story.frostNotice) w.story.frostNotice[faction] = 0;
+      w.message(faction, `Your colony's new home is set. Colonists will gather there. Build a stockpile and pack up the old site so haulers bring everything over.`, 'good', w.map.idx(x, y));
+      return;
+    }
     case 'setPriority': {
       const p = w.get<Pawn>(cmd.pawn);
       if (!p || p.kind !== 'pawn' || p.faction !== faction || !WORK_TYPES.includes(cmd.work)) return;

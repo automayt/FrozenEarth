@@ -281,6 +281,10 @@ export type Command =
   | ({ c: 'zone'; kind: ZoneKind; plant?: string } & Rect)
   | ({ c: 'unzone' } & Rect)
   | ({ c: 'deconstruct' } & Rect)
+  /** Strip an area: remove your zones, take down your buildings (refunded), cancel your blueprints. */
+  | ({ c: 'packUp' } & Rect)
+  /** Move the colony's home: colonists drift there, and frost warnings follow it. */
+  | { c: 'setHome'; x: number; y: number }
   | { c: 'setPriority'; pawn: EntityId; work: WorkType; prio: number }
   | { c: 'zoneSettings'; zone: number; plant?: string; allow?: ItemCategory[] }
   | { c: 'addBill'; bench: EntityId; recipe: string; mode: BillMode; target: number }

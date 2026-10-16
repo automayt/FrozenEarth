@@ -10,6 +10,8 @@ const ORDERS: { label: string; tool: Tool; hint: string }[] = [
   { label: 'Harvest', tool: { kind: 'designate', what: 'harvest' }, hint: 'Harvest wild berries and crops' },
   { label: 'Cut plants', tool: { kind: 'designate', what: 'cut' }, hint: 'Clear any plants' },
   { label: 'Deconstruct', tool: { kind: 'deconstruct' }, hint: 'Remove your buildings (refunds 75%)' },
+  { label: 'Move colony', tool: { kind: 'moveHome' }, hint: 'Click a new home site. Colonists gather there; frost warnings follow.' },
+  { label: 'Pack up', tool: { kind: 'packUp' }, hint: 'Strip an area: remove zones, take down buildings (75% back), cancel blueprints' },
   { label: 'Cancel', tool: { kind: 'designate', what: 'cancel' }, hint: 'Cancel orders and blueprints' },
 ];
 
@@ -89,9 +91,7 @@ export function Architect() {
           </button>
         )}
         {s.tool.kind !== 'select' && (
-          <span className="tool-hint">
-            Drag to apply · right-click or Esc to stop
-          </span>
+          <span className="tool-hint">{s.tool.kind === 'moveHome' ? 'Click the new home site · right-click or Esc to cancel' : 'Drag to apply · right-click or Esc to stop'}</span>
         )}
         {s.tool.kind === 'select' && mySquad().some((p) => p.drafted) && (
           <span className="tool-hint">Right-click: move · right-click someone else's pawn: attack</span>

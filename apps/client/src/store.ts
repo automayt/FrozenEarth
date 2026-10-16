@@ -8,7 +8,9 @@ export type Tool =
   | { kind: 'build'; def: string }
   | { kind: 'zone'; zone: ZoneKind; plant?: string }
   | { kind: 'unzone' }
-  | { kind: 'deconstruct' };
+  | { kind: 'deconstruct' }
+  | { kind: 'packUp' }
+  | { kind: 'moveHome' };
 
 export interface ChatLine {
   from: string;

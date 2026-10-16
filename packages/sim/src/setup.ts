@@ -1,7 +1,7 @@
 import { TERRAINS } from '@fe/defs';
 import { generateMap } from './mapgen';
 import { FACTION_COLORS, pawnName } from './names';
-import type { Faction } from './types';
+import type { Building, Faction } from './types';
 import { Rng } from './rng';
 import { FROST_MAX, frostLevel } from './frost';
 import { World } from './world';
@@ -52,8 +52,11 @@ function spawnScore(w: World, cx: number, cy: number): number {
 /** Minimum distance between a new colony and existing ones, when a player picks the spot. */
 export const MIN_COLONY_GAP = 35;
 
-/** Why a player can't settle at (x, y), or null if they can. */
-export function siteProblem(w: World, x: number, y: number): string | null {
+/**
+ * Why a colony can't be founded (or moved) at (x, y), or null if it can.
+ * `self` is the faction moving: its own home, zones and buildings don't count against it.
+ */
+export function siteProblem(w: World, x: number, y: number, self = 0): string | null {
   const m = w.map;
   if (x < 6 || y < 6 || x >= m.w - 6 || y >= m.h - 6) return 'Too close to the edge of the map.';
   if (frostLevel(x, y, m.w, m.h, w.frostRadius()) > 0) return 'That land has already frozen over.';
@@ -63,12 +66,15 @@ export function siteProblem(w: World, x: number, y: number): string | null {
     for (let xx = x - 5; xx <= x + 5; xx++) {
       total++;
       const i = m.idx(xx, yy);
-      if (!m.solid[i] && TERRAINS[m.terrain[i]].buildable && !m.buildingAt[i] && !m.zoneAt[i]) open++;
+      const z = m.zoneAt[i] ? w.zones.get(m.zoneAt[i]) : undefined;
+      const b = m.buildingAt[i] ? w.get<Building>(m.buildingAt[i]) : undefined;
+      const mine = (z && z.faction === self) || (b && b.faction === self);
+      if (TERRAINS[m.terrain[i]].buildable && ((!m.solid[i] && !b && !z) || (self && mine))) open++;
     }
   }
   if (open / total < 0.6) return 'Not enough open, buildable ground here.';
   for (const f of w.factions.values()) {
-    if (f.isPlayer && Math.hypot(f.home.x - x, f.home.y - y) < MIN_COLONY_GAP) return `Too close to ${f.name}.`;
+    if (f.isPlayer && f.id !== self && Math.hypot(f.home.x - x, f.home.y - y) < MIN_COLONY_GAP) return `Too close to ${f.name}.`;
   }
   return null;
 }

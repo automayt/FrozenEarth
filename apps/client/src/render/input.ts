@@ -60,6 +60,11 @@ export class Input {
       if (store.mirror.inBounds(cell.x, cell.y)) store.set({ settlePick: cell });
       return;
     }
+    if (store.tool.kind === 'moveHome') {
+      if (store.mirror.inBounds(cell.x, cell.y)) command({ c: 'setHome', x: cell.x, y: cell.y });
+      store.set({ tool: { kind: 'select' } });
+      return;
+    }
     // With the select tool a drag draws a box around colonists; a click selects what's under it.
     this.drag = { start: cell, cur: cell };
   }
@@ -116,6 +121,9 @@ export class Input {
         break;
       case 'unzone':
         command({ c: 'unzone', ...rect });
+        break;
+      case 'packUp':
+        command({ c: 'packUp', ...rect });
         break;
       case 'deconstruct':
         command({ c: 'deconstruct', ...rect });

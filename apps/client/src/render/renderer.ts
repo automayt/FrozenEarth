@@ -886,6 +886,13 @@ export class GameRenderer {
       this.drawSettleUi(g);
       return;
     }
+    if (store.tool.kind === 'moveHome') {
+      // Picking a new home: show where other colonies keep their distance, and the spot under the cursor.
+      const hc = store.hoverCell;
+      store.settlePick = hc === null ? null : { x: hc % m.w, y: Math.floor(hc / m.w) };
+      this.drawSettleUi(g, store.me?.faction);
+      return;
+    }
     const sw = 1 / this.world.scale.x;
     for (const id of store.squad) {
       if (id === store.selected) continue;
@@ -934,11 +941,11 @@ export class GameRenderer {
   }
 
   /** While choosing a start: other colonies' exclusion zones, suggested sites, and the picked spot. */
-  private drawSettleUi(g: Graphics): void {
+  private drawSettleUi(g: Graphics, self = 0): void {
     const m = store.mirror;
     const w = 2 / this.world.scale.x;
     for (const f of m.factions.values()) {
-      if (!f.isPlayer) continue;
+      if (!f.isPlayer || f.id === self) continue;
       const cx = (f.home.x + 0.5) * TILE;
       const cy = (f.home.y + 0.5) * TILE;
       g.circle(cx, cy, MIN_COLONY_GAP * TILE).fill({ color: f.color, alpha: 0.08 }).stroke({ width: w, color: f.color, alpha: 0.6 });

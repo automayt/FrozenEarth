@@ -207,3 +207,37 @@ describe('settling', () => {
     expect(siteProblem(w, far.x, far.y)).toBeNull();
   });
 });
+
+describe('moving a colony', () => {
+  it('sets a new home when the site is fine, refuses bad ones', async () => {
+    const w = createWorld({ seed: 12, width: 160, height: 160 });
+    const a = addPlayerFaction(w, 'Movers', 3, { x: 30, y: 80 });
+    const b = addPlayerFaction(w, 'Others', 3, { x: 130, y: 80 });
+    // Too close to the other colony: refused, home unchanged.
+    w.enqueue(a.id, { c: 'setHome', x: b.home.x - 5, y: b.home.y });
+    run(w, 2);
+    expect(a.home).toEqual({ x: 30, y: 80 });
+    // A good spot nearby: accepted even though it's close to the old home.
+    const { suggestSites } = await import('../src');
+    const site = suggestSites(w, 8).find((s) => Math.hypot(s.x - b.home.x, s.y - b.home.y) > 40)!;
+    w.enqueue(a.id, { c: 'setHome', x: site.x, y: site.y });
+    run(w, 2);
+    expect(a.home).toEqual({ x: site.x, y: site.y });
+  });
+
+  it('packing up removes zones and buildings and refunds materials', () => {
+    const w = flatWorld();
+    addPawn(w, 5, 5);
+    w.enqueue(1, { c: 'zone', kind: 'stockpile', ...rect(10, 10, 12, 12) });
+    w.spawnBuilding('bed', w.map.idx(14, 14), 1);
+    w.spawnBuilding('wood_wall', w.map.idx(15, 14), 1);
+    run(w, 2);
+    expect(w.zones.size).toBe(1);
+    w.enqueue(1, { c: 'packUp', ...rect(8, 8, 16, 16) });
+    run(w, 2);
+    expect(w.zones.size).toBe(0);
+    expect(w.kinds.building.size).toBe(0);
+    // 75% of a bed (25 wood) plus a wall (5 wood) comes back.
+    expect(total(itemsOf(w, 'wood'))).toBe(Math.floor(25 * 0.75) + Math.floor(5 * 0.75));
+  });
+});
