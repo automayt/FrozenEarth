@@ -20,5 +20,5 @@ export function skillSpeed(level: number): number {
 
 /** XP needed to go from this level to the next. */
 export function xpToNext(level: number): number {
-  return 500 + 250 * level;
+  return 1500 + 750 * level;
 }
