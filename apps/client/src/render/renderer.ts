@@ -3,6 +3,7 @@ import { BUILDINGS, maxHp, PLANTS, ROCKS, TERRAINS, WEAPON_KEYS, weaponOf, type 
 import { pawnPosition } from '@fe/protocol';
 import { DESIG, FROST_BAND, MIN_COLONY_GAP, SHOT_FIELDS, TICKS_PER_DAY, TICKS_PER_HOUR, bleedRate, calendar, frostLevel, frostRadius, hash2, outdoorTempAt, woundTotal, type Construct, type Entity, type Pawn } from '@fe/sim';
 import { ease, Particles, Tweens, Weather, type Precip } from './fx';
+import { sound } from '../audio';
 import { store } from '../store';
 import { TextureBank } from './textures';
 import { Input } from './input';
@@ -221,6 +222,7 @@ export class GameRenderer {
           const y = (((c / m.w) | 0) + 0.5) * TILE;
           this.particles.burst(x, y, { count: 14, color: [0x8a8580, 0x6a6560, 0xa8a49c], speed: 70, size: 2.2, life: 700, gravity: 60, drag: 3, chips: true });
           this.particles.burst(x, y, { count: 8, color: 0xb0aaa0, speed: 25, size: 4, grow: 6, life: 900, lift: 10, alpha: 0.5 });
+          sound.play('rock', x, y);
         }
       }
     }
@@ -280,6 +282,7 @@ export class GameRenderer {
       const a = this.screenToWorld(0, 0);
       const b = this.screenToWorld(this.app.screen.width, this.app.screen.height);
       store.view = { x0: a.x, y0: a.y, x1: b.x, y1: b.y };
+      sound.setListener(((a.x + b.x) / 2) * TILE, ((a.y + b.y) / 2) * TILE, (b.x - a.x) * TILE);
     }
     this.drawFrost(tick);
     this.swayPlants(now);
@@ -415,6 +418,7 @@ export class GameRenderer {
 
   private workParticles(fx: WorkFx, x: number, y: number): void {
     const p = this.particles;
+    sound.play(fx, x, y);
     switch (fx) {
       case 'stone':
         p.burst(x, y, { count: 4, color: [0x8a8580, 0xa8a49c], speed: 60, size: 1.6, life: 450, gravity: 120, chips: true });
@@ -617,6 +621,7 @@ export class GameRenderer {
         s.position.y = h * 0.42;
       }
       const dir = Math.random() < 0.5 ? -1 : 1;
+      sound.play('fall', root.x, root.y);
       this.particles.burst(root.x, root.y, { count: 10, color: [0x4a8030, 0x6aa040, 0x2f5a2a], speed: 50, size: 2, life: 900, gravity: 40, chips: true });
       this.tweens.add(
         800,
@@ -628,6 +633,7 @@ export class GameRenderer {
       );
     } else if (v.kind === 'building') {
       // Collapse into a puff of dust and debris.
+      sound.play('crumble', root.x, root.y);
       this.particles.burst(root.x, root.y, { count: 14, color: [0x8a7a68, 0x6a5a48, 0xa89880], speed: 60, size: 2, life: 700, gravity: 80, chips: true });
       this.particles.burst(root.x, root.y, { count: 6, color: 0xb0a898, speed: 20, size: 5, grow: 8, life: 900, lift: 12, alpha: 0.45 });
       this.tweens.add(220, (k) => root.scale.set(1 - 0.4 * k, 1 - 0.7 * k), kill);
@@ -778,6 +784,7 @@ export class GameRenderer {
     if (!old && this.built) {
       if (e.kind === 'pawn') this.tweens.add(400, (k) => (root.alpha = k));
       else this.popIn(root);
+      if (e.kind === 'building') sound.play('pop', root.x, root.y);
     }
   }
 
@@ -964,12 +971,18 @@ export class GameRenderer {
     for (let k = stale ? q.length : 0; k + SHOT_FIELDS <= q.length; k += SHOT_FIELDS) {
       const shot = { shooter: q[k], target: q[k + 1], sx: q[k + 2], sy: q[k + 3], tx: q[k + 4], ty: q[k + 5], hit: q[k + 6] === 1, weapon: WEAPON_KEYS[q[k + 7]] ?? '', born: now };
       this.shots.push(shot);
+      if (!stale) {
+        const sv = this.views.get(shot.shooter)?.root;
+        const wdef = weaponOf(shot.weapon);
+        sound.play(wdef.melee ? 'melee' : shot.weapon === 'bow' ? 'bow' : 'rifle', sv?.x ?? (shot.sx + 0.5) * TILE, sv?.y ?? (shot.sy + 0.5) * TILE);
+      }
       if (shot.hit && !stale) {
         const melee = weaponOf(shot.weapon).melee;
         this.tweens.add(melee ? 60 : SHOT_FLY_MS, () => {}, () => {
           const tv = this.views.get(shot.target);
           if (!tv) return;
           tv.flashUntil = performance.now() + 160;
+          sound.play('hit', tv.root.x, tv.root.y);
           this.particles.burst(tv.root.x, tv.root.y - TILE * 0.15, { count: 6, color: [0xc02020, 0x901010], speed: 55, size: 1.5, life: 450, gravity: 120 });
         });
       }
@@ -1027,6 +1040,7 @@ export class GameRenderer {
       if (Math.random() < (dt / 1000) * level) {
         this.particles.burst(x, y, { count: 1, color: [0xffb040, 0xff7020], speed: 30, size: 1.2, life: 700, lift: 50, drag: 1 });
       }
+      if (Math.random() < (dt / 1000) * (2 + level * 2)) sound.play('fire', x, y);
       const flick = 0.85 + 0.15 * Math.sin(t + c * 1.7);
       const r = TILE * (0.22 + 0.1 * level) * flick;
       g.circle(x, y, r * 1.4).fill({ color: 0xff5010, alpha: 0.25 });
@@ -1086,10 +1100,12 @@ export class GameRenderer {
     // Looking out over frozen ground: it's always snowing out there.
     const m = store.mirror;
     const c = this.screenToCell(this.app.screen.width / 2, this.app.screen.height / 2);
-    if (kind === 'none' && m.w && frostLevel(c.x, c.y, m.w, m.h, frostRadius(tick, m.frost)) > 0.5) {
+    const frozenView = m.w ? frostLevel(c.x, c.y, m.w, m.h, frostRadius(tick, m.frost)) : 0;
+    if (kind === 'none' && frozenView > 0.5) {
       kind = 'snow';
       wind = 0.6;
     }
+    sound.ambience(Math.min(1, 0.12 + wind * 0.75 + frozenView * 0.3), kind === 'rain' ? 0.6 : kind === 'storm' ? 1 : 0);
     this.weather.update(dt, kind, this.app.screen.width, this.app.screen.height, wind);
   }
 

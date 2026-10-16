@@ -4,6 +4,7 @@ import { pawnPosition } from '@fe/protocol';
 import type { Pawn, Rect } from '@fe/sim';
 import { command } from '../net';
 import { store } from '../store';
+import { sound } from '../audio';
 import { helpers, mySquad, setSpeed, toggleDraft, togglePause } from '../actions';
 import { TILE, type GameRenderer } from './renderer';
 
@@ -146,6 +147,8 @@ export class Input {
       setSpeed(Number(k));
     } else if (k === 'r') {
       toggleDraft();
+    } else if (k === 'm') {
+      sound.toggleMute();
     } else if (k === 'h') {
       const f = store.me ? store.mirror.factions.get(store.me.faction) : undefined;
       if (f) store.set({ focus: { ...f.home } });

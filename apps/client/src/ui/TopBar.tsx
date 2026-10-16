@@ -3,6 +3,7 @@ import { EVENTS } from '@fe/defs';
 import { myPlayer, setSpeed } from '../actions';
 import { useStore } from '../store';
 import { hex } from './util';
+import { SoundControl } from './SoundControl';
 
 export function TopBar() {
   const s = useStore();
@@ -58,6 +59,7 @@ export function TopBar() {
             {s.players.filter((p) => !p.connected).length} offline
           </span>
         )}
+        <SoundControl />
         <span className="muted small">{s.ping} ms</span>
       </div>
     </div>

@@ -996,3 +996,22 @@ td.name {
     top: 70px;
   }
 }
+
+/* ------------------------------------------------------------------ sound */
+
+.sound {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sound button {
+  padding: 1px 6px;
+  font-size: 12px;
+}
+
+.sound input[type='range'] {
+  width: 70px;
+  padding: 0;
+  accent-color: var(--ice);
+}

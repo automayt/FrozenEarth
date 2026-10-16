@@ -1,6 +1,7 @@
 import { decode, encode, PROTOCOL_VERSION, type ClientMsg, type ServerMsg } from '@fe/protocol';
 import type { Command } from '@fe/sim';
 import { store } from './store';
+import { sound } from './audio';
 
 const tokenKey = (name: string) => `fe.token.${name.trim().toLowerCase()}`;
 const NAME_KEY = 'fe.name';
@@ -96,6 +97,9 @@ function handle(msg: ServerMsg): void {
       return;
     }
     case 'delta':
+      // A chime for letters that matter to us.
+      for (const m of msg.d.msgs) if ((m.faction === 0 || m.faction === store.me?.faction) && m.tone !== 'neutral') sound.play(m.tone);
+      if (msg.d.choices?.some((c) => c.faction === store.me?.faction && !store.mirror.choices.some((o) => o.id === c.id))) sound.play('neutral');
       store.mirror.applyDelta(msg.d);
       store.setServerTick(msg.d.tick);
       store.time = msg.time;
