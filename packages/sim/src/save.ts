@@ -4,7 +4,7 @@ import { upgradeStoryState, type StoryState } from './schedule';
 import { SKILLS } from '@fe/defs';
 import { Dirty, rkFromString, rkToString, unreachableKey, World } from './world';
 
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 export interface SaveData {
   version: number;
@@ -109,6 +109,10 @@ function migrate(data: SaveData): SaveData {
     }
     for (const z of d.zones) if (z.kind === 'stockpile' && !z.allow.includes('weapon')) z.allow.push('weapon');
     d.version = 4;
+  }
+  if (d.version === 4) {
+    // Feed jobs: nothing to convert. The bump keeps older servers, which can't run them, from loading these saves.
+    d.version = 5;
   }
   return d;
 }

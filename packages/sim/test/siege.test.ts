@@ -325,7 +325,7 @@ describe('save format 4', () => {
     }
     for (const z of save.zones) z.allow = z.allow.filter((a) => a !== 'weapon');
     const b = deserializeWorld(save);
-    expect(SAVE_VERSION).toBe(4);
+    expect(SAVE_VERSION).toBeGreaterThanOrEqual(4);
     for (const id of b.kinds.building) {
       const bd = b.get<Building>(id)!;
       expect(bd.hp).toBe(maxHp(bd.def));

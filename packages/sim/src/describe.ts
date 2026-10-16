@@ -55,6 +55,8 @@ export function describeJob(job: Job | null, lookup: (id: number) => Entity | un
     case 'rescue':
       if (job.stage === 0) return `Going to ${job.capture ? 'capture' : 'rescue'} ${name(job.patient)}`;
       return job.capture ? `Taking ${name(job.patient)} prisoner` : `Carrying ${name(job.patient)} to bed`;
+    case 'feed':
+      return job.stage === 0 ? `Fetching food for ${name(job.patient)}` : `Feeding ${name(job.patient)}`;
     case 'equip':
       return job.item ? `Picking up ${name(job.item)}` : 'Dropping weapon';
     case 'bill': {

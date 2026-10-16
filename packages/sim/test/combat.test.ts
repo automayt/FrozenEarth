@@ -269,7 +269,7 @@ describe('combat persistence', () => {
       delete (old.priorities as Partial<Pawn['priorities']>).doctor;
     }
     const b = deserializeWorld(save);
-    expect(SAVE_VERSION).toBe(4);
+    expect(SAVE_VERSION).toBeGreaterThanOrEqual(4);
     for (const p of pawns(b)) {
       expect(p.weapon).toBe('');
       expect(p.drafted).toBe(false);

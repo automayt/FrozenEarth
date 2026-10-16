@@ -1,5 +1,5 @@
 import { APPAREL, BUILDINGS, COMFORT_MAX, COMFORT_MIN, CONDITIONS, DOWNED_BLOOD_LOSS, DOWNED_PAIN, TRAITS, WEATHER, type ConditionDef, type ConditionStage } from '@fe/defs';
-import { RARE_TICK, TICKS_PER_DAY, TICKS_PER_HOUR } from './constants';
+import { HOURS_PER_DAY, RARE_TICK, TICKS_PER_DAY, TICKS_PER_HOUR } from './constants';
 import { scheduleEvent } from './schedule';
 import { dropWeapon, endJob } from './pawns';
 import { raiderGone, raiderDowned } from './raids';
@@ -139,6 +139,13 @@ export function woundTotal(p: Pawn): number {
   return t;
 }
 
+/** In-game hours until blood loss kills this pawn at its current bleeding rate; Infinity if it isn't bleeding. */
+export function hoursToBleedOut(p: Pawn): number {
+  const r = bleedRate(p);
+  if (r <= 0) return Infinity;
+  return ((1 - (conditionOf(p, 'blood_loss')?.severity ?? 0)) / r) * HOURS_PER_DAY;
+}
+
 export function needsTending(p: Pawn): boolean {
   return p.conditions.some((c) => c.tended === undefined && CONDITIONS[c.key]?.bleed);
 }
@@ -193,6 +200,11 @@ export function isMental(p: Pawn): boolean {
 /** Lying in their own bed: asleep there, or put there to recover. */
 export function inBed(w: World, p: Pawn): boolean {
   return p.asleep && !!p.bed && p.job?.type === 'sleep' && p.job.bed === p.bed;
+}
+
+/** Can't get up to eat: downed, or a prisoner kept to their bed. */
+export function bedBound(w: World, p: Pawn): boolean {
+  return p.downed || (p.prisoner === 'held' && inBed(w, p));
 }
 
 /**

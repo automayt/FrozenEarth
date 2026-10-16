@@ -283,8 +283,8 @@ export function canUseItem(w: World, p: Pawn, it: Item): boolean {
   return true;
 }
 
-function findFood(w: World, p: Pawn): Job | null {
-  const here = w.cellOf(p);
+/** The best food for `p` to fetch from `from`: close, fresh, and a meal if there is one. */
+export function findFoodItem(w: World, p: Pawn, from: number): Item | null {
   let best: Item | null = null;
   let bestScore = Infinity;
   for (const id of w.kinds.item) {
@@ -293,17 +293,26 @@ function findFood(w: World, p: Pawn): Job | null {
     if (!def.nutrition || !canUseItem(w, p, it)) continue;
     const c = w.cellOf(it);
     if (w.isUnreachable(p.faction, c)) continue;
-    const score = w.dist(here, c) - (def.category === 'meal' ? 25 : 0) + it.rot * 20;
+    const score = w.dist(from, c) - (def.category === 'meal' ? 25 : 0) + it.rot * 20;
     if (score < bestScore) {
       bestScore = score;
       best = it;
     }
   }
+  return best;
+}
+
+/** How much of an item to eat to fill up from `food`: one meal, or enough raw food. */
+export function portion(it: Item, food: number): number {
+  const def = ITEMS[it.def];
+  return def.category === 'meal' ? 1 : Math.max(1, Math.min(it.count, Math.ceil((1 - food) / def.nutrition!)));
+}
+
+function findFood(w: World, p: Pawn): Job | null {
+  const best = findFoodItem(w, p, w.cellOf(p));
   if (!best) return null;
-  const def = ITEMS[best.def];
-  const count = def.category === 'meal' ? 1 : Math.min(best.count, Math.ceil((1 - p.needs.food) / def.nutrition!));
   w.reserve(rk.e(best.id), p.id);
-  return { type: 'eat', stage: 0, item: best.id, count, progress: 0 };
+  return { type: 'eat', stage: 0, item: best.id, count: portion(best, p.needs.food), progress: 0 };
 }
 
 function findSleep(w: World, p: Pawn, rest: boolean): Job | null {

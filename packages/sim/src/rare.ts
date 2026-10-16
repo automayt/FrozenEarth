@@ -4,6 +4,7 @@ import { effectsOf, healthTick } from './health';
 import { endJob, exposureSeverity, needsWarmth, warmthJob } from './pawns';
 import { isRaider } from './combat';
 import { prisonerTick } from './raids';
+import { answerUrgentCare } from './work';
 import type { Building, Item, Pawn, Plant, Room } from './types';
 import { NEIGHBORS4, type World } from './world';
 
@@ -73,6 +74,8 @@ function needsTick(w: World, p: Pawn): void {
   const seekWarmth =
     (busy || (jt === 'sleep' && !p.downed && exposureSeverity(p) > 0.3)) && !p.drafted && needsWarmth(w, p, e) && warmthJob(w, p, e) !== null;
   if (seekWarmth || (busy && (n.food < 0.12 || n.rest < 0.08 || e.bedRest || (e.noWork && jt !== 'wander')))) endJob(w, p);
+  // A colony-mate bleeding out or lying downed comes before routine work, and even sleep if it's dire.
+  else answerUrgentCare(w, p, e);
   w.markPawnIfChanged(p);
 }
 

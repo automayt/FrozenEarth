@@ -1,11 +1,11 @@
 import { APPAREL, BUILDINGS, CONDITIONS, ITEMS, maxHp, PLANTS, RECIPES, ROCKS, T, WEAPON_KEYS, WEAPONS, weaponOf } from '@fe/defs';
 import { dropWeapon, goTo, needsWarmth, pawnSpeed, pushOut, workSpeed } from './pawns';
-import { addCondition, effectsOf, inBed, needsTending } from './health';
+import { addCondition, bedBound, effectsOf, inBed, needsTending } from './health';
 import { hostileInReach, inReach, isRaider, strike, warmup } from './combat';
 import { breakable, findPath, makePathState } from './pathfinding';
 import { raiderGone, takePrisoner } from './raids';
 import { damageBuilding, repairBuilding } from './siege';
-import type { Building, Construct, Item, Job, Pawn, Plant } from './types';
+import type { Building, Carried, Construct, Item, Job, Pawn, Plant } from './types';
 import { DESIG } from './types';
 import type { World } from './world';
 
@@ -67,6 +67,8 @@ export function runJob(w: World, p: Pawn): JobResult {
       return rescue(w, p, j);
     case 'equip':
       return equip(w, p, j);
+    case 'feed':
+      return feed(w, p, j);
   }
 }
 
@@ -524,17 +526,45 @@ function eat(w: World, p: Pawn, j: J<'eat'>): JobResult {
   }
   j.progress++;
   if (j.progress < EAT_TICKS) return 'continue';
-  const c = p.carrying;
-  if (c) {
-    const def = ITEMS[c.def];
-    p.needs.food = Math.min(1, p.needs.food + (def.nutrition ?? 0) * c.count);
-    p.carrying = null;
-    // Rotten food (and, rarely, raw food) can make people sick.
-    const risk = c.rot > 0.5 ? 0.35 : def.category === 'raw_food' ? 0.02 : 0;
-    if (risk && w.rng.chance(risk) && addCondition(w, p, 'food_poisoning')) {
-      w.message(p.faction, `${p.name} got food poisoning from ${c.rot > 0.5 ? 'rotting' : 'raw'} ${def.label.toLowerCase()}.`, 'bad', w.cellOf(p));
-    }
+  if (p.carrying) consume(w, p, p.carrying);
+  p.carrying = null;
+  w.markDirty(p);
+  return 'done';
+}
+
+/** `eater` eats `c`. Rotten food (and, rarely, raw food) can make people sick. */
+function consume(w: World, eater: Pawn, c: Carried): void {
+  const def = ITEMS[c.def];
+  eater.needs.food = Math.min(1, eater.needs.food + (def.nutrition ?? 0) * c.count);
+  const risk = c.rot > 0.5 ? 0.35 : def.category === 'raw_food' ? 0.02 : 0;
+  if (risk && w.rng.chance(risk) && addCondition(w, eater, 'food_poisoning')) {
+    w.message(eater.faction, `${eater.name} got food poisoning from ${c.rot > 0.5 ? 'rotting' : 'raw'} ${def.label.toLowerCase()}.`, 'bad', w.cellOf(eater));
   }
+  w.markDirty(eater);
+}
+
+/** Fetch food for a patient who can't get up, then feed it to them. */
+function feed(w: World, p: Pawn, j: J<'feed'>): JobResult {
+  const pt = w.get<Pawn>(j.patient);
+  if (!pt || pt.kind !== 'pawn' || pt.faction !== p.faction) return 'done';
+  if (j.stage === 0) {
+    if (!bedBound(w, pt)) return 'done';
+    const it = w.get<Item>(j.item);
+    if (!it || it.kind !== 'item') return 'fail';
+    const r = goTo(w, p, w.cellOf(it), false);
+    if (r !== 'arrived') return r === 'fail' ? 'fail' : 'continue';
+    pickUp(w, p, it, j.count);
+    j.stage = 1;
+    return 'continue';
+  }
+  // Food in hand: a prisoner who got up meanwhile still gets it.
+  if (!p.carrying || (!pt.downed && pt.prisoner !== 'held')) return 'done';
+  const r = goTo(w, p, w.cellOf(pt), true);
+  if (r !== 'arrived') return r === 'fail' ? 'fail' : 'continue';
+  j.progress++;
+  if (j.progress < EAT_TICKS) return 'continue';
+  consume(w, pt, p.carrying);
+  p.carrying = null;
   w.markDirty(p);
   return 'done';
 }

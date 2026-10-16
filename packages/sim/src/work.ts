@@ -1,8 +1,8 @@
 import { BUILDINGS, ITEMS, PLANTS, RECIPES, TERRAINS, WORK_TYPES, type RecipeDef, type WorkType } from '@fe/defs';
 import { fullyDelivered } from './jobs';
 import { maybeReachable } from './pathfinding';
-import { canUseItem } from './pawns';
-import { inBed, needsTending } from './health';
+import { canUseItem, endJob, findFoodItem, portion } from './pawns';
+import { bedBound, effectsOf, hoursToBleedOut, inBed, needsTending, type Effects } from './health';
 import type { Building, Construct, Item, Job, Pawn, Plant, Zone } from './types';
 import { DESIG } from './types';
 import { rk, type World } from './world';
@@ -22,6 +22,11 @@ const GIVERS: Record<WorkType, Giver> = {
 };
 
 export function findWork(w: World, p: Pawn): Job | null {
+  // A colony-mate in danger comes before anything else this pawn would do, unless they never doctor.
+  if (p.priorities.doctor > 0) {
+    const j = giveDoctor(w, p, URGENT);
+    if (j) return j;
+  }
   for (let prio = 1; prio <= 4; prio++) {
     for (const wt of WORK_TYPES) {
       if (p.priorities[wt] !== prio) continue;
@@ -100,19 +105,49 @@ function giveFirefight(w: World, p: Pawn): Job | null {
 
 /** Patients lying in a bed get seen before ones this many cells closer. */
 const IN_BED_PREFERENCE = 20;
+/** A bleeding colony-mate who will die within this many hours is urgent: doctors drop lower work for them. */
+export const URGENT_BLEED_HOURS = 24;
+/** Within this many hours a patient is critical: a sleeping doctor gets up if nobody awake can help. */
+export const CRITICAL_BLEED_HOURS = 6;
+/** Patients who can't get up to eat are brought food below this. */
+export const FEED_BELOW = 0.3;
+
+/** Care urgency levels: routine, urgent (pre-empts other work), critical (worth waking for). */
+export const ROUTINE = 0;
+export const URGENT = 1;
+export const CRITICAL = 2;
 
 /**
- * Carry downed colony-mates to bed, then dress bleeding wounds: patients in bed first, then
- * other colony-mates, yourself if nobody else needs it.
+ * How urgently a colony-mate needs a doctor. Bleeding out soon is urgent, and critical when it's
+ * within a few hours; so is lying downed and bleeding, downed out of bed, or starving while bed-bound.
  */
-function giveDoctor(w: World, p: Pawn): Job | null {
+export function careUrgency(w: World, o: Pawn): number {
+  const bleeding = needsTending(o);
+  const hours = bleeding ? hoursToBleedOut(o) : Infinity;
+  if (hours < CRITICAL_BLEED_HOURS) return CRITICAL;
+  if (hours < URGENT_BLEED_HOURS || (o.downed && (bleeding || !inBed(w, o)))) return URGENT;
+  if (o.needs.food <= 0 && bedBound(w, o)) return URGENT;
+  return ROUTINE;
+}
+
+/**
+ * Carry downed colony-mates to bed, dress bleeding wounds (patients in bed first, then other
+ * colony-mates, yourself if nobody else needs it), then feed those who can't get up to eat.
+ * With `min` above ROUTINE, only patients at least that urgent are seen.
+ */
+function giveDoctor(w: World, p: Pawn, min = ROUTINE): Job | null {
   const patients: Pawn[] = [];
   const downed: Pawn[] = [];
+  const hungry: Pawn[] = [];
   let self = false;
   for (const id of w.kinds.pawn) {
     const o = w.get<Pawn>(id)!;
     if (o.faction !== p.faction) continue;
-    if (o.downed && o.id !== p.id && !inBed(w, o) && !w.reservedByOther(rk.e(o.id), p.id) && !w.reservedByOther(rk.t(o.id), p.id)) downed.push(o);
+    if (min > ROUTINE && careUrgency(w, o) < min) continue;
+    if (o.id !== p.id && !w.reservedByOther(rk.e(o.id), p.id)) {
+      if (o.downed && !inBed(w, o) && !w.reservedByOther(rk.t(o.id), p.id)) downed.push(o);
+      if (o.needs.food < FEED_BELOW && bedBound(w, o)) hungry.push(o);
+    }
     if (!needsTending(o) || w.reservedByOther(rk.t(o.id), p.id)) continue;
     if (o.id === p.id) self = true;
     else patients.push(o);
@@ -137,9 +172,59 @@ function giveDoctor(w: World, p: Pawn): Job | null {
     }
   }
   best ??= self ? p : undefined;
-  if (!best) return null;
-  w.reserve(rk.t(best.id), p.id);
-  return { type: 'tend', stage: 0, patient: best.id, progress: 0 };
+  if (best) {
+    w.reserve(rk.t(best.id), p.id);
+    return { type: 'tend', stage: 0, patient: best.id, progress: 0 };
+  }
+  const o = nearest(w, p, hungry, (x) => w.cellOf(x), true, 5)[0];
+  const food = o && findFoodItem(w, p, here);
+  if (!o || !food) return null;
+  w.reserve(rk.e(o.id), p.id);
+  w.reserve(rk.e(food.id), p.id);
+  return { type: 'feed', stage: 0, patient: o.id, item: food.id, count: portion(food, o.needs.food), progress: 0 };
+}
+
+/** Jobs a doctor drops for an urgent patient. Player orders, needs, fighting and other care are left alone. */
+const PREEMPTIBLE = new Set<Job['type']>(['wander', 'haul', 'deliver', 'build', 'mine', 'cut', 'sow', 'bill', 'repair', 'wear']);
+
+/** Able to see to a patient right now: a doctor who is up, free to work, and not under orders. */
+function canDoctor(p: Pawn, e: Effects): boolean {
+  return p.priorities.doctor > 0 && !p.downed && !p.drafted && !p.prisoner && !e.noWork && !e.bedRest;
+}
+
+/**
+ * Slow-tick check for one colonist: drop lower-urgency work to rescue, tend or feed a colony-mate
+ * in danger. A sleeping doctor is woken only for a critical patient, and only when no other doctor is awake.
+ */
+export function answerUrgentCare(w: World, p: Pawn, e: Effects): void {
+  const j = p.job;
+  if (!j || !canDoctor(p, e)) return;
+  const sleeping = j.type === 'sleep' && !j.rest;
+  if (!sleeping && !PREEMPTIBLE.has(j.type)) return;
+  const min = sleeping ? CRITICAL : URGENT;
+  if (sleeping && awakeDoctor(w, p)) return;
+  // Look before dropping anything: only give up the current job if there is care to give.
+  if (!giveDoctor(w, p, min)) return;
+  endJob(w, p);
+  const care = giveDoctor(w, p, min);
+  if (!care) return;
+  p.job = care;
+  w.markDirty(p);
+  if (sleeping && 'patient' in care) {
+    const pt = w.get<Pawn>(care.patient);
+    w.message(p.faction, `${p.name} has been woken to help ${pt?.name ?? 'a patient'}.`, 'neutral', w.cellOf(p));
+  }
+}
+
+/** Another colony-mate who is awake and could see to a patient. */
+function awakeDoctor(w: World, p: Pawn): boolean {
+  for (const id of w.kinds.pawn) {
+    const o = w.get<Pawn>(id)!;
+    if (o.id === p.id || o.faction !== p.faction || o.asleep || o.priorities.doctor <= 0) continue;
+    if (o.job?.type === 'sleep') continue;
+    if (canDoctor(o, effectsOf(w, o))) return true;
+  }
+  return false;
 }
 
 /**

@@ -168,6 +168,8 @@ export type Job =
   | (JobBase & { type: 'rescue'; patient: EntityId; bed: EntityId; capture: boolean })
   /** Pick up a weapon item and wield it (dropping the old one), or with item 0 just drop the current one. */
   | (JobBase & { type: 'equip'; item: EntityId })
+  /** Bring food to a patient who can't get up for it, and feed them. */
+  | (JobBase & { type: 'feed'; patient: EntityId; item: EntityId; count: number; progress: number })
   | (JobBase & {
       type: 'bill';
       bench: EntityId;
