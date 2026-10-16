@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { networkInterfaces } from 'node:os';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { WebSocketServer } from 'ws';
@@ -32,6 +33,10 @@ wss.on('connection', (ws) => game.onConnect(ws));
 const port = Number(args.port);
 http.listen(port, () => {
   console.log(`FrozenEarth server on http://localhost:${port}  (world "${args.world}"${args.password ? ', password protected' : ''})`);
+  // Addresses other machines on the network can use.
+  for (const addrs of Object.values(networkInterfaces())) {
+    for (const a of addrs ?? []) if (a.family === 'IPv4' && !a.internal) console.log(`  on your network: http://${a.address}:${port}`);
+  }
 });
 game.start();
 
