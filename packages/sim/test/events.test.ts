@@ -207,22 +207,24 @@ describe('fire', () => {
 
 describe('storyteller', () => {
   it('a long multiplayer game sees a wide spread of events and stays deterministic', () => {
-    const play = () => {
+    const play = (days: number, hashAt?: number) => {
       const w = livelyWorld(21);
       const fired = new Set<string>();
-      const realFire = w.message.bind(w);
-      w.message = (f, text, tone, at) => realFire(f, text, tone, at);
-      for (let day = 0; day < 40; day++) {
+      let hash = '';
+      for (let day = 0; day < days; day++) {
         run(w, TICKS_PER_DAY);
         for (const k of Object.keys(w.story.lastFired)) fired.add(k.split(':')[0]);
         // Answer any letters so visitors resolve.
         for (const c of [...w.choices.values()]) resolveChoice(w, c.id, c.options[0].key, c.faction);
+        if (day + 1 === hashAt) hash = hashWorld(w);
       }
-      return { w, fired };
+      return { w, fired, hash };
     };
-    const a = play();
-    const b = play();
-    expect(hashWorld(a.w)).toBe(hashWorld(b.w));
+    // One long game for the spread; a second, shorter one replays its first ten days. (The
+    // fuzz tests check determinism with every system on; this keeps the storyteller honest.)
+    const a = play(40, 10);
+    const b = play(10);
+    expect(hashWorld(b.w)).toBe(a.hash);
     expect(a.fired.size).toBeGreaterThan(14);
     // Unique events never repeat.
     expect(new Set(a.w.story.uniqueFired).size).toBe(a.w.story.uniqueFired.length);

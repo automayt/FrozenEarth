@@ -106,8 +106,10 @@ tools/art          how the sprites were generated with ComfyUI
 ## Testing
 
 ```bash
-npm test             # sim, pathfinding, jobs, determinism, save/load, delta replication
+npm test             # sim, client logic, determinism fuzzing, save/load, delta replication, perf budget
 npm run typecheck
+npm run lint
+npm run smoke        # ~25 s: starts a real server on a free port (8110-8130), plays headless clients, checks their mirrors against the saved world
 npm run bots -- --bots 8 --minutes 2   # against a running server; checks all clients agree
 npm run bench                          # sim cost per tick, snapshot size and delta bandwidth
 ```

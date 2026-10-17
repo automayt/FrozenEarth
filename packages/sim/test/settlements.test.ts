@@ -9,6 +9,8 @@ import {
   dispositionOf,
   foundSettlement,
   frostDistance,
+  frostLevel,
+  frostRadius,
   hashWorld,
   hostile,
   killPawn,
@@ -150,7 +152,13 @@ describe('settlements', () => {
     const old = { ...f.home };
     const oldBuildings = buildings(w, f.id).map((b) => b.id);
     w.frost = { ...w.frost, startDay: 0, pace: 6 };
-    runUntil(w, () => f.settlement!.state !== 'home', 30 * TICKS_PER_DAY);
+    // Skip the quiet days (nothing happens there until the frost is close), stopping a day short.
+    const home = w.map.idx(f.home.x, f.home.y);
+    const bite = (tick: number) => frostLevel(f.home.x, f.home.y, 200, 200, frostRadius(tick, w.frost));
+    expect(w.frostAt(home)).toBe(0);
+    while (bite(w.tick + TICKS_PER_DAY) <= 0.25) w.tick += TICKS_PER_HOUR;
+    expect(w.tick - START_TICK).toBeLessThan(30 * TICKS_PER_DAY);
+    runUntil(w, () => f.settlement!.state !== 'home', 2 * TICKS_PER_DAY);
     expect(f.settlement!.state).toBe('leaving');
     for (const id of oldBuildings) expect(w.get<Building>(id)?.faction).toBe(0);
     runUntil(w, () => f.settlement!.state !== 'leaving', 5 * TICKS_PER_DAY);
