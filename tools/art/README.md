@@ -123,3 +123,46 @@ shared, square-padded union box (fill 0.9) and downscales them to 128x128, so th
 doesn't jitter or change scale. It doesn't rewrite `manifest.json`; the `pawn_walk_*` keys were
 added by hand. Note that `finalize.py` regenerates the manifest from every PNG in the folder, so
 it keeps them. Generated on ComfyUI 0.39.0.
+
+## Animals (`animal_deer`, `animal_hare`, `animal_muskox`, `animal_wolf`)
+Side view, facing right (mirror for left), cute chibi style to match `pawn.png`. 128x128 RGBA,
+largest side ~90% of the frame, centred horizontally, feet on row ~122 like the pawn.
+
+- Model and settings: the same Z-Image Turbo graph as the other sprites (`workflow_api.json`,
+  9 steps, res_multistep/simple, cfg 1, shift 3, 1024x1024), driven by the unchanged
+  `generate.py` with batch 4. RMBG-2.0 mask.
+- `animals.json` holds the prompts, base seeds and picks. It uses a per-key `style` instead of the
+  shared suffix ("Smooth hand-painted 2D cartoon game art, cute chibi style, ... One single animal
+  in the middle of the image, the whole body visible. ... pure white ... no ground, no grass, no
+  snow, no drop shadow[, no shadow under the feet], no text").
+- Picks (seed actually used = seed + seed_offset, then batch index):
+
+  | key | seed | offset | index | notes |
+  |---|---|---|---|---|
+  | animal_deer | 8001 | 300 | 3 | walking doe, faint fawn spots |
+  | animal_hare | 8002 | 0 | 1 | sitting, greyest of the candidates so it reads on snow |
+  | animal_muskox | 8003 | 0 | 1 | |
+  | animal_wolf | 8004 | 300 | 2 | head in profile |
+
+  Re-running offset 0 for hare and muskox reproduced the picked renders bit for bit.
+- Post-processing is `animal_finalize.py`, which reuses `postprocess.py`'s alpha clean-up and
+  adds three things. It removes the soft grey ground-shadow ellipse Z-Image paints under animals
+  (light, unsaturated pixels flood-connected to the background, searched only in the bottom 15%
+  of the object so pale chest fur is safe). It refills small enclosed holes, because RMBG
+  sometimes punches out eye whites. It also bottom-aligns the animal instead of centring it.
+  It adds the keys to `manifest.json` without rewriting other entries.
+
+What didn't work: with "no or small antlers", "doe without antlers" or "tiny antler nubs", the
+deer always got big antlers and a 3/4 front view. Describing the head positively ("a smooth round
+head with two large ears on top and nothing else on the head", "walking to the right ... like a
+side-scrolling game sprite") fixed both. Fawn spots stay, even with "plain solid brown coat".
+Asking for "head also in profile" turned the wolf's head from 3/4 to side view. Some hare seeds
+(e.g. offset 100) have outline gaps where the white fur lets the background clean-up eat into
+the body, so those were rejected. The hare also came out without the black ear tips I asked for.
+
+### Regenerate
+```sh
+python tools/art/generate.py tools/art/animals.json <scratch>/raw --batch 4                  # hare, muskox
+python tools/art/generate.py tools/art/animals.json <scratch>/raw animal_deer animal_wolf --batch 4 --seed-offset 300
+python tools/art/animal_finalize.py tools/art/animals.json <scratch>/raw apps/client/public/sprites
+```

@@ -33,7 +33,7 @@ function count(w: World, def: string): number {
 
 /** Two colonies with stockpiles full of goods and planted fields. */
 function livelyWorld(seed = 11): World {
-  const w = createWorld({ seed, width: 120, height: 120, settlements: false });
+  const w = createWorld({ seed, width: 120, height: 120, settlements: false, wildlife: false });
   for (const name of ['North', 'South']) {
     const f = addPlayerFaction(w, name);
     const { x, y } = f.home;

@@ -59,6 +59,16 @@ export function settlerAttacked(w: World, victim: Pawn, attacker: Pawn, hit: boo
   if (f?.settlement) shiftGoodwill(w, f, attacker.faction, hit ? -25 : -8);
 }
 
+/** Land held by settlements hostile to this colony, as circles: places workers should stay out of. */
+export function dangerZones(w: World, faction: number): { x: number; y: number; r: number }[] {
+  const out: { x: number; y: number; r: number }[] = [];
+  for (const f of w.factions.values()) {
+    const s = f.settlement;
+    if (s?.state === 'home' && hostile(w, f.id, faction)) out.push({ x: f.home.x, y: f.home.y, r: s.radius + 6 });
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- founding
 
 function residentsOf(w: World, faction: number): Pawn[] {

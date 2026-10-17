@@ -1,11 +1,12 @@
 /** Work types in tie-break order: at equal priority, earlier types are tried first. */
-export const WORK_TYPES = ['firefight', 'doctor', 'cook', 'construct', 'grow', 'mine', 'plantcut', 'craft', 'haul'] as const;
+export const WORK_TYPES = ['firefight', 'doctor', 'cook', 'hunt', 'construct', 'grow', 'mine', 'plantcut', 'craft', 'haul'] as const;
 export type WorkType = (typeof WORK_TYPES)[number];
 
 export const WORK_LABELS: Record<WorkType, string> = {
   firefight: 'Firefight',
   doctor: 'Doctor',
   cook: 'Cook',
+  hunt: 'Hunt',
   construct: 'Construct',
   grow: 'Grow',
   mine: 'Mine',

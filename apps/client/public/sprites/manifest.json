@@ -1,4 +1,8 @@
 {
+  "animal_deer": "animal_deer.png",
+  "animal_hare": "animal_hare.png",
+  "animal_muskox": "animal_muskox.png",
+  "animal_wolf": "animal_wolf.png",
   "building_bed": "building_bed.png",
   "building_campfire": "building_campfire.png",
   "building_chair": "building_chair.png",

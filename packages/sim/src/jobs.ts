@@ -1,4 +1,4 @@
-import { APPAREL, BUILDINGS, CONDITIONS, ITEMS, maxHp, PLANTS, RECIPES, ROCKS, T, WEAPON_KEYS, WEAPONS, weaponOf } from '@fe/defs';
+import { APPAREL, BUILDINGS, CONDITIONS, ITEMS, maxHp, PLANTS, RECIPES, ROCKS, T, WEAPON_KEYS, WEAPONS } from '@fe/defs';
 import { dropWeapon, goTo, needsWarmth, pawnSpeed, pushOut, workSpeed } from './pawns';
 import { addCondition, bedBound, effectsOf, inBed, needsTending } from './health';
 import { hostileInReach, inReach, isRaider, strike, warmup } from './combat';
@@ -8,6 +8,7 @@ import { damageBuilding, repairBuilding } from './siege';
 import type { Building, Carried, Construct, Item, Job, Pawn, Plant } from './types';
 import { DESIG } from './types';
 import { thiefCheck } from './settlements';
+import { weaponFor } from './combat';
 import type { World } from './world';
 
 export type JobResult = 'continue' | 'done' | 'fail';
@@ -136,7 +137,7 @@ function attack(w: World, p: Pawn, j: J<'attack'>): JobResult {
   if (j.until && w.tick >= j.until) return 'done';
   const here = w.cellOf(p);
   const there = w.cellOf(t);
-  if (inReach(w, weaponOf(p.weapon), here, there)) {
+  if (inReach(w, weaponFor(p), here, there)) {
     if (p.path) {
       p.path = null;
       w.markDirty(p);
@@ -147,7 +148,7 @@ function attack(w: World, p: Pawn, j: J<'attack'>): JobResult {
     }
     if (w.tick >= j.next) {
       strike(w, p, t);
-      j.next = w.tick + weaponOf(p.weapon).cooldown;
+      j.next = w.tick + weaponFor(p).cooldown;
     }
     return 'continue';
   }
@@ -222,7 +223,7 @@ function bash(w: World, p: Pawn, j: J<'bash'>): JobResult {
   }
   if (target) {
     if (w.tick < j.next) return 'continue';
-    const wd = weaponOf(p.weapon);
+    const wd = weaponFor(p);
     j.next = w.tick + wd.cooldown;
     // Drawn as a melee swing, whatever they're holding.
     w.dirty.shots.push(p.id, target.id, p.x, p.y, target.x, target.y, 1, wd.melee ? Math.max(0, WEAPON_KEYS.indexOf(p.weapon)) : 0);

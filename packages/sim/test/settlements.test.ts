@@ -90,6 +90,17 @@ describe('settlements', () => {
     }
   });
 
+  it("haulers don't walk onto hostile land for loose items", () => {
+    const { w, player } = withSettlement(-60);
+    const z = w.createZone(player, 'stockpile');
+    for (let x = 4; x < 12; x++) w.addZoneCell(z, w.map.idx(x, 12));
+    const hauler = addPawn(w, 10, 14, player);
+    w.placeItemNear('steel', 20, w.map.idx(40, 50));
+    run(w, 600);
+    expect(hauler.job?.type).not.toBe('haul');
+    expect(Math.hypot(hauler.x - 40, hauler.y - 40)).toBeGreaterThan(20);
+  });
+
   it('turn hostile when your colonists attack them', () => {
     const { w, s, player } = withSettlement(0);
     expect(dispositionOf(s.settlement!, player)).toBe('wary');
@@ -230,15 +241,20 @@ describe('settlements', () => {
       expect(s.settlement!.goodwill[player] ?? 0).toBe(0);
     });
 
-    it('by day, anyone watching raises the alarm and the whole map hears of it', () => {
-      const { w, s, player } = heist(12);
+    it('by day, haulers leave marked goods alone, and anyone watching a thief raises the alarm', () => {
+      const { w, s, player, thief } = heist(12);
       // A settler minding the stores.
       const guard = residents(w, s.id)[0];
       guard.x = 40;
       guard.y = 41;
       guard.path = null;
       guard.job = { type: 'hold', stage: 0, until: w.tick + 50_000 };
+      // Haulers wait for dark, so send the thief in person.
       mark(w, player);
+      run(w, 300);
+      expect(thief.job?.type).not.toBe('haul');
+      const it = [...w.kinds.item].map((id) => w.get<Item>(id)!).find((i) => w.zoneAt(w.cellOf(i))?.faction === s.id)!;
+      w.enqueue(player, { c: 'steal', pawn: thief.id, item: it.id });
       runUntil(w, () => (s.settlement!.goodwill[player] ?? 0) < 0, 4000);
       expect(dispositionOf(s.settlement!, player)).toBe('hostile');
       expect(w.dirty.msgs.some((m) => m.faction === 0 && m.text.includes('stealing'))).toBe(true);

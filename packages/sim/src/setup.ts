@@ -6,6 +6,7 @@ import { Rng } from './rng';
 import { FROST_MAX, frostLevel } from './frost';
 import { World } from './world';
 import { placeSettlements } from './settlements';
+import { populateWildlife } from './wildlife';
 
 export interface WorldOptions {
   seed?: number;
@@ -13,6 +14,8 @@ export interface WorldOptions {
   height?: number;
   /** Found NPC settlements (default true). */
   settlements?: boolean;
+  /** Stock the map with wild animals (default true). */
+  wildlife?: boolean;
 }
 
 export function createWorld(opts: WorldOptions = {}): World {
@@ -20,6 +23,7 @@ export function createWorld(opts: WorldOptions = {}): World {
   const w = new World(seed, opts.width ?? 200, opts.height ?? 200);
   generateMap(w);
   if (opts.settlements !== false) placeSettlements(w);
+  if (opts.wildlife !== false) populateWildlife(w);
   return w;
 }
 

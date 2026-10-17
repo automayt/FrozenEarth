@@ -6,6 +6,7 @@ import { endJob, exposureSeverity, needsWarmth, warmthJob } from './pawns';
 import { isRaider } from './combat';
 import { prisonerTick } from './raids';
 import { settlementsTick } from './settlements';
+import { animalNeeds, wildlifeTick } from './wildlife';
 import { answerUrgentCare } from './work';
 import type { Building, Item, Pawn, Plant, Room } from './types';
 import { NEIGHBORS4, type World } from './world';
@@ -25,6 +26,7 @@ export function rareTick(w: World): void {
   plantsTick(w);
   freezeWater(w);
   settlementsTick(w);
+  wildlifeTick(w);
   rotTick(w);
   conditionsTick(w);
 }
@@ -68,6 +70,12 @@ function needsTick(w: World, p: Pawn): void {
   const n = p.needs;
   const cell = w.cellOf(p);
   const e = effectsOf(w, p);
+  // Animals: wounds and weather; wolves get hungry.
+  if (p.species) {
+    animalNeeds(w, p);
+    if (healthTick(w, p, e)) w.markPawnIfChanged(p);
+    return;
+  }
   // Raiders only stay a day or so: wounds and weather matter, hunger and moods don't.
   if (isRaider(w, p.faction)) {
     if (healthTick(w, p, e)) w.markDirty(p);

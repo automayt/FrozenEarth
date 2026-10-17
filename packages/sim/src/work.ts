@@ -5,6 +5,8 @@ import { canUseItem, endJob, findFoodItem, portion } from './pawns';
 import { bedBound, effectsOf, hoursToBleedOut, inBed, needsTending, type Effects } from './health';
 import type { Building, Construct, Item, Job, Pawn, Plant, Zone } from './types';
 import { DESIG } from './types';
+import { giveHunt } from './wildlife';
+import { dangerZones } from './settlements';
 import { rk, type World } from './world';
 
 type Giver = (w: World, p: Pawn) => Job | null;
@@ -13,6 +15,7 @@ const GIVERS: Record<WorkType, Giver> = {
   firefight: giveFirefight,
   doctor: giveDoctor,
   cook: (w, p) => giveBill(w, p, 'cook'),
+  hunt: giveHunt,
   construct: giveConstruct,
   grow: giveGrow,
   mine: giveMine,
@@ -38,11 +41,14 @@ export function findWork(w: World, p: Pawn): Job | null {
 }
 
 /**
- * The `limit` closest candidates (stable on ties, like a sort), skipping known-unreachable cells.
+ * The `limit` closest candidates (stable on ties, like a sort), skipping known-unreachable cells
+ * and anything on the land of a settlement that would shoot the worker.
  * A bounded insertion keeps this O(n * limit) with no full sort or per-item allocation.
  */
 function nearest<T>(w: World, p: Pawn, items: T[], cellOf: (t: T) => number, adj: boolean, limit = 25): T[] {
   const here = w.cellOf(p);
+  const m = w.map;
+  const danger = dangerZones(w, p.faction);
   const top: T[] = [];
   const dists: number[] = [];
   const cells: number[] = [];
@@ -51,6 +57,7 @@ function nearest<T>(w: World, p: Pawn, items: T[], cellOf: (t: T) => number, adj
     const d = w.dist(here, c);
     if (top.length === limit && d >= dists[limit - 1]) continue;
     if (w.isUnreachable(p.faction, c)) continue;
+    if (danger.length && danger.some((z) => Math.hypot(m.cx(c) - z.x, m.cy(c) - z.y) <= z.r)) continue;
     let k = top.length;
     while (k > 0 && dists[k - 1] > d) k--;
     top.splice(k, 0, t);
@@ -310,8 +317,9 @@ function giveHaul(w: World, p: Pawn): Job | null {
   return null;
 }
 
-/** Goods marked for stealing from a settlement's stores, carried home to our stockpile. */
+/** Goods marked for stealing from a settlement's stores, carried home to our stockpile. Only after dark. */
 function giveSteal(w: World, p: Pawn): Job | null {
+  if (!w.isNight()) return null;
   const m = w.map;
   const cands: Item[] = [];
   for (const c of w.desigCells) {

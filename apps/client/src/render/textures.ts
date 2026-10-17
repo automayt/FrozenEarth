@@ -1,5 +1,5 @@
 import { Assets, Graphics, Texture, type Renderer } from 'pixi.js';
-import { BUILDINGS, ITEMS, PLANTS } from '@fe/defs';
+import { ANIMALS, BUILDINGS, ITEMS, PLANTS } from '@fe/defs';
 
 /** Texture resolution in pixels for procedurally drawn sprites. */
 const S = 64;
@@ -247,6 +247,24 @@ export class TextureBank {
   }
 
   /** Neutral colonist, tinted per faction by the sprite. */
+  /** A side-on animal facing right; the ComfyUI sprite when there is one. */
+  animal(species: string): Texture {
+    const d = ANIMALS[species];
+    const c = d?.color ?? 0x8a7a5a;
+    return this.draw(`animal_${species}`, (g) => {
+      const big = species === 'muskox';
+      const line = { width: 2, color: shade(c, 0.45) };
+      for (const x of [19, 25, 39, 45]) g.rect(x, 38, 4, big ? 12 : 15).fill(shade(c, 0.6));
+      g.ellipse(32, 36, big ? 21 : 16, big ? 14 : 10).fill(c).stroke(line);
+      g.circle(50, 28, big ? 8 : 7).fill(shade(c, 1.1)).stroke(line);
+      if (species === 'wolf') g.poly([45, 22, 48, 13, 52, 22]).fill(shade(c, 0.8)).stroke(line);
+      if (species === 'hare') g.ellipse(47, 15, 2.5, 8).fill(shade(c, 0.95)).stroke(line);
+      if (species === 'muskox') g.arc(50, 27, 9, Math.PI, Math.PI * 1.85).stroke({ width: 3, color: 0xd8d0b8 });
+      if (species === 'deer') g.moveTo(49, 21).lineTo(45, 11).moveTo(51, 21).lineTo(55, 11).stroke({ width: 2, color: 0x5a4030 });
+      g.circle(53, 27, 1.6).fill(0x101010);
+    });
+  }
+
   pawn(): Texture {
     return this.draw('pawn', (g) => {
       g.ellipse(32, 36, 20, 16).fill(0xf0f0f0).stroke({ width: 3, color: 0x202020 });

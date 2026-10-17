@@ -125,6 +125,12 @@ export interface Pawn extends Base {
   downed: boolean;
   /** Captured raiders: 'held' in the colony, or 'leaving' once released. '' for everyone else. */
   prisoner: PrisonerState;
+  /** Wild animals: which kind (see ANIMALS). Absent for people. */
+  species?: string;
+  /** Animals: whoever last hurt them, to flee from or turn on. */
+  aggro?: EntityId;
+  /** Animals: the colony whose hunters are after it. */
+  hunted?: number;
 }
 
 export type PrisonerState = '' | 'held' | 'leaving';
@@ -221,6 +227,8 @@ export interface Faction {
   raid?: RaidState;
   /** Set on NPC settlements. */
   settlement?: SettlementState;
+  /** The wildlife factions: grazing prey, and predators that hunt. */
+  wild?: 'prey' | 'predator';
 }
 
 export interface SettlementState {
@@ -330,6 +338,7 @@ export type Command =
   | { c: 'settlementTrade'; settlement: number; give: [string, number][]; want: [string, number][] }
   | { c: 'deliverRequest'; settlement: number; request: number }
   | { c: 'steal'; pawn: EntityId; item: EntityId }
+  | { c: 'hunt'; pawns: EntityId[]; on: boolean }
   | { c: 'draft'; pawns: EntityId[]; on: boolean }
   | { c: 'move'; pawns: EntityId[]; x: number; y: number }
   | { c: 'attack'; pawns: EntityId[]; target: EntityId }

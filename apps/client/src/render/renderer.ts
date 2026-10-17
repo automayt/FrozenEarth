@@ -1,5 +1,5 @@
 import { Application, BitmapText, Container, Graphics, Sprite, Texture } from 'pixi.js';
-import { BUILDINGS, maxHp, PLANTS, ROCKS, TERRAINS, WEAPON_KEYS, weaponOf, type TerrainDef } from '@fe/defs';
+import { ANIMALS, BUILDINGS, maxHp, PLANTS, ROCKS, TERRAINS, WEAPON_KEYS, weaponOf, type TerrainDef } from '@fe/defs';
 import { pawnPosition } from '@fe/protocol';
 import { DESIG, FROST_BAND, MIN_COLONY_GAP, SHOT_FIELDS, TICKS_PER_DAY, TICKS_PER_HOUR, bleedRate, calendar, dispositionOf, frostLevel, frostRadius, hash2, outdoorTempAt, woundTotal, type Construct, type Entity, type Pawn } from '@fe/sim';
 import { ease, Particles, Tweens, Weather, type Precip } from './fx';
@@ -50,6 +50,8 @@ interface EntityView {
   /** Inner container for body, weapon and carried item: bobs, leans and flips without moving the label. */
   rig?: Container;
   body?: Sprite;
+  /** Wild animals keep their own sprite: no walk-cycle frames. */
+  animal?: boolean;
   baseTint?: number;
   lastX?: number;
   lastY?: number;
@@ -363,7 +365,7 @@ export class GameRenderer {
 
   /** Swap the body texture for walk-cycle frames, if the art exists. phase < 0 = standing. */
   private setWalkFrame(v: EntityView, phase: number): void {
-    if (!v.body) return;
+    if (!v.body || v.animal) return;
     const frames = this.tex.walkFrames();
     if (!frames.length) return;
     v.body.texture = phase < 0 ? this.tex.pawn() : frames[Math.floor((phase / (Math.PI * 2)) * frames.length * 2) % frames.length];
@@ -824,7 +826,50 @@ export class GameRenderer {
     if (p > 0) root.addChild(new Graphics().rect(-TILE / 2 + 3, TILE / 2 - 6, (TILE - 6) * Math.min(1, p), 3).fill(ready ? 0xf0c060 : 0x8ac8ff));
   }
 
+  /** A wild animal: its sprite on a shadow, a crosshair when your hunters are after it. */
+  private drawAnimal(root: Container, e: Pawn, v: EntityView): void {
+    const def = ANIMALS[e.species!];
+    const size = TILE * 1.15 * (def?.size ?? 1);
+    root.addChild(new Graphics().ellipse(0, TILE * 0.3, size * 0.38, size * 0.12).fill({ color: 0x000000, alpha: 0.3 }));
+    const body = new Sprite(this.tex.animal(e.species!));
+    // The ComfyUI sprites stand on the bottom of their frame; the fallback shapes a little higher.
+    body.anchor.set(0.5, this.tex.hasArt(`animal_${e.species}`) ? 0.95 : 0.85);
+    body.width = body.height = size;
+    body.position.y = TILE * 0.32;
+    if (e.downed) {
+      body.rotation = Math.PI / 2;
+      body.tint = 0xd07070;
+    }
+    const rig = new Container();
+    rig.addChild(body);
+    root.addChild(rig);
+    v.rig = rig;
+    v.body = body;
+    v.baseTint = body.tint;
+    v.animal = true;
+    const hurt = woundTotal(e);
+    if (hurt > 0.02 || e.downed) {
+      const bw = TILE * 0.6;
+      const bar = new Graphics().rect(-bw / 2, -size * 0.75, bw, 3).fill({ color: 0x000000, alpha: 0.6 });
+      bar.rect(-bw / 2, -size * 0.75, bw * Math.max(0, 1 - hurt), 3).fill(bleedRate(e) > 0 ? 0xe04040 : 0x60c060);
+      root.addChild(bar);
+    }
+    if (e.hunted && e.hunted === store.me?.faction) {
+      const y = -size * 0.75 - 8;
+      root.addChild(
+        new Graphics()
+          .circle(0, y, 5)
+          .moveTo(-8, y)
+          .lineTo(8, y)
+          .moveTo(0, y - 8)
+          .lineTo(0, y + 8)
+          .stroke({ width: 1.5, color: 0xff5040 }),
+      );
+    }
+  }
+
   private drawPawn(root: Container, e: Pawn, v: EntityView): void {
+    if (e.species) return this.drawAnimal(root, e, v);
     const f = store.mirror.factions.get(e.faction);
     const color = f?.color ?? 0xffffff;
     const ring = new Graphics().ellipse(0, TILE * 0.3, TILE * 0.38, TILE * 0.16).fill({ color: 0x000000, alpha: 0.35 });

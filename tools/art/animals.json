@@ -1,0 +1,38 @@
+{
+ "animal_deer": {
+  "seed": 8001,
+  "prompt": "A cute chibi cartoon female roe deer walking to the right, full body in strict side view profile facing right like a side-scrolling game sprite, the head also in profile showing the snout, a smooth round head with two large ears on top and nothing else on the head, long neck, all four slim legs visible, an adult deer with a plain solid warm brown coat, a pale cream belly, chest and throat, short white tail",
+  "style": "Smooth hand-painted 2D cartoon game art, cute chibi style, clean flat soft shading, thin dark outline, muted earthy colour palette, not pixel art, not realistic. One single animal in the middle of the image, the whole body visible. The entire background is flat solid pure white from edge to edge, no frame, no card, no ground, no grass, no snow, no drop shadow, no shadow under the feet, no text",
+  "pick": {
+   "seed_offset": 300,
+   "index": 3
+  }
+ },
+ "animal_hare": {
+  "seed": 8002,
+  "prompt": "A cute chibi cartoon snow hare sitting, full body in strict side view profile facing right, compact round body, long upright ears with dark tips, light grey and white winter fur, big hind feet, small fluffy tail",
+  "style": "Smooth hand-painted 2D cartoon game art, cute chibi style, clean flat soft shading, thin dark outline, muted earthy colour palette, not pixel art, not realistic. One single animal in the middle of the image, the whole body visible. The entire background is flat solid pure white from edge to edge, no frame, no card, no ground, no grass, no snow, no drop shadow, no text",
+  "pick": {
+   "seed_offset": 0,
+   "index": 1
+  }
+ },
+ "animal_muskox": {
+  "seed": 8003,
+  "prompt": "A cute chibi cartoon muskox standing, full body in strict side view profile facing right, bulky round body with long shaggy dark brown fur hanging down almost to the ground, a hump on the shoulders, short sturdy legs with pale lower legs, cream-coloured horns curving down and out at the sides of the head",
+  "style": "Smooth hand-painted 2D cartoon game art, cute chibi style, clean flat soft shading, thin dark outline, muted earthy colour palette, not pixel art, not realistic. One single animal in the middle of the image, the whole body visible. The entire background is flat solid pure white from edge to edge, no frame, no card, no ground, no grass, no snow, no drop shadow, no text",
+  "pick": {
+   "seed_offset": 0,
+   "index": 1
+  }
+ },
+ "animal_wolf": {
+  "seed": 8004,
+  "prompt": "A cute chibi cartoon grey wolf standing, full body in strict side view profile facing right, the head also turned fully in profile to the right showing the long snout, all four legs visible, grey fur with a lighter pale grey belly, chest and muzzle, pointed upright ears, bushy tail held low",
+  "style": "Smooth hand-painted 2D cartoon game art, cute chibi style, clean flat soft shading, thin dark outline, muted earthy colour palette, not pixel art, not realistic. One single animal in the middle of the image, the whole body visible. The entire background is flat solid pure white from edge to edge, no frame, no card, no ground, no grass, no snow, no drop shadow, no shadow under the feet, no text",
+  "pick": {
+   "seed_offset": 300,
+   "index": 2
+  }
+ }
+}

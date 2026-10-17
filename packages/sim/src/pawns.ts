@@ -6,6 +6,7 @@ import { findWork } from './work';
 import { hostileInReach, isRaider } from './combat';
 import { fleeJob, raiderThink } from './raids';
 import { settlerThink } from './settlements';
+import { animalThink, speciesOf } from './wildlife';
 import type { Building, Item, Job, Pawn } from './types';
 import { NEIGHBORS8, rk, type World } from './world';
 
@@ -22,7 +23,7 @@ export function tickPawn(w: World, p: Pawn): void {
 
 /** Walk speed multiplier. */
 export function pawnSpeed(w: World, p: Pawn): number {
-  let s = Math.max(0.15, effectsOf(w, p).move);
+  let s = Math.max(0.15, effectsOf(w, p).move) * (speciesOf(p)?.speed ?? 1);
   if (p.needs.rest < 0.1) s *= 0.8;
   return s;
 }
@@ -131,6 +132,11 @@ function think(w: World, p: Pawn): void {
   }
   if (isRaider(w, p.faction) || p.drafted) {
     p.job = p.drafted ? draftedThink(w, p) : raiderThink(w, p);
+    w.markDirty(p);
+    return;
+  }
+  if (p.species && !p.drafted) {
+    p.job = animalThink(w, p);
     w.markDirty(p);
     return;
   }

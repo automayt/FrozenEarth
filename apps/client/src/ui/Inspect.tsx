@@ -1,4 +1,4 @@
-import { APPAREL, BUILDINGS, CONDITIONS, DOWNED_PAIN, ITEM_CATEGORIES, ITEMS, MAX_SKILL, maxHp, WEAPONS, PLANTS, RECIPES, ROCKS, SKILL_LABELS, SKILLS, SOWABLE_PLANTS, TERRAINS, TRAITS, weaponOf } from '@fe/defs';
+import { ANIMALS, APPAREL, BUILDINGS, CONDITIONS, DOWNED_PAIN, ITEM_CATEGORIES, ITEMS, MAX_SKILL, maxHp, WEAPONS, PLANTS, RECIPES, ROCKS, SKILL_LABELS, SKILLS, SOWABLE_PLANTS, TERRAINS, TRAITS, weaponOf } from '@fe/defs';
 import { bleedRate, describeJob, dispositionOf, goodwillOf, outdoorTempAt, painOf, stageOf, TICKS_PER_HOUR, woundTotal, type Building, type Construct, type Entity, type Pawn, type Zone } from '@fe/sim';
 import { helpers } from '../actions';
 import { command } from '../net';
@@ -50,7 +50,7 @@ function Bar({ label, v, warn = 0.25 }: { label: string; v: number; warn?: numbe
 function EntityInfo({ e }: { e: Entity }) {
   switch (e.kind) {
     case 'pawn':
-      return <PawnInfo p={e} />;
+      return e.species ? <AnimalInfo p={e} /> : <PawnInfo p={e} />;
     case 'building':
       return <BuildingInfo b={e} />;
     case 'construct':
@@ -102,6 +102,32 @@ function WeaponItem({ id, def, x, y }: { id: number; def: string; x: number; y: 
             ))}
           </select>
         </div>
+      )}
+    </>
+  );
+}
+
+function AnimalInfo({ p }: { p: Pawn }) {
+  const def = ANIMALS[p.species!];
+  const me = store.me?.faction ?? 0;
+  const marked = p.hunted === me;
+  return (
+    <>
+      <h3>{def?.label ?? p.name}</h3>
+      <p className="muted small">{def?.predator ? 'Predator. Hunts when hungry, and people once winter comes.' : def?.defends ? 'Turns on anyone who attacks it.' : 'Skittish: bolts when people come close.'}</p>
+      <div className="combat-row">
+        <span className="muted small">Health {pct(Math.max(0, 1 - woundTotal(p)))}</span>
+        {p.downed && <span className="chip bad">Downed</span>}
+        {me ? (
+          <button className={marked ? 'on' : ''} onClick={() => command({ c: 'hunt', pawns: [p.id], on: !marked })} title="Hunters with a bow or rifle will go after it">
+            {marked ? 'Stop hunting' : 'Hunt'}
+          </button>
+        ) : null}
+      </div>
+      {def && (
+        <p className="small">
+          A kill gives about {def.meat} meat{def.hide ? ` and ${def.hide} cloth from the hide` : ''}.
+        </p>
       )}
     </>
   );

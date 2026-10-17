@@ -10,7 +10,8 @@ export type Tool =
   | { kind: 'unzone' }
   | { kind: 'deconstruct' }
   | { kind: 'packUp' }
-  | { kind: 'moveHome' };
+  | { kind: 'moveHome' }
+  | { kind: 'hunt' };
 
 export interface ChatLine {
   from: string;

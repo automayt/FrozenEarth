@@ -144,6 +144,7 @@ export function deserializeWorld(data: SaveData): World {
     // Fields added without a version bump get defaults here.
     if (e.kind === 'pawn') {
       e.apparel ??= [];
+      e.priorities.hunt ??= DEFAULT_PRIORITY;
       e.skills ??= Object.fromEntries(SKILLS.map((k) => [k, { level: 3, xp: 0 }])) as Pawn['skills'];
     }
     w.add(e);

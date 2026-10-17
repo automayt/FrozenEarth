@@ -1,4 +1,4 @@
-import { WEAPON_KEYS, weaponOf, type WeaponDef } from '@fe/defs';
+import { ANIMALS, FISTS, WEAPON_KEYS, weaponOf, type WeaponDef } from '@fe/defs';
 import { effectsOf, injure } from './health';
 import { HOSTILE_AT, settlerAttacked } from './settlements';
 import type { Faction, Pawn } from './types';
@@ -29,8 +29,25 @@ export function hostile(w: World, a: number, b: number): boolean {
   if (a === b) return false;
   const fa = w.factions.get(a);
   const fb = w.factions.get(b);
+  // Grazing animals never start fights; predators are everyone's enemy (but each other's).
+  if (fa?.wild === 'prey' || fb?.wild === 'prey') return false;
+  if (fa?.wild === 'predator' || fb?.wild === 'predator') return !(fa?.wild && fb?.wild);
   if (fa?.raid || fb?.raid) return !!fa?.raid !== !!fb?.raid;
   return settlementHates(fa, fb) || settlementHates(fb, fa);
+}
+
+const NATURAL = new Map<string, WeaponDef>();
+
+/** What a pawn fights with: its weapon, or an animal's teeth and hooves. */
+export function weaponFor(p: Pawn): WeaponDef {
+  if (!p.species) return weaponOf(p.weapon);
+  let wd = NATURAL.get(p.species);
+  if (!wd) {
+    const sp = ANIMALS[p.species];
+    wd = { ...FISTS, label: sp?.predator ? 'Teeth' : 'Hooves', damage: sp?.bite ?? 0.05, cooldown: sp?.cooldown ?? 70, injury: 'cut', accuracy: 0.8 };
+    NATURAL.set(p.species, wd);
+  }
+  return wd;
 }
 
 /** Straight-line distance between two cells, in cells. */
@@ -90,7 +107,7 @@ export function inReach(w: World, wd: WeaponDef, from: number, to: number): bool
 }
 
 export function hitChance(w: World, p: Pawn, t: Pawn): number {
-  const wd = weaponOf(p.weapon);
+  const wd = weaponFor(p);
   const from = w.cellOf(p);
   const to = w.cellOf(t);
   // Hurt, sick or exhausted fighters aim worse.
@@ -105,7 +122,7 @@ export function hitChance(w: World, p: Pawn, t: Pawn): number {
 
 /** One swing or shot. Records it for clients to draw and applies the wound. */
 export function strike(w: World, p: Pawn, t: Pawn): void {
-  const wd = weaponOf(p.weapon);
+  const wd = weaponFor(p);
   const hit = w.rng.chance(hitChance(w, p, t));
   w.dirty.shots.push(p.id, t.id, p.x, p.y, t.x, t.y, hit ? 1 : 0, Math.max(0, WEAPON_KEYS.indexOf(p.weapon)));
   if (w.factions.get(t.faction)?.settlement) settlerAttacked(w, t, p, hit);
@@ -114,12 +131,12 @@ export function strike(w: World, p: Pawn, t: Pawn): void {
 
 /** Start the aim delay for a fighter that has just come into reach. */
 export function warmup(w: World, p: Pawn): number {
-  return w.tick + (weaponOf(p.weapon).melee ? WARMUP_MELEE : WARMUP_RANGED);
+  return w.tick + (weaponFor(p).melee ? WARMUP_MELEE : WARMUP_RANGED);
 }
 
 /** Nearest hostile, standing pawn this pawn could hit from where it stands. */
 export function hostileInReach(w: World, p: Pawn): Pawn | null {
-  const wd = weaponOf(p.weapon);
+  const wd = weaponFor(p);
   const here = w.cellOf(p);
   let best: Pawn | null = null;
   let bestD = Infinity;

@@ -22,6 +22,7 @@ export const ITEMS: Record<string, ItemDef> = {
   berries: { key: 'berries', label: 'Berries', category: 'raw_food', stackLimit: 75, color: 0x8a2a5a, nutrition: 0.05, spoilDays: 14, marketValue: 1.1 },
   rice: { key: 'rice', label: 'Rice', category: 'raw_food', stackLimit: 75, color: 0xe8e2c8, nutrition: 0.05, spoilDays: 40, marketValue: 1.1 },
   corn: { key: 'corn', label: 'Corn', category: 'raw_food', stackLimit: 75, color: 0xe6c84a, nutrition: 0.05, spoilDays: 60, marketValue: 1.1 },
+  meat: { key: 'meat', label: 'Raw meat', category: 'raw_food', stackLimit: 75, color: 0xb0484a, nutrition: 0.05, spoilDays: 5, marketValue: 1.6 },
   potato: { key: 'potato', label: 'Potatoes', category: 'raw_food', stackLimit: 75, color: 0xb08a5a, nutrition: 0.05, spoilDays: 30, marketValue: 1.1 },
   simple_meal: { key: 'simple_meal', label: 'Simple meal', category: 'meal', stackLimit: 10, color: 0xd9a05b, nutrition: 0.9, spoilDays: 4, marketValue: 15 },
   tunic: { key: 'tunic', label: 'Cloth tunic', category: 'apparel', stackLimit: 10, color: 0xb8a888, marketValue: 30 },

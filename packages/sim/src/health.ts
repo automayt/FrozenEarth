@@ -1,8 +1,9 @@
-import { APPAREL, BUILDINGS, COMFORT_MAX, COMFORT_MIN, CONDITIONS, DOWNED_BLOOD_LOSS, DOWNED_PAIN, TRAITS, WEATHER, type ConditionDef, type ConditionStage } from '@fe/defs';
+import { ANIMALS, APPAREL, BUILDINGS, COMFORT_MAX, COMFORT_MIN, CONDITIONS, DOWNED_BLOOD_LOSS, DOWNED_PAIN, TRAITS, WEATHER, type ConditionDef, type ConditionStage } from '@fe/defs';
 import { HOURS_PER_DAY, RARE_TICK, TICKS_PER_DAY, TICKS_PER_HOUR } from './constants';
 import { scheduleEvent } from './schedule';
 import { dropWeapon, endJob } from './pawns';
 import { raiderGone, raiderDowned } from './raids';
+import { predatorFed } from './wildlife';
 import type { Building, Pawn, PawnCondition } from './types';
 import type { World } from './world';
 
@@ -48,6 +49,8 @@ export function effectsOf(w: World, p: Pawn): Effects {
       e.thoughts.push([t.label, t.mood]);
     }
   }
+  // An animal's coat.
+  if (p.species) e.coldShift += ANIMALS[p.species]?.coldShift ?? 0;
   for (const key of p.apparel) {
     const a = APPAREL[key];
     if (!a) continue;
@@ -152,6 +155,11 @@ export function needsTending(p: Pawn): boolean {
 
 /** Add a wound. Fresh damage reopens the wound, so it needs tending again. Returns false if it killed. */
 export function injure(w: World, p: Pawn, key: string, severity: number, by?: Pawn): boolean {
+  const sp = p.species ? ANIMALS[p.species] : undefined;
+  if (sp) {
+    severity /= sp.toughness;
+    if (by) p.aggro = by.id;
+  }
   const c = conditionOf(p, key);
   if (c) {
     c.severity += severity;
@@ -161,7 +169,7 @@ export function injure(w: World, p: Pawn, key: string, severity: number, by?: Pa
   }
   w.markDirty(p);
   if (woundTotal(p) >= 1) {
-    killPawn(w, p, by ? `wounds from ${by.name}` : 'wounds');
+    killPawn(w, p, by ? `wounds from ${by.name}` : 'wounds', by);
     return false;
   }
   updateDowned(w, p);
@@ -324,9 +332,20 @@ function spread(w: World, from: Pawn, key: string): void {
   }
 }
 
-export function killPawn(w: World, p: Pawn, cause: string): void {
+export function killPawn(w: World, p: Pawn, cause: string, by?: Pawn): void {
   const cell = w.cellOf(p);
   const faction = p.faction;
+  const sp = p.species ? ANIMALS[p.species] : undefined;
+  if (sp) {
+    // A carcass: meat and a hide. Wolves eat their share where it falls.
+    const eaten = by?.species && ANIMALS[by.species]?.predator;
+    if (eaten) predatorFed(w, by);
+    const meat = Math.round(sp.meat * (eaten ? 0.4 : 1));
+    if (meat > 0) w.placeItemNear('meat', meat, cell);
+    if (sp.hide > 0) w.placeItemNear('cloth', sp.hide, cell);
+    w.despawn(p.id);
+    return;
+  }
   const fname = w.factions.get(faction)?.name ?? 'the colony';
   if (p.carrying) w.placeItemNear(p.carrying.def, p.carrying.count, cell, p.carrying.rot);
   for (const a of p.apparel) w.placeItemNear(a, 1, cell);

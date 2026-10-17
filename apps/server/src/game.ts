@@ -4,6 +4,7 @@ import {
   addPlayerFaction,
   createWorld,
   placeSettlements,
+  populateWildlife,
   fireEvent,
   siteProblem,
   suggestSites,
@@ -84,6 +85,10 @@ export class GameServer {
       if (![...this.world.factions.values()].some((f) => f.settlement)) {
         const n = placeSettlements(this.world);
         if (n) this.log(`Founded ${n} settlements in an older world`);
+      }
+      if (![...this.world.factions.values()].some((f) => f.wild)) {
+        populateWildlife(this.world);
+        this.log('Brought wildlife to an older world');
       }
     } else {
       const size = opts.size ?? 200;

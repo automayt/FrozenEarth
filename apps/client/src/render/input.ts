@@ -128,6 +128,18 @@ export class Input {
       case 'deconstruct':
         command({ c: 'deconstruct', ...rect });
         break;
+      case 'hunt': {
+        const x0 = Math.min(rect.x0, rect.x1);
+        const x1 = Math.max(rect.x0, rect.x1);
+        const y0 = Math.min(rect.y0, rect.y1);
+        const y1 = Math.max(rect.y0, rect.y1);
+        const ids: number[] = [];
+        for (const e of store.mirror.entities.values()) {
+          if (e.kind === 'pawn' && e.species && e.x >= x0 - 1 && e.x <= x1 + 1 && e.y >= y0 - 1 && e.y <= y1 + 1) ids.push(e.id);
+        }
+        if (ids.length) command({ c: 'hunt', pawns: ids, on: true });
+        break;
+      }
     }
   }
 

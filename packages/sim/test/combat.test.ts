@@ -173,7 +173,7 @@ describe('wounds', () => {
 
 describe('raids', () => {
   function colony(seed = 5): { w: World; f: number } {
-    const w = createWorld({ seed, width: 100, height: 100, settlements: false });
+    const w = createWorld({ seed, width: 100, height: 100, settlements: false, wildlife: false });
     const f = addPlayerFaction(w, 'Target');
     return { w, f: f.id };
   }

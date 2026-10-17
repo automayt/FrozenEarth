@@ -11,6 +11,7 @@ import { resolveChoice } from './choices';
 import { siteProblem } from './setup';
 import { offerTrade } from './trade';
 import { deliverRequest, settlementTrade } from './settlements';
+import { markHunt } from './wildlife';
 
 /** Validate and apply one player command. Invalid commands are silently ignored. */
 export function applyCommand(w: World, faction: number, cmd: Command): void {
@@ -115,6 +116,9 @@ export function applyCommand(w: World, faction: number, cmd: Command): void {
       w.markDirty(p);
       return;
     }
+    case 'hunt':
+      markHunt(w, faction, cmd.pawns, !!cmd.on);
+      return;
     case 'deliverRequest':
       deliverRequest(w, faction, Number(cmd.settlement), Number(cmd.request));
       return;
