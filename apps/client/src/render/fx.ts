@@ -172,15 +172,18 @@ export class Particles {
     }
   }
 
-  /** A floating "z" above a sleeper. */
+  /**
+   * A small "z" drifting up from a sleeper. It stays within the sleeper's own cell, so it never
+   * floats up over the wall behind a bed.
+   */
   zed(x: number, y: number): void {
     const p = this.spawn(Shape.Zed, x, y);
     if (!p) return;
-    p.vx = 6 + Math.random() * 4;
-    p.vy = -14;
-    p.life = 1600;
-    p.size = 4;
-    p.grow = 2;
+    p.vx = 4 + Math.random() * 3;
+    p.vy = -6;
+    p.life = 1500;
+    p.size = 3.2;
+    p.grow = 1.4;
     p.bgr = bgr(0xe8f0ff);
     p.alpha0 = 0.9;
     p.gravity = 0;

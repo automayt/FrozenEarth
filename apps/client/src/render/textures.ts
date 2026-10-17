@@ -242,9 +242,23 @@ export class TextureBank {
       const y0 = mask & 1 ? 0 : e;
       const y1 = mask & 4 ? S : S - e - 6;
       g.rect(0, 0, S, S).fill({ color: 0, alpha: 0.001 });
-      // Front face (gives a little height) where the wall doesn't continue downward.
-      if (!(mask & 4)) g.rect(x0, y1, x1 - x0, S - e - y1 + 6).fill(side);
+      // Front face (gives a little height) where the wall doesn't continue downward: it faces away
+      // from the sun, so it's in shade, darkest at the foot where it meets the ground.
+      if (!(mask & 4)) {
+        const fh = S - e - y1 + 6;
+        g.rect(x0, y1, x1 - x0, fh).fill(side);
+        g.rect(x0, y1 + fh * 0.55, x1 - x0, fh * 0.45).fill({ color: shade(c, 0.45), alpha: 0.55 });
+      }
       g.rect(x0, y0, x1 - x0, y1 - y0).fill(top);
+      // The top catches the light: brighter toward the north edge, a bright lip where it's open.
+      g.rect(x0, y0, x1 - x0, (y1 - y0) * 0.4).fill({ color: shade(c, 1.3), alpha: 0.18 });
+      // Lips run on into neighbouring pieces so a wall line reads as one unbroken edge.
+      const lx0 = mask & 8 ? 0 : x0 + 2;
+      const lx1 = mask & 2 ? S : x1 - 2;
+      const ly0 = mask & 1 ? 0 : y0 + 2;
+      if (!(mask & 1)) g.rect(lx0, y0 + 2, lx1 - lx0, 2.5).fill({ color: shade(c, 1.55), alpha: 0.75 });
+      if (!(mask & 8)) g.rect(x0 + 2, ly0, 2, y1 - ly0).fill({ color: shade(c, 1.4), alpha: 0.45 });
+      if (!(mask & 2)) g.rect(x1 - 4, ly0, 2, y1 - ly0).fill({ color: shade(c, 0.7), alpha: 0.5 });
       // Subtle plank/stone seams along the run direction.
       const horizontal = (mask & 10) !== 0 || (mask & 5) === 0;
       for (let k = 1; k < 4; k++) {
