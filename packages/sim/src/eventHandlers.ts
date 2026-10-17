@@ -1,4 +1,4 @@
-import { CONDITIONS, EVENTS, ITEMS, PLANTS, T, TERRAINS, TRAITS } from '@fe/defs';
+import { CONDITIONS, EVENTS, ITEMS, PLANTS, ROCKS, T, TERRAINS, TRAITS } from '@fe/defs';
 
 /** Could this pawn get the condition right now (not immune, not already sick with it)? */
 function canCatch(p: Pawn, cond: string): boolean {
@@ -53,6 +53,11 @@ function homeCell(w: World, faction: number): number {
 function isOpen(w: World, c: number): boolean {
   const m = w.map;
   return !m.solid[c] && !m.buildingAt[c] && !m.constructAt[c] && TERRAINS[m.terrain[c]].buildable;
+}
+
+/** Open ground under open sky: where things falling from the sky can land (not on overhead mountain). */
+function skyOpen(w: World, c: number): boolean {
+  return isOpen(w, c) && !w.map.roof[c];
 }
 
 /** Random open cell within radius of (cx, cy). -1 if none found. */
@@ -264,7 +269,7 @@ HANDLERS.meteor_shower = (w) => {
   const n = 3 + w.rng.int(4);
   let first = -1;
   for (let k = 0; k < n; k++) {
-    const c = cellNear(w, w.map.w / 2, w.map.h / 2, w.map.w * 0.45);
+    const c = cellNear(w, w.map.w / 2, w.map.h / 2, w.map.w * 0.45, (x) => skyOpen(w, x));
     if (c < 0) continue;
     meteorite(w, c, true);
     if (first < 0) first = c;
@@ -362,7 +367,7 @@ HANDLERS.cargo_pods = (w) => {
   // Land roughly between the colonies so everyone has a reason to race for it.
   const ax = homes.reduce((a, h) => a + h.x, 0) / homes.length;
   const ay = homes.reduce((a, h) => a + h.y, 0) / homes.length;
-  const c = cellNear(w, ax, ay, 20);
+  const c = cellNear(w, ax, ay, 20, (x) => skyOpen(w, x));
   if (c < 0) return false;
   dropLoot(w, c, LOOT_COMMON, 2 + w.rng.int(2));
   say(w, 0, 'Cargo pods crashed nearby. Whoever hauls the contents first keeps them!', 'good', c);
@@ -370,7 +375,7 @@ HANDLERS.cargo_pods = (w) => {
 };
 
 HANDLERS.meteorite = (w) => {
-  const c = cellNear(w, w.map.w / 2, w.map.h / 2, w.map.w * 0.45);
+  const c = cellNear(w, w.map.w / 2, w.map.h / 2, w.map.w * 0.45, (x) => skyOpen(w, x));
   if (c < 0) return false;
   meteorite(w, c, w.rng.chance(0.4));
   say(w, 0, 'A meteorite crashed to the ground, leaving a lump of rich ore.', 'neutral', c);
@@ -381,7 +386,7 @@ HANDLERS.ore_discovered = (w, faction) => {
   const m = w.map;
   const f = w.factions.get(faction);
   if (!f) return false;
-  const start = cellNear(w, f.home.x, f.home.y, 30, (c) => m.rock[c] === 1);
+  const start = cellNear(w, f.home.x, f.home.y, 30, (c) => ROCKS[m.rock[c]].stone);
   if (start < 0) return false;
   const gold = w.rng.chance(0.25);
   const size = gold ? 4 + w.rng.int(4) : 6 + w.rng.int(6);
@@ -392,7 +397,7 @@ HANDLERS.ore_discovered = (w, faction) => {
     for (const [dx, dy] of NEIGHBORS8) {
       if (!m.inBounds(x + dx, y + dy)) continue;
       const n = m.idx(x + dx, y + dy);
-      if (m.rock[n] === 1 && !vein.includes(n) && w.rng.chance(0.5)) vein.push(n);
+      if (ROCKS[m.rock[n]].stone && !vein.includes(n) && w.rng.chance(0.5)) vein.push(n);
     }
   }
   for (const c of vein) w.setRock(c, gold ? 3 : 2);

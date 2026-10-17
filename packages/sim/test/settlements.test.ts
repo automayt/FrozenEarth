@@ -153,7 +153,8 @@ describe('settlements', () => {
   });
 
   it('flee inward when the frost arrives, leaving their old home to anyone', () => {
-    const w = createWorld({ seed: 21, width: 200, height: 200 });
+    // A seed whose outermost settlement has room to move inward (about 1 in 4 maps has none, old and new map gen alike).
+    const w = createWorld({ seed: 22, width: 200, height: 200 });
     const f = [...w.factions.values()].filter((x) => x.settlement).sort((a, b) => frostDistance(b.home.x, b.home.y, 200, 200) - frostDistance(a.home.x, a.home.y, 200, 200))[0];
     const old = { ...f.home };
     const oldBuildings = buildings(w, f.id).map((b) => b.id);

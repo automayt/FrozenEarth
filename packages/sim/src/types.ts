@@ -393,6 +393,8 @@ export interface Snapshot {
   desig: Uint8Array;
   desigFaction: Uint8Array;
   fire: Uint8Array;
+  /** Mountain roofs (ROOF in defs). Never changes after map gen, so deltas don't carry it. Optional: older servers lack it. */
+  roof?: Uint8Array;
   ents: Entity[];
   zones: Zone[];
   factions: Faction[];

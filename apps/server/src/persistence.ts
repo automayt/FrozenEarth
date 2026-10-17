@@ -31,6 +31,7 @@ export function loadWorldFile(path: string): WorldFile | null {
   // msgpack gives Buffers back in Node; the sim wants plain Uint8Arrays.
   const s = data.save;
   for (const k of ['terrain', 'rock', 'desig', 'desigFaction'] as const) s[k] = new Uint8Array(s[k]);
+  if (s.roof) s.roof = new Uint8Array(s.roof);
   return data;
 }
 

@@ -15,6 +15,8 @@ export class Mirror {
   desig = new Uint8Array(0);
   desigFaction = new Uint8Array(0);
   fire = new Uint8Array(0);
+  /** Mountain roofs (ROOF in defs), from the snapshot; fixed after map gen. */
+  roof = new Uint8Array(0);
   /** Cells currently on fire, for cheap per-frame drawing. */
   fireCells = new Set<number>();
   zoneAt = new Int32Array(0);
@@ -54,6 +56,7 @@ export class Mirror {
     this.desig = toU8(s.desig).slice();
     this.desigFaction = toU8(s.desigFaction).slice();
     this.fire = s.fire ? toU8(s.fire).slice() : new Uint8Array(n);
+    this.roof = s.roof ? toU8(s.roof).slice() : new Uint8Array(n);
     this.fireCells.clear();
     for (let i = 0; i < n; i++) if (this.fire[i]) this.fireCells.add(i);
     this.zoneAt = new Int32Array(n);

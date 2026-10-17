@@ -25,3 +25,4 @@ export { spawnAnimal, wildFaction, speciesOf, populateWildlife } from './wildlif
 export { weaponFor, coverAgainst } from './combat';
 export { SIGHT_DAY, SIGHT_NIGHT, NOISE, sightRange, stealthMult, canStealFrom } from './stealth';
 export { placeSettlements, foundSettlement, dispositionOf, goodwillOf, priceFactor, lineValue, traderAt, requestText, askForHelp, storedOf, HOSTILE_AT, FRIENDLY_AT, TRADE_RANGE, GOODWILL, GUARD_REACH, WATCH as SETTLEMENT_WATCH, type Disposition } from './settlements';
+export { computeRoof, rockDepth, THICK_ROOF_DEPTH } from './mapgen';

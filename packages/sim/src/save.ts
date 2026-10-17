@@ -3,9 +3,10 @@ import type { Choice, Condition, Entity, Faction, Pawn, Room, Snapshot, Zone } f
 import { upgradeStoryState, type StoryState } from './schedule';
 import { DEFAULT_FROST, type FrostParams } from './frost';
 import { SKILLS } from '@fe/defs';
+import { computeRoof } from './mapgen';
 import { Dirty, rkFromString, rkToString, unreachableKey, World } from './world';
 
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 
 export interface SaveData {
   version: number;
@@ -39,6 +40,8 @@ export interface SaveData {
   wallChanges?: number[];
   /** Frost line settings (optional: older saves use the defaults). */
   frost?: FrostParams;
+  /** Mountain roofs (from version 6; older saves derive them from their rock). */
+  roof?: Uint8Array;
 }
 
 /** Deep copy via structuredClone so saves never alias live state. */
@@ -74,6 +77,7 @@ export function serializeWorld(w: World): SaveData {
     story: w.story,
     wallChanges: m.wallChanges,
     frost: w.frost,
+    roof: m.roof,
   });
 }
 
@@ -118,6 +122,10 @@ function migrate(data: SaveData): SaveData {
     // Feed jobs: nothing to convert. The bump keeps older servers, which can't run them, from loading these saves.
     d.version = 5;
   }
+  if (d.version === 5) {
+    // Mountain roofs: deserializeWorld derives them from the rock when the save has none.
+    d.version = 6;
+  }
   return d;
 }
 
@@ -133,6 +141,9 @@ export function deserializeWorld(data: SaveData): World {
   m.desig.set(d.desig);
   m.desigFaction.set(d.desigFaction);
   m.fire.set(d.fire);
+  if (d.roof) m.roof.set(d.roof);
+  // Older worlds: roof the mountains they still have. Tunnels already dug there stay open to the sky.
+  else computeRoof(m);
   for (let i = 0; i < m.n; i++) {
     if (m.desig[i]) w.desigCells.add(i);
     if (m.fire[i]) w.fireCells.add(i);
@@ -196,6 +207,7 @@ export function snapshot(w: World): Snapshot {
     desig: m.desig,
     desigFaction: m.desigFaction,
     fire: m.fire,
+    roof: m.roof,
     ents: [...w.entities.values()],
     zones: [...w.zones.values()],
     factions: [...w.factions.values()],

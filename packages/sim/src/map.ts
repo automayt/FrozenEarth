@@ -11,6 +11,8 @@ export class GameMap {
   desigFaction: Uint8Array;
   /** Fire intensity per cell: 0 none, 1-3 burning. */
   fire: Uint8Array;
+  /** Roof per cell (ROOF in defs): set under mountains at map gen and kept when the rock is mined. */
+  roof: Uint8Array;
 
   // Derived indexes, rebuilt from entities on load.
   buildingAt: Int32Array;
@@ -48,6 +50,7 @@ export class GameMap {
     this.desig = new Uint8Array(this.n);
     this.desigFaction = new Uint8Array(this.n);
     this.fire = new Uint8Array(this.n);
+    this.roof = new Uint8Array(this.n);
     this.buildingAt = new Int32Array(this.n);
     this.constructAt = new Int32Array(this.n);
     this.itemAt = new Int32Array(this.n);

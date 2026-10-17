@@ -211,11 +211,21 @@ export class World {
     return this.outdoorTemp() - FROST_COLD * this.frostAt(cell);
   }
 
-  /** Temperature at a cell: its room's, or outdoors. */
+  /**
+   * The air a cell would have with no room around it: open-air temperature, pulled toward a
+   * steady cave temperature under a mountain's roof (more so under overhead mountain).
+   */
+  ambientTempAtCell(cell: number): number {
+    const t = this.outdoorTempAtCell(cell);
+    const roof = this.map.roof[cell];
+    return roof ? t + (C.CAVE_TEMP - t) * C.ROOF_SHELTER[roof] : t;
+  }
+
+  /** Temperature at a cell: its room's, or the (possibly roofed) open air. */
   tempAt(cell: number): number {
     const r = this.map.roomAt[cell];
     const room = r ? this.rooms.get(r) : undefined;
-    let t = room ? room.temp : this.outdoorTempAtCell(cell);
+    let t = room ? room.temp : this.ambientTempAtCell(cell);
     for (const [c, [deg, radius]] of this.radiant) {
       const d = this.dist(c, cell);
       if (d <= radius) t = Math.max(t, Math.min(26, t + deg * (1 - d / (radius + 1))));
@@ -223,9 +233,9 @@ export class World {
     return t;
   }
 
-  /** True when a cell is under open sky. */
+  /** True when a cell is under open sky: not in a room, and not under a mountain's roof. */
   outdoors(cell: number): boolean {
-    return this.map.roomAt[cell] === 0;
+    return this.map.roomAt[cell] === 0 && this.map.roof[cell] === 0;
   }
 
   // ---------------------------------------------------------------- entities
