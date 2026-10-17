@@ -23,7 +23,12 @@ export function setPossessed(w: World, p: Pawn, on: boolean): void {
     p.possessed = false;
     p.steer = undefined;
     p.sneaking = false;
-    if (p.job?.type === 'control') endJob(w, p);
+    if (p.job?.type === 'control') {
+      // Let go holding stolen goods: they're dropped here, and the owner will miss them.
+      const { stolen, stolenAt } = p.job;
+      if (stolen && p.carrying && w.zoneAt(w.cellOf(p))?.faction !== stolen) noticeTheft(w, stolen, p.carrying.def, p.carrying.count, stolenAt ?? w.cellOf(p));
+      endJob(w, p);
+    }
   }
   w.markDirty(p);
 }

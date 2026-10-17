@@ -34,6 +34,8 @@ const MAX_TICKS_PER_LOOP = 60;
 const MAX_BUFFERED = 16 * 1024 * 1024;
 const CMD_RATE = 40;
 const STATS_MS = 30_000;
+/** Distinct players a world will register (each new name gets a colony that is kept forever). */
+const MAX_PLAYERS = 64;
 
 interface Player extends StoredPlayer {
   speed: number;
@@ -52,6 +54,8 @@ export interface GameOptions {
   /** New worlds only: days before the frost line moves, and its speed multiplier. */
   frostStart?: number;
   frostPace?: number;
+  /** Most distinct players this world registers. Default MAX_PLAYERS. */
+  maxPlayers?: number;
   log?: (msg: string) => void;
 }
 
@@ -281,6 +285,7 @@ export class GameServer {
       if (this.opts.password && msg.password !== this.opts.password) return fail('Wrong server password.');
       const name = (typeof msg.name === 'string' ? msg.name : '').replace(/[^\p{L}\p{N} _'-]/gu, '').trim().slice(0, 20);
       if (!name) return fail('Pick a name.');
+      if (this.players.size >= (this.opts.maxPlayers ?? MAX_PLAYERS)) return fail('This server is full.');
       if ([...this.players.values()].some((x) => x.name.toLowerCase() === name.toLowerCase())) return fail('That name is taken on this server.');
       // New players pick where to settle before their colony exists.
       p = {
@@ -319,6 +324,12 @@ export class GameServer {
   }
 
   private handle(p: Player, msg: ClientMsg): void {
+    // Everything but pings draws on the same allowance as commands: chat and speed changes are
+    // broadcast to every player, so an unthrottled client could flood them all.
+    if (msg.t !== 'ping') {
+      if (p.cmdTokens < 1) return;
+      p.cmdTokens--;
+    }
     switch (msg.t) {
       case 'settle': {
         if (p.faction) return;
@@ -342,8 +353,7 @@ export class GameServer {
         return;
       }
       case 'cmd':
-        if (p.cmdTokens < 1 || !msg.cmd || typeof (msg.cmd as Command).c !== 'string') return;
-        p.cmdTokens--;
+        if (!msg.cmd || typeof (msg.cmd as Command).c !== 'string') return;
         this.world.enqueue(p.faction, msg.cmd);
         return;
       case 'speed': {

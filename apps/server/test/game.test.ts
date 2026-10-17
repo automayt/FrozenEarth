@@ -216,4 +216,35 @@ describe('game server', () => {
     expect(h.world.get<Pawn>(other.id)!.possessed).toBe(false);
     h.stop();
   });
+  it('throttles chat and speed floods, and turns away new players once the world is full', () => {
+    const g = new GameServer({ savePath: worldPath(dir, 'flood'), seed: 8, size: 80, maxPlayers: 2, log: () => {} });
+    const ann = new FakeSocket();
+    const bob = new FakeSocket();
+    g.onConnect(ann as unknown as WebSocket);
+    g.onConnect(bob as unknown as WebSocket);
+    ann.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Ann' });
+    bob.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Bob' });
+    bob.inbox = [];
+    // Every chat goes to everyone, and every speed change re-sends the player list to everyone.
+    for (let i = 0; i < 500; i++) ann.say({ t: 'chat', text: `spam ${i}` });
+    for (let i = 0; i < 500; i++) ann.say({ t: 'speed', speed: i % 3 });
+    const got = bob.inbox.filter((m) => m.t === 'chat' || m.t === 'players').length;
+    expect(got).toBeLessThanOrEqual(45);
+    expect(got).toBeGreaterThan(0);
+    // Pings are answered regardless.
+    for (let i = 0; i < 100; i++) ann.say({ t: 'ping', at: i });
+    expect(ann.take('pong')).toHaveLength(100);
+    // A third name on a two-player world is refused; a returning player still gets in.
+    const cy = new FakeSocket();
+    g.onConnect(cy as unknown as WebSocket);
+    cy.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Cy' });
+    expect(cy.take('error')[0]).toMatchObject({ fatal: true, msg: 'This server is full.' });
+    const token = ann.take('welcome')[0].token;
+    ann.close();
+    const back = new FakeSocket();
+    g.onConnect(back as unknown as WebSocket);
+    back.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Ann', token });
+    expect(back.take('welcome')).toHaveLength(1);
+    g.stop();
+  });
 });

@@ -81,6 +81,22 @@ describe('direct control meets orders', () => {
     expect(job().stolen).toBeUndefined();
   });
 
+  it('letting go of a thief mid-theft drops the goods, and the owner finds them missing', () => {
+    const { w, thief } = neighbours();
+    thief.x = 50;
+    thief.y = 31;
+    w.enqueue(2, { c: 'possess', pawn: thief.id, on: true });
+    run(w, 1);
+    w.enqueue(2, { c: 'interact', pawn: thief.id });
+    run(w, 1);
+    expect(thief.carrying?.def).toBe('gold');
+    thief.x = 30;
+    w.enqueue(2, { c: 'possess', pawn: thief.id, on: false });
+    run(w, 1);
+    expect(thief.carrying).toBeNull();
+    expect(w.dirty.msgs.some((m) => m.faction === 3 && m.text.includes('gone missing'))).toBe(true);
+  });
+
   it('a steered colonist knocked down is let go, and gets up without walking off', () => {
     const { w, thief } = neighbours();
     w.enqueue(2, { c: 'possess', pawn: thief.id, on: true });

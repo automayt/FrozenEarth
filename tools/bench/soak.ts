@@ -176,6 +176,15 @@ for (const [k, limit] of Object.entries(LIMITS) as [keyof Sample, (s: Sample) =>
 // Tick cost must not drift: the last window no slower than 3x the cheapest one.
 const cheapest = Math.min(...rows.map((r) => r.msPerTick));
 if (rows.length >= 3 && last.msPerTick > cheapest * 3 + 0.2) problems.push(`tick cost drifted from ${cheapest} to ${last.msPerTick} ms`);
+// What is lying around at the end, outside any stockpile: the usual source of slow growth.
+const loose = new Map<string, number>();
+for (const id of w.kinds.item) {
+  const it = w.get(id) as { def: string; x: number; y: number; rot: number };
+  if (w.zoneAt(w.map.idx(it.x, it.y))?.kind === 'stockpile') continue;
+  const k = `${it.def}${it.rot >= 1 ? ' (rotten)' : ''}`;
+  loose.set(k, (loose.get(k) ?? 0) + 1);
+}
+console.log(`loose item stacks: ${[...loose].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, n]) => `${k} ${n}`).join(', ')}`);
 console.log(
   JSON.stringify({ ticks: TICKS, days: +(TICKS / TICKS_PER_DAY).toFixed(1), seconds: +((performance.now() - t0) / 1000).toFixed(1), cmds, events, frostRadius: +w.frostRadius().toFixed(3), problems }),
 );
