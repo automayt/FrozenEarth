@@ -249,7 +249,7 @@ export function TradePanel() {
         <div className="trade-balance">
           <span>You offer {worth(giveV)}</span>
           <span>{st ? 'they ask' : 'you ask'} {worth(wantV)}</span>
-          {st && <span className={giveV + 1e-9 >= wantV ? 'good' : 'bad'}>{giveV + 1e-9 >= wantV ? (want.length ? 'Fair: they accept' : 'A gift: raises goodwill') : 'Not enough'}</span>}
+          {st && <span className={giveV + 1e-9 >= wantV ? 'good' : 'bad'}>{giveV + 1e-9 >= wantV ? (want.length ? 'Fair price' : 'A gift: raises goodwill') : 'Not enough'}</span>}
         </div>
       )}
       {!st && <input className="trade-note" placeholder="Add a note (optional)" maxLength={140} value={note} onChange={(e) => setNote(e.target.value)} />}

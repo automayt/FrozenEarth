@@ -1571,3 +1571,22 @@ button.toast-text:hover {
 .toast.neutral {
   border-left-color: var(--ice);
 }
+
+button.primary:disabled {
+  opacity: 0.4;
+  filter: grayscale(0.7);
+}
+
+.inspect .combat-row {
+  flex-wrap: wrap;
+}
+
+.combat-row button {
+  white-space: nowrap;
+}
+
+.help .keys kbd {
+  color: var(--text);
+  font-size: 12px;
+  padding: 0 6px;
+}
