@@ -4,7 +4,8 @@
 
 Expects the raw renders from generate.py in <raw_dir> (<key>_<seed_offset>_<index>.png and
 _mask.png). The pick for each key is sprites.json[key]["pick"]; extra postprocess.py flags come
-from sprites.json[key]["post"]. manifest.json lists every PNG present in the output folder.
+from sprites.json[key]["post"]. manifest.json lists every PNG and WebP present in the output folder
+(a WebP wins over a PNG of the same name: the ground textures from ground_finalize.py are WebP).
 """
 import json
 import subprocess
@@ -30,6 +31,8 @@ def main():
         subprocess.run([sys.executable, str(HERE / "postprocess.py"), *cmd], check=True)
         print("ok", key)
     manifest = {f.stem: f.name for f in sorted(out.glob("*.png"))}
+    manifest.update({f.stem: f.name for f in sorted(out.glob("*.webp"))})
+    manifest = dict(sorted(manifest.items()))
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
 

@@ -1,0 +1,67 @@
+{
+ "model": {
+  "ckpt": "dreamshaperXL_v21TurboDPMSDE.safetensors",
+  "steps": 8,
+  "cfg": 2.0
+ },
+ "textures": {
+  "terrain_soil": {
+   "seed": 7101,
+   "prompt": "brown dirt ground, soft loose earth with fine grainy soil texture, a few tiny pebbles and dry grass bits, gentle colour variation",
+   "pick": {
+    "seed_offset": 200,
+    "index": 2
+   },
+   "negative": "cracks, cracked, dry mud, rocks, cobblestones, plants"
+  },
+  "terrain_rich_soil": {
+   "seed": 7102,
+   "prompt": "dark fertile topsoil seen from above, fine grained dark brown humus earth, soft and even, tiny specks of organic matter and a few small twigs, gentle colour variation",
+   "pick": {
+    "seed_offset": 300,
+    "index": 3
+   },
+   "negative": "cracks, cracked, dry mud, rocks, stones, pebbles, cobblestones, clumps, scales, plants, leaves"
+  },
+  "terrain_sand": {
+   "seed": 7103,
+   "prompt": "pale golden beach sand ground, fine sand with soft wind ripples and a few tiny shell fragments and pebbles",
+   "pick": {
+    "seed_offset": 0,
+    "index": 1
+   }
+  },
+  "terrain_gravel": {
+   "seed": 7104,
+   "prompt": "fine gravel ground, thousands of tiny grey and tan pebbles and grit, small stones densely packed, low contrast",
+   "pick": {
+    "seed_offset": 100,
+    "index": 0
+   }
+  },
+  "terrain_marsh": {
+   "seed": 7105,
+   "prompt": "boggy marsh ground, dark olive wet mud with tufts of reeds and sedge grass and small dark puddles",
+   "pick": {
+    "seed_offset": 0,
+    "index": 0
+   }
+  },
+  "terrain_rough_stone": {
+   "seed": 7106,
+   "prompt": "rough natural grey bedrock floor, flat uneven stone surface with cracks, chips and small loose rubble",
+   "pick": {
+    "seed_offset": 0,
+    "index": 1
+   }
+  },
+  "terrain_ice": {
+   "seed": 7107,
+   "prompt": "smooth frozen lake surface seen from above, flat continuous pale blue-grey ice sheet with long thin white crack lines, faint frost streaks and small trapped bubbles, no plates, no snow piles",
+   "pick": {
+    "file": "ice_proc.png"
+   },
+   "note": "procedural: python tools/art/ground_ice.py <raw_dir>/ice_proc.png 512 11 (the image model drew ice floes)"
+  }
+ }
+}
