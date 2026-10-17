@@ -142,14 +142,19 @@ interface Tween {
   dur: number;
   step: (k: number) => void;
   done?: () => void;
+  owner?: { destroyed: boolean };
 }
 
 /** Time-based tweens. step(k) gets progress 0..1; done runs once at the end. */
 export class Tweens {
   private list: Tween[] = [];
 
-  add(dur: number, step: (k: number) => void, done?: () => void): void {
-    this.list.push({ t0: performance.now(), dur, step, done });
+  /**
+   * Animate over `dur` ms. With an `owner`, the tween is dropped (without calling `done`) once the
+   * owner is destroyed: a view replaced mid pop-in must not be touched after it's gone.
+   */
+  add(dur: number, step: (k: number) => void, done?: () => void, owner?: { destroyed: boolean }): void {
+    this.list.push({ t0: performance.now(), dur, step, done, owner });
     step(0);
   }
 
@@ -157,6 +162,7 @@ export class Tweens {
     if (!this.list.length) return;
     const keep: Tween[] = [];
     for (const t of this.list) {
+      if (t.owner?.destroyed) continue;
       const k = Math.min(1, (now - t.t0) / t.dur);
       t.step(k);
       if (k < 1) keep.push(t);

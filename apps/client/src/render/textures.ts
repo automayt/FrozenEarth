@@ -200,6 +200,20 @@ export class TextureBank {
           g.poly([32, 2, 46, 14, 44, 56, 20, 56, 18, 14]).fill(0x1a1a24).stroke({ width: 2, color: 0x6a5aa0 });
           g.rect(29, 16, 6, 30).fill({ color: 0x8a7ad0, alpha: 0.35 });
           return;
+        case 'sandbags': {
+          // Two staggered courses of stuffed bags, running edge to edge so a line of them reads as one barricade.
+          const bag = (x: number, y: number, w: number, h: number, f: number) => {
+            g.roundRect(x, y, w, h, h / 2).fill(shade(c, f)).stroke({ width: 2, color: shade(c, 0.42) });
+            // Tied-off ends and a seam along the top.
+            g.rect(x + 3, y + h * 0.35, w - 6, 1.5).fill({ color: shade(c, 1.25), alpha: 0.7 });
+            g.circle(x + 4, y + h / 2, 1.6).fill(shade(c, 0.55));
+            g.circle(x + w - 4, y + h / 2, 1.6).fill(shade(c, 0.55));
+          };
+          g.roundRect(0, 46, S, 12, 6).fill({ color: 0x000000, alpha: 0.28 });
+          for (const x of [0, 21, 42]) bag(x, 34, 22, 16, 0.9);
+          for (const x of [10, 32]) bag(x, 20, 22, 16, 1.08);
+          return;
+        }
         case 'crafting_spot':
           g.roundRect(6, 10, 52, 44, 4).fill({ color: c, alpha: 0.7 });
           g.rect(16, 20, 24, 4).fill(0x5a5a5a);
@@ -243,6 +257,22 @@ export class TextureBank {
       if (!(mask & 8)) g.rect(x0, y0, w, (mask & 4 ? S : S - e) - y0).fill(outline);
       if (!(mask & 2)) g.rect(x1 - w, y0, w, (mask & 4 ? S : S - e) - y0).fill(outline);
       if (!(mask & 4)) g.rect(x0, S - e - w + 6, x1 - x0, w).fill(outline);
+      if (def === 'embrasure') {
+        // A firing slit straight through the wall, framed by pale dressed stones, so it reads apart from plain wall.
+        const frame = shade(c, 1.45);
+        const slit = 0x0e0d0c;
+        if (horizontal) {
+          const cx = S / 2;
+          g.rect(cx - 9, y0 + 2, 18, y1 - y0 - 4).fill(frame);
+          g.rect(cx - 3.5, y0, 7, y1 - y0).fill(slit);
+          // The slit shows on the front face too.
+          if (!(mask & 4)) g.rect(cx - 2.5, y1, 5, S - e - y1 + 2).fill(slit);
+        } else {
+          const cy = (y0 + y1) / 2;
+          g.rect(x0 + 2, cy - 9, x1 - x0 - 4, 18).fill(frame);
+          g.rect(x0, cy - 3.5, x1 - x0, 7).fill(slit);
+        }
+      }
     });
   }
 

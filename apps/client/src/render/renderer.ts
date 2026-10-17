@@ -1,4 +1,4 @@
-import { Application, BitmapText, Container, Graphics, Sprite, Texture } from 'pixi.js';
+import { Application, BitmapText, Container, Graphics, GraphicsContext, Sprite, TextStyle, Texture } from 'pixi.js';
 import { ANIMALS, BUILDINGS, maxHp, PLANTS, ROCKS, TERRAINS, WEAPON_KEYS, weaponOf, type TerrainDef } from '@fe/defs';
 import { pawnPosition } from '@fe/protocol';
 import { DESIG, FROST_BAND, MIN_COLONY_GAP, SHOT_FIELDS, TICKS_PER_DAY, TICKS_PER_HOUR, bleedRate, calendar, dispositionOf, NOISE, stealthMult, frostLevel, frostRadius, hash2, outdoorTempAt, woundTotal, type Construct, type Entity, type Pawn } from '@fe/sim';
@@ -18,10 +18,19 @@ const CHUNK = 16;
 export const DISPOSITION_COLOR = { friendly: 0x7ad07a, wary: 0xf0b43c, hostile: 0xf07a5a } as const;
 
 const LABEL_STYLE = { fontFamily: 'IBM Plex Sans', fontSize: 22, fill: 0xffffff, stroke: { color: 0x000000, width: 5 } };
+/**
+ * One shared TextStyle for every label. A stroked style keys its bitmap font by TextStyle instance,
+ * so handing BitmapText a plain style object built a whole new glyph atlas per label (~15 ms each,
+ * and never freed); sharing the instance means one atlas for all of them.
+ */
+const LABEL_TEXT = new TextStyle(LABEL_STYLE);
 /** Pixels per cell in the terrain and overlay canvases. */
 const PX = 8;
 /** Texture pixels skipped per canvas pixel when sampling terrain art (texture repeats every 128/(PX*STEP) cells). */
 const TEX_STEP = 2;
+/** Colour and strength of the night shade at its darkest (light pools are carved out of it). */
+const NIGHT_COLOR = 0x0c1838;
+const NIGHT_ALPHA = 0.5;
 
 /** One attack being animated: a projectile flies, then its tracer fades. */
 interface ShotFx {
@@ -62,6 +71,8 @@ interface EntityView {
   flashUntil?: number;
   nextFx?: number;
   nextZ?: number;
+  /** Pawn name, or an item stack's count: hidden or resized by zoom level. */
+  label?: BitmapText;
 }
 
 /** What a working pawn is working on, and what that throws up. */
@@ -85,6 +96,8 @@ export class GameRenderer {
     fog: new Container(),
     /** Frost over the frozen zone: whitens ground, buildings and trees alike. */
     frost: new Container(),
+    /** Night shade with pools of light; pawns and markers sit above it. */
+    night: new Container(),
     pawns: new Container(),
     fx: new Container(),
     ui: new Container(),
@@ -112,6 +125,8 @@ export class GameRenderer {
   private settlementLabels = new Map<number, BitmapText>();
   private night = new Graphics();
   private views = new Map<number, EntityView>();
+  /** Shared geometry for the small shapes on entity views (see shape()). */
+  private shapes = new Map<string, GraphicsContext>();
   private pawnIds = new Set<number>();
   /** Static entity views are grouped into CHUNK x CHUNK cell containers so off-screen ones can be hidden. */
   private chunks = new Map<string, Container>();
@@ -120,6 +135,12 @@ export class GameRenderer {
   private mapW = 0;
   private mapH = 0;
   private destroyed = false;
+  /** The pawn you're steering, kept current from entity changes so controlled() needn't scan. */
+  private possessedId = 0;
+  /** Zoom detail level last applied to labels: 0 far (no names or counts), 1 mid (names), 2 near. */
+  private lod = -1;
+  /** World scale pawn name labels were last sized for. */
+  private labelZoom = -1;
 
   async init(el: HTMLElement): Promise<void> {
     await this.app.init({ resizeTo: el, background: 0x0d1014, antialias: true, autoDensity: true, resolution: window.devicePixelRatio || 1 });
@@ -131,7 +152,14 @@ export class GameRenderer {
     this.tex = new TextureBank(this.app.renderer);
     await this.tex.loadArt();
     this.app.stage.addChild(this.world, this.night, this.weather.g);
-    for (const l of Object.values(this.layers)) this.world.addChild(l);
+    for (const l of Object.values(this.layers)) {
+      // Each layer is its own render group: redrawing the per-frame Graphics (ui, shots, fire, particles)
+      // or moving pawns then only rebuilds that layer's draw list, not one covering thousands of
+      // static sprites, and panning only moves the group transforms.
+      l.isRenderGroup = true;
+      this.world.addChild(l);
+    }
+    this.layers.pawns.sortableChildren = true;
     this.layers.ui.addChild(this.ui);
     this.layers.fx.addChild(this.fireGfx, this.particles.g, this.shotGfx);
     this.layers.frost.addChild(this.frostRing);
@@ -147,6 +175,9 @@ export class GameRenderer {
     } catch {
       // init may not have finished
     }
+    // Shared shape geometry outlives the Graphics that used it; free it once they're gone.
+    for (const c of this.shapes.values()) c.destroy();
+    this.shapes.clear();
   }
 
   // ---------------------------------------------------------------- camera
@@ -269,9 +300,12 @@ export class GameRenderer {
     }
     for (const id of m.removedEnts) this.removeView(id, true);
     m.removedEnts.clear();
+    const mine = store.me?.faction;
     for (const id of m.changedEnts) {
       const e = m.entities.get(id);
-      if (e) this.updateView(e);
+      if (!e) continue;
+      this.updateView(e);
+      if (e.kind === 'pawn' && e.possessed && e.faction === mine) this.possessedId = e.id;
     }
     m.changedEnts.clear();
 
@@ -286,6 +320,8 @@ export class GameRenderer {
       if (!e || e.kind !== 'pawn' || !v) continue;
       const pos = pawnPosition(e, tick, m.w);
       v.root.position.set((pos.x + 0.5) * TILE, (pos.y + 0.5) * TILE);
+      // Lower on screen draws in front. Only re-sorts the pawn layer, and only when the order can change.
+      v.root.zIndex = Math.round(v.root.y);
       // Others indoors, out of your people's sight, aren't shown.
       v.root.visible = e.faction === me || !fog.hidden(Math.round(pos.y) * m.w + Math.round(pos.x));
       this.animatePawn(e, v, now);
@@ -298,8 +334,9 @@ export class GameRenderer {
       sound.setListener(((a.x + b.x) / 2) * TILE, ((a.y + b.y) / 2) * TILE, (b.x - a.x) * TILE);
     }
     this.drawFrost(tick);
-    this.swayPlants(now);
-    this.layers.pawns.children.sort((a, b) => a.y - b.y);
+    // Too small to see when zoomed out, and it touches every visible plant.
+    if (this.world.scale.x >= 0.35) this.swayPlants(now);
+    this.updateLod();
     this.drawFire(dt);
     this.drawShots();
     this.particles.update(dt);
@@ -570,8 +607,21 @@ export class GameRenderer {
           if (rock > 1 && hash2(gx, gy, 3) > 0.8) f *= 1.6;
           // Ice: a smoother sheen with pale cracks running across it.
           if (terrain.key === 'ice') {
-            f = 0.97 + hash2(gx >> 2, gy >> 2, 7) * 0.06;
-            if (hash2((gx + gy) >> 2, (gx - gy * 2) >> 4, 5) > 0.93) f *= 1.18;
+            // Large soft patches of clearer and cloudier ice...
+            f = 0.93 + hash2(gx >> 4, gy >> 4, 7) * 0.08 + hash2(gx >> 2, gy >> 2, 8) * 0.03;
+            // ...glinting diagonal streaks...
+            const streak = (gx + (gy >> 1) + ((hash2(gx >> 5, gy >> 5, 4) * 24) | 0)) % 44;
+            if (streak < 2) f *= 1.14;
+            else if (streak < 4) f *= 1.06;
+            // ...and dark hairline cracks wandering cell to cell.
+            const cx = gx >> 3;
+            const cy = gy >> 3;
+            const lx = gx & 7;
+            const ly = gy & 7;
+            if (hash2(cx, cy, 21) > 0.72 && (hash2(cx, cy, 22) > 0.5 ? lx === ly : lx === 7 - ly)) f *= 0.78;
+            // Cold blue cast so it reads as ice, not pale stone.
+            b = Math.min(255, b * 1.06);
+            r *= 0.94;
           }
         }
         if (rock) {
@@ -669,7 +719,7 @@ export class GameRenderer {
 
   /** Arrivals pop in with a little overshoot. */
   private popIn(root: Container, dur = 260): void {
-    this.tweens.add(dur, (k) => root.scale.set(0.35 + 0.65 * ease.outBack(k)));
+    this.tweens.add(dur, (k) => root.scale.set(0.35 + 0.65 * ease.outBack(k)), undefined, root);
   }
 
   /** Add a static view to its layer's chunk container. */
@@ -726,6 +776,13 @@ export class GameRenderer {
     const key = this.viewKey(e);
     const old = this.views.get(e.id);
     if (old && old.key === key) return;
+    if (old && e.kind === 'item' && old.kind === 'item' && old.def === e.def && old.root.x === (e.x + 0.5) * TILE && old.root.y === (e.y + 0.5) * TILE) {
+      // A stack growing or shrinking as haulers come and go: update it in place rather than rebuild.
+      (old.root.children[0] as Sprite).tint = e.rot >= 0.5 ? 0xa0b070 : 0xffffff;
+      this.setCountLabel(old, e.count);
+      old.key = key;
+      return;
+    }
     if (old) this.removeView(e.id);
     const root = new Container();
     const v: EntityView = { root, key, kind: e.kind, def: 'def' in e ? e.def : '' };
@@ -751,13 +808,7 @@ export class GameRenderer {
         s.width = s.height = TILE * 0.9;
         if (e.rot >= 0.5) s.tint = 0xa0b070;
         root.addChild(s);
-        if (e.count > 1) {
-          const t = new BitmapText({ text: String(e.count), style: LABEL_STYLE });
-          t.scale.set(0.5);
-          t.anchor.set(1, 1);
-          t.position.set(TILE / 2 - 1, TILE / 2);
-          root.addChild(t);
-        }
+        this.setCountLabel(v, e.count);
         this.place('items', root, e.x, e.y);
         break;
       }
@@ -774,18 +825,20 @@ export class GameRenderer {
           // Battered: darker, with a strip showing what's left.
           const k = Math.round(0x60 + 0x9f * health);
           s.tint = (k << 16) | (k << 8) | k;
+          const left = Math.round(health * 32) / 32;
           root.addChild(
-            new Graphics()
-              .rect(-TILE / 2 + 2, -TILE / 2 + 2, TILE - 4, 3)
-              .fill(0x301010)
-              .rect(-TILE / 2 + 2, -TILE / 2 + 2, (TILE - 4) * health, 3)
-              .fill(health < 0.35 ? 0xe05040 : 0xe0b040),
+            this.shape(`dmg:${left}`, (g) =>
+              g
+                .rect(-TILE / 2 + 2, -TILE / 2 + 2, TILE - 4, 3)
+                .fill(0x301010)
+                .rect(-TILE / 2 + 2, -TILE / 2 + 2, (TILE - 4) * left, 3)
+                .fill(left < 0.35 ? 0xe05040 : 0xe0b040),
+            ),
           );
         }
         if (d.door) {
-          const f = store.mirror.factions.get(e.faction);
-          const g = new Graphics().rect(-TILE / 2, TILE / 2 - 4, TILE, 3).fill(f?.color ?? 0xffffff);
-          root.addChild(g);
+          const color = store.mirror.factions.get(e.faction)?.color ?? 0xffffff;
+          root.addChild(this.shape(`door:${color}`, (g) => g.rect(-TILE / 2, TILE / 2 - 4, TILE, 3).fill(color)));
         }
         this.place(d.floorTerrain ? 'floorThings' : 'buildings', root, e.x, e.y);
         break;
@@ -802,10 +855,61 @@ export class GameRenderer {
     }
     this.views.set(e.id, v);
     if (!old && this.built) {
-      if (e.kind === 'pawn') this.tweens.add(400, (k) => (root.alpha = k));
+      if (e.kind === 'pawn') this.tweens.add(400, (k) => (root.alpha = k), undefined, root);
       else this.popIn(root);
       if (e.kind === 'building') sound.play('pop', root.x, root.y);
     }
+  }
+
+  /**
+   * A Graphics drawing a shared, cached shape. Views are rebuilt whenever their entity changes, and
+   * building fresh geometry for every ring, bar and chevron each time cost ~0.5 ms per pawn at
+   * render; shared contexts are tessellated once. (Destroying the Graphics leaves the context.)
+   */
+  private shape(key: string, draw: (g: GraphicsContext) => void): Graphics {
+    let ctx = this.shapes.get(key);
+    if (!ctx) {
+      ctx = new GraphicsContext();
+      draw(ctx);
+      this.shapes.set(key, ctx);
+    }
+    return new Graphics(ctx);
+  }
+
+  /**
+   * A pawn's health strip: dark outlined track, fill coloured by how bad it is (green, amber, red),
+   * bright red while bleeding.
+   */
+  private healthBar(width: number, y: number, hurt: number, bleeding: boolean): Graphics {
+    const left = Math.round(Math.max(0, 1 - hurt) * 24) / 24;
+    const fill = bleeding ? 0xff4848 : left > 0.6 ? 0x5ccf5c : left > 0.3 ? 0xe8b83c : 0xe85a3c;
+    return this.shape(`hp:${width}:${y}:${left}:${fill}`, (g) =>
+      g
+        .rect(-width / 2 - 1, y - 1, width + 2, 6)
+        .fill({ color: 0x000000, alpha: 0.75 })
+        .rect(-width / 2, y, width * left, 4)
+        .fill(fill),
+    );
+  }
+
+  /** The stack size in an item's corner, shown for stacks of two or more. */
+  private setCountLabel(v: EntityView, count: number): void {
+    if (count <= 1) {
+      v.label?.destroy();
+      v.label = undefined;
+      return;
+    }
+    if (v.label) {
+      v.label.text = String(count);
+      return;
+    }
+    const t = new BitmapText({ text: String(count), style: LABEL_TEXT });
+    t.scale.set(this.countLabelScale());
+    t.anchor.set(1, 1);
+    t.position.set(TILE / 2 - 1, TILE / 2);
+    t.visible = this.lod !== 0 && this.lod !== 1;
+    v.label = t;
+    v.root.addChild(t);
   }
 
   /** Bits: 1 = wall above, 2 = right, 4 = below, 8 = left. */
@@ -826,20 +930,22 @@ export class GameRenderer {
     ghost.width = ghost.height = TILE;
     ghost.alpha = ready ? 0.65 : 0.3;
     ghost.tint = ready ? 0xd8c8a0 : 0x8ac8ff;
-    const frame = new Graphics()
-      .rect(-TILE / 2 + 1, -TILE / 2 + 1, TILE - 2, TILE - 2)
-      .fill({ color: ready ? 0x8a7050 : 0x3a7ac0, alpha: ready ? 0.25 : 0.2 })
-      .stroke({ width: 1.5, color: ready ? 0xc8a878 : 0x8ac8ff, alpha: 0.9 });
+    const frame = this.shape(`cframe:${ready}`, (g) =>
+      g
+        .rect(-TILE / 2 + 1, -TILE / 2 + 1, TILE - 2, TILE - 2)
+        .fill({ color: ready ? 0x8a7050 : 0x3a7ac0, alpha: ready ? 0.25 : 0.2 })
+        .stroke({ width: 1.5, color: ready ? 0xc8a878 : 0x8ac8ff, alpha: 0.9 }),
+    );
     root.addChild(frame, ghost);
-    const p = ready ? e.progress / d.work : total ? got / total : 0;
-    if (p > 0) root.addChild(new Graphics().rect(-TILE / 2 + 3, TILE / 2 - 6, (TILE - 6) * Math.min(1, p), 3).fill(ready ? 0xf0c060 : 0x8ac8ff));
+    const p = Math.min(1, Math.round((ready ? e.progress / d.work : total ? got / total : 0) * 20) / 20);
+    if (p > 0) root.addChild(this.shape(`cprog:${ready}:${p}`, (g) => g.rect(-TILE / 2 + 3, TILE / 2 - 6, (TILE - 6) * p, 3).fill(ready ? 0xf0c060 : 0x8ac8ff)));
   }
 
   /** A wild animal: its sprite on a shadow, a crosshair when your hunters are after it. */
   private drawAnimal(root: Container, e: Pawn, v: EntityView): void {
     const def = ANIMALS[e.species!];
     const size = TILE * 1.15 * (def?.size ?? 1);
-    root.addChild(new Graphics().ellipse(0, TILE * 0.3, size * 0.38, size * 0.12).fill({ color: 0x000000, alpha: 0.3 }));
+    root.addChild(this.shape(`shadow:${size}`, (g) => g.ellipse(0, TILE * 0.3, size * 0.38, size * 0.12).fill({ color: 0x000000, alpha: 0.3 })));
     const body = new Sprite(this.tex.animal(e.species!));
     // The ComfyUI sprites stand on the bottom of their frame; the fallback shapes a little higher.
     body.anchor.set(0.5, this.tex.hasArt(`animal_${e.species}`) ? 0.95 : 0.85);
@@ -858,21 +964,20 @@ export class GameRenderer {
     v.animal = true;
     const hurt = woundTotal(e);
     if (hurt > 0.02 || e.downed) {
-      const bw = TILE * 0.6;
-      const bar = new Graphics().rect(-bw / 2, -size * 0.75, bw, 3).fill({ color: 0x000000, alpha: 0.6 });
-      bar.rect(-bw / 2, -size * 0.75, bw * Math.max(0, 1 - hurt), 3).fill(bleedRate(e) > 0 ? 0xe04040 : 0x60c060);
-      root.addChild(bar);
+      root.addChild(this.healthBar(TILE * 0.6, -size * 0.75, hurt, bleedRate(e) > 0));
     }
     if (e.hunted && e.hunted === store.me?.faction) {
       const y = -size * 0.75 - 8;
       root.addChild(
-        new Graphics()
-          .circle(0, y, 5)
-          .moveTo(-8, y)
-          .lineTo(8, y)
-          .moveTo(0, y - 8)
-          .lineTo(0, y + 8)
-          .stroke({ width: 1.5, color: 0xff5040 }),
+        this.shape(`hunt:${y}`, (g) =>
+          g
+            .circle(0, y, 5)
+            .moveTo(-8, y)
+            .lineTo(8, y)
+            .moveTo(0, y - 8)
+            .lineTo(0, y + 8)
+            .stroke({ width: 1.5, color: 0xff5040 }),
+        ),
       );
     }
   }
@@ -881,8 +986,13 @@ export class GameRenderer {
     if (e.species) return this.drawAnimal(root, e, v);
     const f = store.mirror.factions.get(e.faction);
     const color = f?.color ?? 0xffffff;
-    const ring = new Graphics().ellipse(0, TILE * 0.3, TILE * 0.38, TILE * 0.16).fill({ color: 0x000000, alpha: 0.35 });
-    ring.ellipse(0, TILE * 0.28, TILE * 0.34, TILE * 0.13).stroke({ width: 2.5, color });
+    const ring = this.shape(`ring:${color}`, (g) =>
+      g
+        .ellipse(0, TILE * 0.3, TILE * 0.38, TILE * 0.16)
+        .fill({ color: 0x000000, alpha: 0.35 })
+        .ellipse(0, TILE * 0.28, TILE * 0.34, TILE * 0.13)
+        .stroke({ width: 2.5, color }),
+    );
     const body = new Sprite(this.tex.pawn());
     body.anchor.set(0.5, 0.6);
     body.width = body.height = TILE * 1.05;
@@ -902,28 +1012,32 @@ export class GameRenderer {
     const wd = weaponOf(e.weapon);
     if (e.weapon && !e.downed) {
       // A small weapon glyph at the pawn's side: a bow arc, a long barrel, or a short blade.
-      const g = new Graphics();
-      if (e.weapon === 'bow') g.arc(TILE * 0.3, 0, TILE * 0.18, -Math.PI / 2.2, Math.PI / 2.2).stroke({ width: 2, color: 0xc8a070 });
-      else
-        g.moveTo(TILE * 0.22, TILE * 0.12)
-          .lineTo(TILE * (wd.melee ? 0.42 : 0.55), -TILE * (wd.melee ? 0.12 : 0.18))
-          .stroke({ width: wd.melee ? 2.5 : 2, color: wd.melee ? 0xd8d8d8 : 0x6a5a48 });
-      rig.addChild(g);
+      const bow = e.weapon === 'bow';
+      const melee = !!wd.melee;
+      rig.addChild(
+        this.shape(bow ? 'wpn:bow' : `wpn:${melee}`, (g) => {
+          if (bow) g.arc(TILE * 0.3, 0, TILE * 0.18, -Math.PI / 2.2, Math.PI / 2.2).stroke({ width: 2, color: 0xc8a070 });
+          else
+            g.moveTo(TILE * 0.22, TILE * 0.12)
+              .lineTo(TILE * (melee ? 0.42 : 0.55), -TILE * (melee ? 0.12 : 0.18))
+              .stroke({ width: melee ? 2.5 : 2, color: melee ? 0xd8d8d8 : 0x6a5a48 });
+        }),
+      );
     }
     if (e.drafted) {
       // Drafted: a chevron over the head in the faction colour.
-      const d = new Graphics()
-        .poly([-6, -TILE * 0.62, 0, -TILE * 0.5, 6, -TILE * 0.62, 6, -TILE * 0.74, 0, -TILE * 0.62, -6, -TILE * 0.74])
-        .fill(color)
-        .stroke({ width: 1.2, color: 0x000000, alpha: 0.8 });
-      root.addChild(d);
+      root.addChild(
+        this.shape(`chevron:${color}`, (g) =>
+          g
+            .poly([-6, -TILE * 0.86, 0, -TILE * 0.74, 6, -TILE * 0.86, 6, -TILE * 0.98, 0, -TILE * 0.86, -6, -TILE * 0.98])
+            .fill(color)
+            .stroke({ width: 1.2, color: 0x000000, alpha: 0.8 }),
+        ),
+      );
     }
     const hurt = woundTotal(e);
     if (hurt > 0.02 || e.downed) {
-      const bw = TILE * 0.7;
-      const bar = new Graphics().rect(-bw / 2, -TILE * 0.46, bw, 3).fill({ color: 0x000000, alpha: 0.6 });
-      bar.rect(-bw / 2, -TILE * 0.46, bw * Math.max(0, 1 - hurt), 3).fill(bleedRate(e) > 0 ? 0xe04040 : 0x60c060);
-      root.addChild(bar);
+      root.addChild(this.healthBar(TILE * 0.7, -TILE * 0.68, hurt, bleedRate(e) > 0));
     }
     if (e.carrying) {
       const c = new Sprite(this.tex.item(e.carrying.def));
@@ -932,11 +1046,52 @@ export class GameRenderer {
       c.position.set(TILE * 0.3, -TILE * 0.05);
       rig.addChild(c);
     }
-    const label = new BitmapText({ text: e.name.split(' ')[0] + (e.prisoner ? ' (prisoner)' : '') + (e.downed ? ' (down)' : e.asleep ? ' z' : ''), style: LABEL_STYLE });
-    label.scale.set(0.45);
+    const label = new BitmapText({ text: e.name.split(' ')[0] + (e.prisoner ? ' (prisoner)' : '') + (e.downed ? ' (down)' : e.asleep ? ' z' : ''), style: LABEL_TEXT });
+    label.scale.set(this.pawnLabelScale());
     label.anchor.set(0.5, 0);
     label.position.set(0, TILE * 0.42);
+    label.visible = this.lod !== 0;
+    v.label = label;
     root.addChild(label);
+  }
+
+  /**
+   * World scale for a label drawn at `base` that keeps it between min and max pixels tall on screen,
+   * so names and counts neither shrink to specks nor balloon when zoomed in.
+   */
+  private labelScale(base: number, min: number, max: number): number {
+    const s = this.world.scale.x;
+    return Math.max(min, Math.min(max, LABEL_STYLE.fontSize * base * s)) / (LABEL_STYLE.fontSize * s);
+  }
+
+  private pawnLabelScale(): number {
+    return this.labelScale(0.45, 8.5, 13);
+  }
+
+  private countLabelScale(): number {
+    return this.labelScale(0.5, 8, 11);
+  }
+
+  /**
+   * Labels by zoom: stack counts only up close, names down to a middling zoom, neither when zoomed
+   * far out (they'd be an unreadable smear, and thousands of glyphs to draw).
+   */
+  private updateLod(): void {
+    const s = this.world.scale.x;
+    const lod = s < 0.42 ? 0 : s < 0.7 ? 1 : 2;
+    const resize = Math.abs(s - this.labelZoom) > 0.02;
+    if (lod === this.lod && !resize) return;
+    const relod = lod !== this.lod;
+    this.lod = lod;
+    if (resize) this.labelZoom = s;
+    const names = this.pawnLabelScale();
+    const counts = this.countLabelScale();
+    for (const v of this.views.values()) {
+      if (!v.label) continue;
+      const pawn = v.kind === 'pawn';
+      if (relod) v.label.visible = lod >= (pawn ? 1 : 2);
+      if (resize) v.label.scale.set(pawn ? names : counts);
+    }
   }
 
   // ---------------------------------------------------------------- UI overlay
@@ -1011,8 +1166,9 @@ export class GameRenderer {
     const m = store.mirror;
     const me = store.me?.faction ?? 0;
     const sw = 1.5 / this.world.scale.x;
-    // Names stay readable when zoomed out.
-    const scale = Math.max(0.8, Math.min(3, 0.8 / this.world.scale.x));
+    // Names stay a steady 15 to 20px on screen whatever the zoom.
+    const z = this.world.scale.x;
+    const scale = Math.max(15, Math.min(20, LABEL_STYLE.fontSize * 0.8 * z)) / (LABEL_STYLE.fontSize * z);
     const seen = new Set<number>();
     for (const f of m.factions.values()) {
       const s = f.settlement;
@@ -1020,7 +1176,7 @@ export class GameRenderer {
       seen.add(f.id);
       let label = this.settlementLabels.get(f.id);
       if (!label) {
-        label = new BitmapText({ text: '', style: LABEL_STYLE });
+        label = new BitmapText({ text: '', style: LABEL_TEXT });
         label.anchor.set(0.5, 1);
         this.layers.ui.addChild(label);
         this.settlementLabels.set(f.id, label);
@@ -1032,7 +1188,13 @@ export class GameRenderer {
       label.tint = color;
       label.scale.set(scale);
       label.position.set((f.home.x + 0.5) * TILE, (f.home.y - 4.3) * TILE);
-      if (s.state === 'home') g.circle((f.home.x + 0.5) * TILE, (f.home.y + 0.5) * TILE, s.radius * TILE).stroke({ width: sw, color, alpha: 0.4 });
+      if (s.state === 'home') {
+        // A dark under-stroke keeps the coloured ring visible over pale sand, snow and ice.
+        const cx = (f.home.x + 0.5) * TILE;
+        const cy = (f.home.y + 0.5) * TILE;
+        g.circle(cx, cy, s.radius * TILE).stroke({ width: sw * 2.6, color: 0x000000, alpha: 0.22 });
+        g.circle(cx, cy, s.radius * TILE).stroke({ width: sw, color, alpha: 0.7 });
+      }
     }
     for (const [id, label] of this.settlementLabels) {
       if (seen.has(id)) continue;
@@ -1196,8 +1358,11 @@ export class GameRenderer {
 
   /** The colonist you're steering, if any. */
   controlled(): Pawn | undefined {
-    const me = store.me?.faction;
-    for (const e of store.mirror.entities.values()) if (e.kind === 'pawn' && e.faction === me && e.possessed) return e;
+    // Called a couple of times a frame: remember who it was (the change loop in frame() picks up a
+    // newly possessed pawn) instead of scanning every entity each time.
+    const e = store.mirror.entities.get(this.possessedId);
+    if (e && e.kind === 'pawn' && e.possessed && e.faction === store.me?.faction) return e;
+    this.possessedId = 0;
     return undefined;
   }
 
@@ -1297,29 +1462,119 @@ export class GameRenderer {
     this.weather.update(dt, kind, this.app.screen.width, this.app.screen.height, wind);
   }
 
-  private drawNight(tick: number): void {
+  /** Darkness at this tick: 0 at midday, 1 at deep night (smooth through dusk and dawn), or held dark by an eclipse. */
+  private darkness(tick: number, active: Set<string>): number {
     const hour = (tick % TICKS_PER_DAY) / TICKS_PER_HOUR;
-    // 0 at midday, 1 deep night, smooth through dusk and dawn.
     const dark = hour < 5 || hour > 21 ? 1 : hour < 7 ? (7 - hour) / 2 : hour > 19 ? (hour - 19) / 2 : 0;
-    const active = new Set(store.mirror.conditions.map((c) => c.key));
     const forcedDark = active.has('eclipse') || active.has('long_night') || active.has('ash_fall');
-    const a = Math.max(forcedDark ? 0.75 : 0, dark) * 0.5;
+    return Math.max(forcedDark ? 0.8 : 0, dark);
+  }
+
+  /**
+   * Night: a blue shade over the ground and buildings (pawns, labels and markers stay above it, so
+   * people stay readable), with soft pools of light around fires, heaters and your colonists.
+   */
+  private drawNight(tick: number): void {
+    const m = store.mirror;
+    const active = new Set<string>();
+    for (const c of m.conditions) active.add(c.key);
+    const dark = this.darkness(tick, active);
+    const shade = this.nightSprite;
+    if (dark > 0.01) {
+      // The light map follows the fog cadence (a few times a second), not every frame.
+      if (this.lightVersion !== fog.version || !shade) this.drawLights();
+      this.nightSprite!.visible = true;
+      this.nightSprite!.alpha = dark * NIGHT_ALPHA;
+    } else if (shade) shade.visible = false;
+    // People and markers take a slight moonlit cast without losing contrast.
+    const k = 1 - 0.22 * dark;
+    const tint = (Math.round(255 * k) << 16) | (Math.round(255 * (k + 0.04 * dark)) << 8) | 255;
+    if (this.layers.pawns.tint !== tint) this.layers.pawns.tint = tint;
+
+    // Weather tints, over the whole screen.
     const g = this.night;
     const W = this.app.screen.width;
     const H = this.app.screen.height;
     g.clear();
-    if (a > 0.01) g.rect(0, 0, W, H).fill({ color: 0x0a1430, alpha: a });
-    // Weather tints.
-    const tint = (color: number, alpha: number) => alpha > 0.01 && g.rect(0, 0, W, H).fill({ color, alpha });
-    if (active.has('fog')) tint(0xc8d0d8, 0.28);
-    if (active.has('blizzard')) tint(0xe8f0ff, 0.25);
-    if (active.has('ash_fall')) tint(0x3a3634, 0.3);
-    if (active.has('spring_rains') || active.has('thunderstorm')) tint(0x203048, 0.15);
-    if (active.has('blood_moon')) tint(0x900a0a, 0.08 + 0.2 * dark);
-    if (active.has('aurora')) tint(0x20c080, 0.03 + 0.12 * dark);
-    if (active.has('heat_wave') || active.has('drought')) tint(0xffa040, 0.07);
-    if (active.has('false_spring') || active.has('warm_spell')) tint(0xfff0a0, 0.06);
-    if (active.has('cold_wind') || active.has('cold_snap') || active.has('early_frost')) tint(0xa8d8ff, 0.1);
+    const tintAll = (color: number, alpha: number) => alpha > 0.01 && g.rect(0, 0, W, H).fill({ color, alpha });
+    if (active.has('fog')) tintAll(0xc8d0d8, 0.28);
+    if (active.has('blizzard')) tintAll(0xe8f0ff, 0.25);
+    if (active.has('ash_fall')) tintAll(0x3a3634, 0.3);
+    if (active.has('spring_rains') || active.has('thunderstorm')) tintAll(0x203048, 0.15);
+    if (active.has('blood_moon')) tintAll(0x900a0a, 0.08 + 0.2 * dark);
+    if (active.has('aurora')) tintAll(0x20c080, 0.03 + 0.12 * dark);
+    if (active.has('heat_wave') || active.has('drought')) tintAll(0xffa040, 0.07);
+    if (active.has('false_spring') || active.has('warm_spell')) tintAll(0xfff0a0, 0.06);
+    if (active.has('cold_wind') || active.has('cold_snap') || active.has('early_frost')) tintAll(0xa8d8ff, 0.1);
+  }
+
+  private nightCanvas = document.createElement('canvas');
+  private nightTex: Texture | null = null;
+  private nightSprite: Sprite | null = null;
+  private lightLevel = new Float32Array(0);
+  private lightVersion = -1;
+
+  /** Bake the night shade at one pixel per cell: opaque in the dark, clear where something gives light. */
+  private drawLights(): void {
+    const m = store.mirror;
+    this.lightVersion = fog.version;
+    const n = m.w * m.h;
+    const c = this.nightCanvas;
+    if (c.width !== m.w || c.height !== m.h || !this.nightTex) {
+      c.width = m.w;
+      c.height = m.h;
+      this.nightTex?.destroy(true);
+      this.layers.night.removeChildren();
+      this.nightTex = Texture.from(c);
+      // Linear filtering turns the per-cell map into soft pools.
+      this.nightTex.source.scaleMode = 'linear';
+      this.nightSprite = new Sprite(this.nightTex);
+      this.nightSprite.scale.set(TILE);
+      this.layers.night.addChild(this.nightSprite);
+    }
+    if (this.lightLevel.length !== n) this.lightLevel = new Float32Array(n);
+    const light = this.lightLevel;
+    light.fill(0);
+    const stamp = (x0: number, y0: number, r: number, strength: number) => {
+      const ri = Math.ceil(r);
+      for (let y = Math.max(0, y0 - ri); y <= Math.min(m.h - 1, y0 + ri); y++) {
+        for (let x = Math.max(0, x0 - ri); x <= Math.min(m.w - 1, x0 + ri); x++) {
+          const d2 = ((x - x0) ** 2 + (y - y0) ** 2) / (r * r);
+          if (d2 >= 1) continue;
+          const l = strength * (1 - d2);
+          const i = y * m.w + x;
+          if (l > light[i]) light[i] = l;
+        }
+      }
+    };
+    const me = store.me?.faction;
+    for (const e of m.entities.values()) {
+      if (e.kind === 'building') {
+        const d = BUILDINGS[e.def];
+        if (d?.radiant) stamp(e.x, e.y, d.radiant[1] + 4, 1);
+        else if (d?.heat && d.heat > 0) stamp(e.x, e.y, 4.5, 0.85);
+      } else if (e.kind === 'pawn' && e.faction === me && !e.species && !e.downed) {
+        // Your people carry a little light (and you can always find them).
+        const p = this.views.get(e.id)?.root;
+        stamp(p ? Math.round(p.x / TILE - 0.5) : e.x, p ? Math.round(p.y / TILE - 0.5) : e.y, 3.5, 0.6);
+      }
+    }
+    for (const f of m.fireCells) stamp(f % m.w, (f / m.w) | 0, 4 + m.fire[f], 1);
+    const ctx = c.getContext('2d')!;
+    const img = ctx.createImageData(m.w, m.h);
+    const d = img.data;
+    const r = (NIGHT_COLOR >> 16) & 255;
+    const g = (NIGHT_COLOR >> 8) & 255;
+    const b = NIGHT_COLOR & 255;
+    for (let i = 0; i < n; i++) {
+      const o = i * 4;
+      d[o] = r;
+      d[o + 1] = g;
+      d[o + 2] = b;
+      d[o + 3] = 255 * (1 - light[i]);
+    }
+    ctx.putImageData(img, 0, 0);
+    this.nightTex.source.update();
   }
 }
 

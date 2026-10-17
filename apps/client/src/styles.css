@@ -523,6 +523,10 @@ button.primary:hover {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  /* In a short window the letters scroll rather than push the chat under the architect bar. */
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 .letter {
@@ -552,6 +556,7 @@ button.primary:hover {
 .chat {
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   max-height: 220px;
 }
 
@@ -895,6 +900,8 @@ td.name {
   bottom: 70px;
   transform: translateX(-50%);
   width: min(560px, calc(100vw - 16px));
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
@@ -994,6 +1001,157 @@ td.name {
 
   .alerts {
     top: 70px;
+  }
+}
+
+/* While something is inspected, the minimap and alerts step aside rather than hide under the panel. */
+.hud:has(> .inspect) .minimap,
+.hud:has(> .inspect) .alerts {
+  right: 316px;
+}
+
+/* ------------------------------------------------------------------ small windows */
+
+/* Keep the architect bar on one row down to 800px wide, so it never stacks over the chat. */
+@media (max-width: 1080px) {
+  .architect .bar {
+    gap: 3px;
+    padding: 4px;
+  }
+
+  .architect .bar button {
+    padding: 3px 7px;
+    font-size: 12px;
+  }
+
+  /* The bar now reaches under the inspect panel's corner: lift the panel above it. */
+  .inspect {
+    bottom: 56px;
+    max-height: calc(100vh - 56px - 70px);
+  }
+}
+
+@media (max-width: 860px) {
+  .architect .bar button {
+    padding: 3px 5px;
+    font-size: 11px;
+  }
+
+  .architect .sep {
+    margin: 0 2px;
+  }
+
+  .inspect {
+    width: 270px;
+  }
+
+  .hud:has(> .inspect) .minimap,
+  .hud:has(> .inspect) .alerts {
+    right: 286px;
+  }
+
+  .speed-state {
+    max-width: 160px;
+  }
+}
+
+/* Short windows (a 1280x720 or smaller browser pane): tighter top-left stack, smaller minimap. */
+@media (max-height: 760px) {
+  .feed {
+    top: 62px;
+    bottom: 64px;
+    width: 270px;
+  }
+
+  .chat {
+    max-height: 140px;
+  }
+
+  .minimap {
+    top: 62px;
+  }
+
+  .minimap canvas {
+    width: 140px;
+    height: 140px;
+  }
+
+  /* Under the 140px minimap: 62 + 140 + 2 * 4 padding + 2 border + gap. */
+  .alerts {
+    top: 220px;
+  }
+
+  .control-bar {
+    top: 54px;
+  }
+}
+
+@media (max-height: 560px) {
+  .topbar {
+    top: 6px;
+    gap: 10px;
+    padding: 3px 10px;
+  }
+
+  .feed {
+    top: 52px;
+    width: 250px;
+  }
+
+  .checklist li {
+    padding: 1px 0;
+  }
+
+  /* Only what's left to do; the finished steps already show in the count. */
+  .checklist li.done {
+    display: none;
+  }
+
+  .letter {
+    padding: 3px 7px;
+  }
+
+  .chat {
+    max-height: 96px;
+  }
+
+  .chat .lines {
+    min-height: 24px;
+    padding: 4px 8px;
+  }
+
+  .minimap {
+    top: 52px;
+  }
+
+  .minimap canvas {
+    width: 110px;
+    height: 110px;
+  }
+
+  .alerts {
+    top: 180px;
+  }
+
+  .alert {
+    padding: 2px 8px;
+  }
+
+  .inspect {
+    max-height: calc(100vh - 56px - 52px);
+    padding: 10px 12px;
+  }
+
+  .control-bar {
+    top: 46px;
+  }
+
+  .work-panel,
+  .colonists-panel,
+  .events-panel,
+  .trade-panel {
+    bottom: 56px;
+    max-height: calc(100vh - 110px);
   }
 }
 
