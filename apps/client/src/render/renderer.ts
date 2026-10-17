@@ -8,6 +8,7 @@ import { fog } from './fog';
 import { store } from '../store';
 import { TextureBank } from './textures';
 import { ChunkedBitmap, MapBitmap } from './bitmap';
+import { Ground } from './ground';
 import { FOG_RES, paintFog, paintOverlayCell, PX } from './paint';
 import { coverColor, coverFrom, type CoverHit } from './cover';
 import { Marks } from './marks';
@@ -92,6 +93,8 @@ export class GameRenderer {
   world = new Container();
   /** Ground art and the zone/designation overlay, PX pixels a cell, in chunk textures. */
   private terrainMap: ChunkedBitmap | null = null;
+  /** Shader-drawn ground under terrainMap (which then only holds rock), or null on renderers it can't run on. */
+  private ground: Ground | null = null;
   private overlayMap: ChunkedBitmap | null = null;
   /** What each overlay cell was last painted as (see overlayCell()), to skip unchanged cells. */
   private overlayKeys = new Int32Array(0);
@@ -172,6 +175,7 @@ export class GameRenderer {
     el.appendChild(this.app.canvas);
     this.tex = new TextureBank(this.app.renderer);
     await this.tex.loadArt();
+    this.ground = Ground.create(this.app.renderer, this.tex, TILE);
     this.app.stage.addChild(this.world, this.night, this.weather.view);
     for (const l of Object.values(this.layers)) {
       // Each layer is its own render group: redrawing the per-frame Graphics (ui, shots, fire, particles)
@@ -195,6 +199,7 @@ export class GameRenderer {
   destroy(): void {
     this.destroyed = true;
     this.input?.destroy();
+    this.ground?.destroy();
     try {
       this.app.destroy(true, { children: true });
     } catch {
@@ -269,6 +274,7 @@ export class GameRenderer {
       if (k >= 1) this.glide = null;
     }
     this.input.update(this.app.ticker.deltaMS);
+    this.ground?.tick(now);
 
     if (m.allCellsChanged) {
       this.drawAllTerrain();
@@ -550,6 +556,7 @@ export class GameRenderer {
     this.overlayMap = new ChunkedBitmap({ w: m.w, h: m.h, px: PX, tile: TILE });
     this.layers.terrain.addChild(this.terrainMap.root);
     this.layers.overlay.addChild(this.overlayMap.root);
+    this.ground?.setup(m.w, m.h, this.layers.terrain);
     this.overlayKeys = new Int32Array(m.w * m.h).fill(-1);
     m.allCellsChanged = true;
   }
@@ -562,6 +569,7 @@ export class GameRenderer {
       this.paintCell(s.data, s.stride, c, s.ox, s.oy);
     }
     t.flush();
+    this.ground?.update(store.mirror.terrain, null);
   }
 
   /** Repaint changed cells, and the neighbours whose rock bevel depends on them; upload only their rows. */
@@ -576,6 +584,7 @@ export class GameRenderer {
       this.paintCell(s.data, s.stride, c, s.ox, s.oy);
     }
     t.flush();
+    this.ground?.update(m.terrain, cells);
   }
 
   /** Write one cell's PX x PX pixels into an RGBA buffer of the given stride, at (ox, oy). */
@@ -584,6 +593,11 @@ export class GameRenderer {
     const x = c % m.w;
     const y = (c / m.w) | 0;
     const rock = m.rock[c];
+    if (this.ground && !rock) {
+      // The ground shader draws open ground; this bitmap only carries rock.
+      for (let py = 0; py < PX; py++) data.fill(0, ((oy + py) * stride + ox) * 4, ((oy + py) * stride + ox + PX) * 4);
+      return;
+    }
     const terrain: TerrainDef = TERRAINS[m.terrain[c]];
     const base = rock ? ROCKS[rock].color : terrain.color;
     // Ore veins are granite tinted toward the ore colour.
@@ -602,7 +616,8 @@ export class GameRenderer {
         let f = 1;
         if (tex) {
           // Rock samples a finer, darker version so cracks don't read as huge repeating stripes.
-          const step = rock ? TEX_STEP * 2 : TEX_STEP;
+          // (Scaled to the image, so larger ground textures keep the same feature size.)
+          const step = (rock ? TEX_STEP * 2 : TEX_STEP) * Math.max(1, Math.round(tex.w / 128));
           const tx = (gx * step) % tex.w;
           const ty = (gy * step) % tex.h;
           const o = (ty * tex.w + tx) * 4;

@@ -166,3 +166,34 @@ python tools/art/generate.py tools/art/animals.json <scratch>/raw --batch 4     
 python tools/art/generate.py tools/art/animals.json <scratch>/raw animal_deer animal_wolf --batch 4 --seed-offset 300
 python tools/art/animal_finalize.py tools/art/animals.json <scratch>/raw apps/client/public/sprites
 ```
+
+## Ground textures (`terrain_*.webp`)
+The terrain shader (`apps/client/src/render/ground.ts`) samples these in world space, one
+512x512 tile per 4 cells, blended across cell edges, and eases each texture's contrast
+(`textureContrast()` in `groundData.ts`). They replace the 128 px Z-Image `terrain_*.png` set for
+natural ground; `terrain_wood_floor.png` and `terrain_stone_tile.png` are still the old grid-cut
+ones (the shader lines them up with the cells). The old `sprites.json` terrain entries are kept
+for history only.
+
+- Model: **DreamShaper XL v2.1 Turbo** (`dreamshaperXL_v21TurboDPMSDE.safetensors`) with the
+  **Model Patch Seamless (mtb)** node (circular padding in the UNet), 1024x1024, 8 steps,
+  dpmpp_sde/karras, cfg 2. The render itself wraps, so no cross-fade is needed. Z-Image (a DiT)
+  can't be made to tile this way.
+- `ground.json` holds prompts, per-texture negative prompts, seeds and picks. Telling SDXL "not
+  cracked" made everything cracked; the word went into the negative prompt instead. Rich soil
+  kept growing seedlings and crop-like plants until "no plants, clumps, scales" were negatives.
+- Ice is procedural (`ground_ice.py`: FFT noise and a warped Voronoi crack net on a torus): every
+  "frozen lake" render came out as ice floes or lily pads.
+- `ground_finalize.py` resizes the picks to 512 with wrap-around filtering, writes WebP (q82) and
+  points `manifest.json` at them (removing the replaced PNG). `finalize.py` now keeps WebP
+  entries when it rewrites the manifest.
+
+```sh
+python tools/art/ground_generate.py tools/art/ground.json <scratch>/ground_raw --batch 2
+python tools/art/ground_generate.py tools/art/ground.json <scratch>/ground_raw terrain_gravel --batch 3 --seed-offset 100
+python tools/art/ground_generate.py tools/art/ground.json <scratch>/ground_raw terrain_soil --batch 3 --seed-offset 200
+python tools/art/ground_generate.py tools/art/ground.json <scratch>/ground_raw terrain_rich_soil --batch 4 --seed-offset 300
+python tools/art/ground_ice.py <scratch>/ground_raw/ice_proc.png 512 11
+python tools/art/ground_finalize.py tools/art/ground.json <scratch>/ground_raw apps/client/public/sprites
+```
+(Every pick was rendered with the prompt now in `ground.json`; other offsets in between used older wordings.)
