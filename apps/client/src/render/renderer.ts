@@ -1,7 +1,7 @@
 import { Application, BitmapText, Container, Graphics, GraphicsContext, Sprite, TextStyle } from 'pixi.js';
 import { ANIMALS, BUILDINGS, maxHp, PLANTS, ROCKS, TERRAINS, WEAPON_KEYS, weaponOf, type TerrainDef } from '@fe/defs';
 import { pawnPosition } from '@fe/protocol';
-import { DESIG, FROST_BAND, MIN_COLONY_GAP, SHOT_FIELDS, TICKS_PER_DAY, TICKS_PER_HOUR, bleedRate, calendar, dispositionOf, GUARD_REACH, hostile, NOISE, SETTLEMENT_WATCH, stealthMult, frostLevel, frostRadius, hash2, outdoorTempAt, weaponFor, woundTotal, type Construct, type Entity, type Pawn, type World } from '@fe/sim';
+import { DESIG, FROST_BAND, MIN_COLONY_GAP, SHOT_FIELDS, bleedRate, calendar, dispositionOf, GUARD_REACH, hostile, NOISE, SETTLEMENT_WATCH, stealthMult, frostLevel, frostRadius, hash2, outdoorTempAt, weaponFor, woundTotal, type Construct, type Entity, type Pawn, type World } from '@fe/sim';
 import { ease, Particles, Tweens, Weather, type Precip } from './fx';
 import { sound } from '../audio';
 import { fog } from './fog';
@@ -12,6 +12,9 @@ import { FOG_RES, paintFog, paintOverlayCell, PX } from './paint';
 import { coverColor, coverFrom, type CoverHit } from './cover';
 import { Marks } from './marks';
 import { Input } from './input';
+import { Lighting } from './light';
+import { Shadows } from './shadows';
+import { Life } from './life';
 
 /** World units per cell. */
 export const TILE = 32;
@@ -30,10 +33,6 @@ const LABEL_STYLE = { fontFamily: 'IBM Plex Sans', fontSize: 22, fill: 0xffffff,
 const LABEL_TEXT = new TextStyle(LABEL_STYLE);
 /** Texture pixels skipped per canvas pixel when sampling terrain art (texture repeats every 128/(PX*STEP) cells). */
 const TEX_STEP = 2;
-/** Colour and strength of the night shade at its darkest (light pools are carved out of it). */
-const NIGHT_COLOR = 0x0c1838;
-
-const NIGHT_ALPHA = 0.5;
 
 /** One attack being animated: a projectile flies, then its tracer fades. */
 interface ShotFx {
@@ -101,6 +100,8 @@ export class GameRenderer {
   private layers = {
     terrain: new Container(),
     overlay: new Container(),
+    /** Sun shadows (render/shadows.ts): above the ground, below everything that casts one. */
+    shadows: new Container(),
     floorThings: new Container(),
     items: new Container(),
     buildings: new Container(),
@@ -139,6 +140,11 @@ export class GameRenderer {
   private settlementGfx = new Graphics();
   private settlementKey = '';
   private night = new Graphics();
+  /** Time of day: night shade, firelight, colour grade (render/light.ts). */
+  lighting!: Lighting;
+  shadows!: Shadows;
+  private life = new Life();
+  private precip = 'none';
   private views = new Map<number, EntityView>();
   /** Shared geometry for the small shapes on entity views (see shape()). */
   private shapes = new Map<string, GraphicsContext>();
@@ -178,6 +184,10 @@ export class GameRenderer {
     this.layers.ui.addChild(this.settlementGfx, this.marks.view, this.ui);
     this.layers.fx.addChild(this.fireGfx, this.particles.view, this.shotGfx);
     this.layers.frost.addChild(this.frostRing);
+    this.lighting = new Lighting(this.layers, this.layers.night, this.night);
+    this.shadows = new Shadows(this.app.renderer, this.tex);
+    this.layers.shadows.addChild(this.shadows.view);
+    this.layers.fx.addChild(this.life.view);
     this.input = new Input(this, this.app.canvas);
     this.app.ticker.add(() => this.frame());
   }
@@ -282,6 +292,7 @@ export class GameRenderer {
       }
     }
     for (const c of m.changedCells) this.prevRock[c] = m.rock[c];
+    this.shadows.note(m, m.changedEnts, m.removedEnts, m.changedCells.size > 0);
     if (m.changedCells.size) this.drawTerrainCells(m.changedCells);
     if (m.zonesChanged || this.overlayFor !== (store.me?.faction ?? 0)) {
       this.drawOverlay(null);
@@ -351,8 +362,8 @@ export class GameRenderer {
     this.particles.update(dt);
     this.tweens.update(now);
     this.drawUi();
-    this.drawNight(tick);
     this.drawWeather(tick, dt);
+    this.drawLight(tick, now, dt);
   }
 
   // ---------------------------------------------------------------- animation
@@ -380,7 +391,7 @@ export class GameRenderer {
       sy = 1 - b;
       // No "z" over a sleeper you can't see: it would give away who's in a dark room.
       if (e.asleep && !e.downed && v.root.visible && now >= (v.nextZ ?? 0)) {
-        this.particles.zed(x + 6, y - TILE * 0.4);
+        this.particles.zed(x + 5, y - 3);
         v.nextZ = now + 1300 + Math.random() * 500;
       }
     } else if (moved > 0.02) {
@@ -1635,6 +1646,7 @@ export class GameRenderer {
 
   private drawWeather(tick: number, dt: number): void {
     let { kind, wind } = precipFor(tick);
+    this.precip = kind;
     // Looking out over frozen ground: it's always snowing out there.
     const m = store.mirror;
     const c = this.screenToCell(this.app.screen.width / 2, this.app.screen.height / 2);
@@ -1647,110 +1659,28 @@ export class GameRenderer {
     this.weather.update(dt, kind, this.app.screen.width, this.app.screen.height, wind);
   }
 
-  /** Darkness at this tick: 0 at midday, 1 at deep night (smooth through dusk and dawn), or held dark by an eclipse. */
-  private darkness(tick: number, active: Set<string>): number {
-    const hour = (tick % TICKS_PER_DAY) / TICKS_PER_HOUR;
-    const dark = hour < 5 || hour > 21 ? 1 : hour < 7 ? (7 - hour) / 2 : hour > 19 ? (hour - 19) / 2 : 0;
-    const forcedDark = active.has('eclipse') || active.has('long_night') || active.has('ash_fall');
-    return Math.max(forcedDark ? 0.8 : 0, dark);
-  }
-
-  /**
-   * Night: a blue shade over the ground and buildings (pawns, labels and markers stay above it, so
-   * people stay readable), with soft pools of light around fires, heaters and your colonists.
-   */
-  private drawNight(tick: number): void {
+  /** Time of day: colour grade and night light, then sun shadows and ambient life that follow it. */
+  private drawLight(tick: number, now: number, dt: number): void {
     const m = store.mirror;
-    const active = new Set<string>();
-    for (const c of m.conditions) active.add(c.key);
-    const dark = this.darkness(tick, active);
-    const shade = this.nightSprite;
-    if (dark > 0.01) {
-      // The light map follows the fog cadence (a few times a second), not every frame.
-      if (this.lightVersion !== fog.version || !shade) this.drawLights();
-      this.nightSprite!.visible = true;
-      this.nightSprite!.alpha = dark * NIGHT_ALPHA;
-    } else if (shade) shade.visible = false;
-    // People and markers take a slight moonlit cast without losing contrast.
-    const k = 1 - 0.22 * dark;
-    const tint = (Math.round(255 * k) << 16) | (Math.round(255 * (k + 0.04 * dark)) << 8) | 255;
-    if (this.layers.pawns.tint !== tint) this.layers.pawns.tint = tint;
-
-    // Weather tints, over the whole screen.
-    const g = this.night;
-    const W = this.app.screen.width;
-    const H = this.app.screen.height;
-    g.clear();
-    const tintAll = (color: number, alpha: number) => alpha > 0.01 && g.rect(0, 0, W, H).fill({ color, alpha });
-    if (active.has('fog')) tintAll(0xc8d0d8, 0.28);
-    if (active.has('blizzard')) tintAll(0xe8f0ff, 0.25);
-    if (active.has('ash_fall')) tintAll(0x3a3634, 0.3);
-    if (active.has('spring_rains') || active.has('thunderstorm')) tintAll(0x203048, 0.15);
-    if (active.has('blood_moon')) tintAll(0x900a0a, 0.08 + 0.2 * dark);
-    if (active.has('aurora')) tintAll(0x20c080, 0.03 + 0.12 * dark);
-    if (active.has('heat_wave') || active.has('drought')) tintAll(0xffa040, 0.07);
-    if (active.has('false_spring') || active.has('warm_spell')) tintAll(0xfff0a0, 0.06);
-    if (active.has('cold_wind') || active.has('cold_snap') || active.has('early_frost')) tintAll(0xa8d8ff, 0.1);
-  }
-
-  private nightMap: MapBitmap | null = null;
-  private nightSprite: Sprite | null = null;
-  private lightLevel = new Float32Array(0);
-  private lightVersion = -1;
-
-  /** Bake the night shade at one pixel per cell: opaque in the dark, clear where something gives light. */
-  private drawLights(): void {
-    const m = store.mirror;
-    this.lightVersion = fog.version;
-    const n = m.w * m.h;
-    if (!this.nightMap || this.nightMap.width !== m.w || this.nightMap.height !== m.h) {
-      this.nightMap?.destroy();
-      // Linear filtering turns the per-cell map into soft pools.
-      this.nightMap = new MapBitmap(m.w, m.h, TILE, { linear: true });
-      this.nightSprite = this.nightMap.sprite;
-      this.layers.night.addChild(this.nightSprite);
-    }
-    if (this.lightLevel.length !== n) this.lightLevel = new Float32Array(n);
-    const light = this.lightLevel;
-    light.fill(0);
-    const stamp = (x0: number, y0: number, r: number, strength: number) => {
-      const ri = Math.ceil(r);
-      for (let y = Math.max(0, y0 - ri); y <= Math.min(m.h - 1, y0 + ri); y++) {
-        for (let x = Math.max(0, x0 - ri); x <= Math.min(m.w - 1, x0 + ri); x++) {
-          const d2 = ((x - x0) ** 2 + (y - y0) ** 2) / (r * r);
-          if (d2 >= 1) continue;
-          const l = strength * (1 - d2);
-          const i = y * m.w + x;
-          if (l > light[i]) light[i] = l;
-        }
-      }
-    };
-    const me = store.me?.faction;
-    for (const e of m.entities.values()) {
-      if (e.kind === 'building') {
-        const d = BUILDINGS[e.def];
-        if (d?.radiant) stamp(e.x, e.y, d.radiant[1] + 4, 1);
-        else if (d?.heat && d.heat > 0) stamp(e.x, e.y, 4.5, 0.85);
-      } else if (e.kind === 'pawn' && e.faction === me && !e.species && !e.downed) {
-        // Your people carry a little light (and you can always find them).
-        const p = this.views.get(e.id)?.root;
-        stamp(p ? Math.round(p.x / TILE - 0.5) : e.x, p ? Math.round(p.y / TILE - 0.5) : e.y, 3.5, 0.6);
-      }
-    }
-    for (const f of m.fireCells) stamp(f % m.w, (f / m.w) | 0, 4 + m.fire[f], 1);
-    const d = this.nightMap.data;
-    const r = (NIGHT_COLOR >> 16) & 255;
-    const g = (NIGHT_COLOR >> 8) & 255;
-    const b = NIGHT_COLOR & 255;
-    for (let i = 0; i < n; i++) {
-      const o = i * 4;
-      const a = 1 - light[i];
-      d[o] = r * a;
-      d[o + 1] = g * a;
-      d[o + 2] = b * a;
-      d[o + 3] = 255 * a;
-    }
-    this.nightMap.update();
+    this.lighting.update(
+      {
+        tick,
+        mirror: m,
+        precip: this.precip,
+        version: fog.version,
+        faction: store.me?.faction,
+        pawnCell: (id) => {
+          const p = this.views.get(id)?.root;
+          return p ? { x: Math.round(p.x / TILE - 0.5), y: Math.round(p.y / TILE - 0.5) } : null;
+        },
+      },
+      this.app.screen.width,
+      this.app.screen.height,
+    );
+    this.shadows.update(m, this.lighting.sun, now, this.pawnIds, this.views);
+    const a = this.screenToWorld(0, 0);
+    const b = this.screenToWorld(this.app.screen.width, this.app.screen.height);
+    this.life.update(dt, now, { tick, mirror: m, sun: this.lighting.sun, dark: this.lighting.dark, precip: this.precip, x0: a.x * TILE, y0: a.y * TILE, x1: b.x * TILE, y1: b.y * TILE });
   }
 }
 
