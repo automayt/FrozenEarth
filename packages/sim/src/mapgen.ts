@@ -114,7 +114,7 @@ export function generateMap(w: World): void {
         }
       }
       if (near > 2) continue;
-      if (scree.fbm(x / 5, y / 5, 2) > (near === 1 ? 0.4 : 0.56)) m.terrain[i] = T.gravel;
+      if (scree.fbm(x / 5, y / 5, 2) > (near === 1 ? 0.45 : 0.6)) m.terrain[i] = T.gravel;
     }
   }
 

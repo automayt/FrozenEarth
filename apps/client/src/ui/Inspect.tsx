@@ -1,5 +1,5 @@
 import { ANIMALS, APPAREL, BUILDINGS, CONDITIONS, DOWNED_PAIN, ITEM_CATEGORIES, ITEMS, MAX_SKILL, maxHp, WEAPONS, PLANTS, RECIPES, ROCKS, SKILL_LABELS, SKILLS, SOWABLE_PLANTS, TERRAINS, TRAITS, weaponOf } from '@fe/defs';
-import { bleedRate, describeJob, dispositionOf, goodwillOf, outdoorTempAt, painOf, stageOf, TICKS_PER_HOUR, woundTotal, type Building, type Construct, type Entity, type Pawn, type Zone } from '@fe/sim';
+import { bleedRate, CAVE_TEMP, describeJob, ROOF_SHELTER, dispositionOf, goodwillOf, outdoorTempAt, painOf, stageOf, TICKS_PER_HOUR, woundTotal, type Building, type Construct, type Entity, type Pawn, type Zone } from '@fe/sim';
 import { helpers } from '../actions';
 import { command } from '../net';
 import { store, useStore } from '../store';
@@ -411,14 +411,17 @@ function CellInfo({ cell }: { cell: number }) {
   const m = store.mirror;
   const rock = m.rock[cell];
   const room = m.roomAt[cell] ? m.rooms.get(m.roomAt[cell]) : undefined;
-  const temp = room ? room.temp : outdoorTempAt(store.estTick(), m.coldOffset, m.conditions);
+  const roof = m.roof[cell] ?? 0;
+  const open = outdoorTempAt(store.estTick(), m.coldOffset, m.conditions);
+  const temp = room ? room.temp : open + (CAVE_TEMP - open) * (ROOF_SHELTER[roof] ?? 0);
   const zone = m.zoneAt[cell] ? m.zones.get(m.zoneAt[cell]) : undefined;
   const t = TERRAINS[m.terrain[cell]];
+  const where = room ? `indoors (${room.cells.length} cells)` : roof === 2 ? 'under overhead mountain' : roof === 1 ? 'under a rock roof' : 'outdoors';
   return (
     <div className="cell-info">
       <p className="muted small">
         {rock ? ROCKS[rock].label : t.label}
-        {!rock && t.fertility > 0 ? ` · fertility ${Math.round(t.fertility * 100)}%` : ''} · {temp.toFixed(1)}°C {room ? `indoors (${room.cells.length} cells)` : 'outdoors'}
+        {!rock && t.fertility > 0 ? ` · fertility ${Math.round(t.fertility * 100)}%` : ''} · {temp.toFixed(1)}°C {where}
       </p>
       {zone && <ZoneInfo z={zone} />}
     </div>
