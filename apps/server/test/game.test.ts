@@ -124,4 +124,127 @@ describe('game server', () => {
     expect(c.readyState).toBe(3);
     g.stop();
   });
+  it('survives garbage on the wire, before and after hello, and keeps serving everyone', () => {
+    const g = new GameServer({ savePath: worldPath(dir, 'garbage'), seed: 6, size: 80, log: () => {} });
+    const good = new FakeSocket();
+    g.onConnect(good as unknown as WebSocket);
+    good.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Ann' });
+    good.say({ t: 'settle' });
+    const fa = good.take('settled')[0].faction;
+    const pawn = [...g.world.kinds.pawn].map((id) => g.world.get<Pawn>(id)!).find((p) => p.faction === fa)!;
+    const evil = new FakeSocket();
+    g.onConnect(evil as unknown as WebSocket);
+    const raw = (v: unknown) => evil.emit('message', Buffer.from(encode(v as ClientMsg)), true);
+    // msgpack hands these over for {"toString":1,"valueOf":1}: String() and Number() throw on them.
+    const poison = { toString: 1, valueOf: 1 };
+    const junk: unknown[] = [null, 0, 'hello', [], [1, 2], {}, { t: 5 }, { t: poison }];
+    for (const j of junk) expect(() => raw(j), JSON.stringify(j)).not.toThrow();
+    expect(() => evil.emit('message', Buffer.from([0xc1, 0xff, 0x00]), true)).not.toThrow();
+    // A hello with a poisoned name is turned away, not a crash.
+    const nameless = new FakeSocket();
+    g.onConnect(nameless as unknown as WebSocket);
+    expect(() => nameless.emit('message', Buffer.from(encode({ t: 'hello', v: PROTOCOL_VERSION, name: poison } as unknown as ClientMsg)), true)).not.toThrow();
+    expect(nameless.take('error')[0]).toMatchObject({ fatal: true });
+    raw({ t: 'hello', v: PROTOCOL_VERSION, name: 'Eve' });
+    expect(evil.take('welcome')).toHaveLength(1);
+    const after: unknown[] = [
+      null,
+      { t: 'settle', x: NaN, y: NaN },
+      { t: 'settle', x: poison, y: poison },
+      { t: 'chat', text: poison },
+      { t: 'speed', speed: poison },
+      { t: 'ping', at: poison },
+      { t: 'cmd', cmd: null },
+      { t: 'cmd', cmd: { c: poison } },
+      { t: 'cmd', cmd: { c: 'draft', pawns: [poison], on: true } },
+      { t: 'cmd', cmd: { c: 'setPriority', pawn: pawn.id, work: 'haul', prio: poison } },
+      { t: 'cmd', cmd: { c: 'build', def: '__proto__', hollow: false, x0: 1, y0: 1, x1: 3, y1: 3 } },
+      { t: 'admin', action: 'event', key: poison },
+    ];
+    for (const j of after) expect(() => raw(j), JSON.stringify(j)).not.toThrow();
+    expect(() => pump(g)).not.toThrow();
+    expect(g.world.commandErrors).toBe(0);
+    // Eve never got a colony at NaN, and Ann's colonist is untouched.
+    expect([...g.world.factions.values()].every((f) => Number.isFinite(f.home.x) && Number.isFinite(f.home.y))).toBe(true);
+    expect(pawn.drafted).toBe(false);
+    // The server is still up for everyone: chat and commands still work.
+    good.say({ t: 'chat', text: 'still here' });
+    expect(evil.take('chat').some((m) => m.text === 'still here')).toBe(true);
+    good.say({ t: 'cmd', cmd: { c: 'draft', pawns: [pawn.id], on: true } });
+    pump(g);
+    expect(pawn.drafted).toBe(true);
+    g.stop();
+  });
+  it('a player who leaves, or a server that restarts, lets go of anyone being steered', () => {
+    const path = worldPath(dir, 'steer');
+    const g = new GameServer({ savePath: path, seed: 7, size: 80, log: () => {} });
+    const ann = new FakeSocket();
+    const bob = new FakeSocket();
+    g.onConnect(ann as unknown as WebSocket);
+    g.onConnect(bob as unknown as WebSocket);
+    ann.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Ann' });
+    bob.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Bob' });
+    ann.say({ t: 'settle' });
+    const fa = ann.take('settled')[0].faction;
+    const mine = () => [...g.world.kinds.pawn].map((id) => g.world.get<Pawn>(id)!).filter((p) => p.faction === fa);
+    const [walker, other] = mine();
+    ann.say({ t: 'cmd', cmd: { c: 'possess', pawn: walker.id, on: true } });
+    ann.say({ t: 'cmd', cmd: { c: 'steer', pawn: walker.id, dx: 1, dy: 0 } });
+    pump(g);
+    g.world.applyCommands();
+    expect(walker.possessed).toBe(true);
+    expect(walker.steer).toEqual([1, 0]);
+    // Ann closes the tab; Bob plays on. Her colonist must not keep walking east, drafted and starving.
+    ann.close();
+    pump(g);
+    g.world.applyCommands();
+    expect(walker.possessed).toBe(false);
+    expect(walker.steer).toBeUndefined();
+    expect(walker.drafted).toBe(false);
+
+    // Steering again, then the server dies and comes back: nobody is online to be steering.
+    const again = new FakeSocket();
+    g.onConnect(again as unknown as WebSocket);
+    again.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Ann2' });
+    g.world.enqueue(fa, { c: 'possess', pawn: other.id, on: true });
+    g.world.applyCommands();
+    expect(other.possessed).toBe(true);
+    g.save();
+    g.stop();
+    const h = new GameServer({ savePath: path, log: () => {} });
+    h.world.applyCommands();
+    expect(h.world.get<Pawn>(other.id)!.possessed).toBe(false);
+    h.stop();
+  });
+  it('throttles chat and speed floods, and turns away new players once the world is full', () => {
+    const g = new GameServer({ savePath: worldPath(dir, 'flood'), seed: 8, size: 80, maxPlayers: 2, log: () => {} });
+    const ann = new FakeSocket();
+    const bob = new FakeSocket();
+    g.onConnect(ann as unknown as WebSocket);
+    g.onConnect(bob as unknown as WebSocket);
+    ann.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Ann' });
+    bob.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Bob' });
+    bob.inbox = [];
+    // Every chat goes to everyone, and every speed change re-sends the player list to everyone.
+    for (let i = 0; i < 500; i++) ann.say({ t: 'chat', text: `spam ${i}` });
+    for (let i = 0; i < 500; i++) ann.say({ t: 'speed', speed: i % 3 });
+    const got = bob.inbox.filter((m) => m.t === 'chat' || m.t === 'players').length;
+    expect(got).toBeLessThanOrEqual(45);
+    expect(got).toBeGreaterThan(0);
+    // Pings are answered regardless.
+    for (let i = 0; i < 100; i++) ann.say({ t: 'ping', at: i });
+    expect(ann.take('pong')).toHaveLength(100);
+    // A third name on a two-player world is refused; a returning player still gets in.
+    const cy = new FakeSocket();
+    g.onConnect(cy as unknown as WebSocket);
+    cy.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Cy' });
+    expect(cy.take('error')[0]).toMatchObject({ fatal: true, msg: 'This server is full.' });
+    const token = ann.take('welcome')[0].token;
+    ann.close();
+    const back = new FakeSocket();
+    g.onConnect(back as unknown as WebSocket);
+    back.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Ann', token });
+    expect(back.take('welcome')).toHaveLength(1);
+    g.stop();
+  });
 });

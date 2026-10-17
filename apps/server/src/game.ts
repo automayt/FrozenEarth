@@ -15,6 +15,7 @@ import {
   TICKS_PER_SECOND,
   type Command,
   type Delta,
+  type Pawn,
   type World,
 } from '@fe/sim';
 import { EVENTS } from '@fe/defs';
@@ -33,6 +34,8 @@ const MAX_TICKS_PER_LOOP = 60;
 const MAX_BUFFERED = 16 * 1024 * 1024;
 const CMD_RATE = 40;
 const STATS_MS = 30_000;
+/** Distinct players a world will register (each new name gets a colony that is kept forever). */
+const MAX_PLAYERS = 64;
 
 interface Player extends StoredPlayer {
   speed: number;
@@ -51,6 +54,8 @@ export interface GameOptions {
   /** New worlds only: days before the frost line moves, and its speed multiplier. */
   frostStart?: number;
   frostPace?: number;
+  /** Most distinct players this world registers. Default MAX_PLAYERS. */
+  maxPlayers?: number;
   log?: (msg: string) => void;
 }
 
@@ -120,6 +125,23 @@ export class GameServer {
       this.save();
     }
     this.lastDay = this.world.day();
+    // Nobody is online after a restart, so nobody is steering anyone.
+    for (const f of this.world.factions.values()) if (f.isPlayer) this.releaseControl(f.id);
+  }
+
+  /**
+   * A player who goes away lets go of any colonist they were steering. Otherwise it keeps walking
+   * the last held direction (into the frost, off to the enemy) and, drafted, never eats or sleeps.
+   * Done as commands, so it lands in order with everything else.
+   */
+  private releaseControl(faction: number): void {
+    if (!faction) return;
+    for (const id of this.world.kinds.pawn) {
+      const p = this.world.get<Pawn>(id)!;
+      if (p.faction !== faction || !p.possessed) continue;
+      this.world.enqueue(faction, { c: 'possess', pawn: p.id, on: false });
+      this.world.enqueue(faction, { c: 'draft', pawns: [p.id], on: false });
+    }
   }
 
   start(): void {
@@ -226,16 +248,24 @@ export class GameServer {
       } catch {
         return;
       }
-      if (!player) {
-        if (msg.t !== 'hello') return;
-        player = this.handleHello(ws, msg);
-        return;
+      // Anything can come off the wire: nil, a number, an array, fields of the wrong type.
+      if (!msg || typeof msg !== 'object' || typeof msg.t !== 'string') return;
+      // One bad message must never bring the server down for everyone else.
+      try {
+        if (!player) {
+          if (msg.t !== 'hello') return;
+          player = this.handleHello(ws, msg);
+          return;
+        }
+        this.handle(player, msg);
+      } catch (e) {
+        this.log(`Dropped a bad ${msg.t} message from ${player?.name ?? 'a new connection'}: ${e instanceof Error ? e.message : e}`);
       }
-      this.handle(player, msg);
     });
     ws.on('close', () => {
       if (player && player.ws === ws) {
         player.ws = null;
+        this.releaseControl(player.faction);
         this.system(`${player.name} left.`);
         this.broadcastPlayers();
         if (this.connected().length === 0) this.save();
@@ -253,8 +283,9 @@ export class GameServer {
     let p = msg.token ? [...this.players.values()].find((x) => x.token === msg.token) : undefined;
     if (!p) {
       if (this.opts.password && msg.password !== this.opts.password) return fail('Wrong server password.');
-      const name = String(msg.name ?? '').replace(/[^\p{L}\p{N} _'-]/gu, '').trim().slice(0, 20);
+      const name = (typeof msg.name === 'string' ? msg.name : '').replace(/[^\p{L}\p{N} _'-]/gu, '').trim().slice(0, 20);
       if (!name) return fail('Pick a name.');
+      if (this.players.size >= (this.opts.maxPlayers ?? MAX_PLAYERS)) return fail('This server is full.');
       if ([...this.players.values()].some((x) => x.name.toLowerCase() === name.toLowerCase())) return fail('That name is taken on this server.');
       // New players pick where to settle before their colony exists.
       p = {
@@ -293,12 +324,19 @@ export class GameServer {
   }
 
   private handle(p: Player, msg: ClientMsg): void {
+    // Everything but pings draws on the same allowance as commands: chat and speed changes are
+    // broadcast to every player, so an unthrottled client could flood them all.
+    if (msg.t !== 'ping') {
+      if (p.cmdTokens < 1) return;
+      p.cmdTokens--;
+    }
     switch (msg.t) {
       case 'settle': {
         if (p.faction) return;
         let at: { x: number; y: number } | undefined;
         if (msg.x !== undefined && msg.y !== undefined) {
-          at = { x: Math.round(Number(msg.x)), y: Math.round(Number(msg.y)) };
+          if (!Number.isFinite(msg.x) || !Number.isFinite(msg.y)) return;
+          at = { x: Math.round(msg.x), y: Math.round(msg.y) };
           const problem = siteProblem(this.world, at.x, at.y);
           if (problem) {
             this.send(p.ws!, { t: 'error', msg: problem, fatal: false });
@@ -315,12 +353,11 @@ export class GameServer {
         return;
       }
       case 'cmd':
-        if (p.cmdTokens < 1 || !msg.cmd || typeof (msg.cmd as Command).c !== 'string') return;
-        p.cmdTokens--;
+        if (!msg.cmd || typeof (msg.cmd as Command).c !== 'string') return;
         this.world.enqueue(p.faction, msg.cmd);
         return;
       case 'speed': {
-        const s = Math.max(0, Math.min(MAX_SPEED, Math.round(Number(msg.speed) || 0)));
+        const s = Math.max(0, Math.min(MAX_SPEED, Math.round(typeof msg.speed === 'number' ? msg.speed : 0) || 0));
         if (s === 0 && this.connected().length > 1 && p.pauseBudget <= 0) {
           this.send(p.ws!, { t: 'error', msg: 'You have no pause time left today.', fatal: false });
           return;
@@ -331,21 +368,21 @@ export class GameServer {
         return;
       }
       case 'chat': {
-        const text = String(msg.text ?? '').slice(0, 300).trim();
+        const text = (typeof msg.text === 'string' ? msg.text : '').slice(0, 300).trim();
         if (!text) return;
         const color = this.world.factions.get(p.faction)?.color ?? 0xffffff;
         this.broadcast({ t: 'chat', from: p.name, color, text, at: Date.now() });
         return;
       }
       case 'ping':
-        this.send(p.ws!, { t: 'pong', at: msg.at });
+        this.send(p.ws!, { t: 'pong', at: typeof msg.at === 'number' ? msg.at : 0 });
         return;
       case 'admin':
         if (!p.admin) return;
         if (msg.action === 'save') {
           this.save();
           this.system('World saved.');
-        } else if (msg.action === 'event' && msg.key) {
+        } else if (msg.action === 'event' && typeof msg.key === 'string' && msg.key) {
           const ok = fireEvent(this.world, String(msg.key), p.faction);
           if (ok) this.system(`The host triggered an event: ${EVENTS[String(msg.key)]?.label ?? msg.key}.`);
           else this.send(p.ws!, { t: 'error', msg: 'That event had nothing to act on right now.', fatal: false });

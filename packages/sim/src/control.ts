@@ -2,7 +2,7 @@ import { ITEMS } from '@fe/defs';
 import { theftTick, type JobResult } from './jobs';
 import { makePathState } from './pathfinding';
 import { endJob, pawnSpeed, setDrafted } from './pawns';
-import { canStealFrom, NOISE, makeNoise, theftPickupNoise } from './stealth';
+import { canStealFrom, NOISE, makeNoise, noticeTheft, theftPickupNoise } from './stealth';
 import type { Item, Job, Pawn } from './types';
 import { NEIGHBORS8, rk, type World } from './world';
 
@@ -13,8 +13,8 @@ import { NEIGHBORS8, rk, type World } from './world';
  */
 
 export function setPossessed(w: World, p: Pawn, on: boolean): void {
-  if (p.downed || p.prisoner) return;
   if (on) {
+    if (p.downed || p.prisoner) return;
     if (!p.drafted) setDrafted(w, p, true);
     endJob(w, p);
     p.possessed = true;
@@ -23,7 +23,12 @@ export function setPossessed(w: World, p: Pawn, on: boolean): void {
     p.possessed = false;
     p.steer = undefined;
     p.sneaking = false;
-    if (p.job?.type === 'control') endJob(w, p);
+    if (p.job?.type === 'control') {
+      // Let go holding stolen goods: they're dropped here, and the owner will miss them.
+      const { stolen, stolenAt } = p.job;
+      if (stolen && p.carrying && w.zoneAt(w.cellOf(p))?.faction !== stolen) noticeTheft(w, stolen, p.carrying.def, p.carrying.count, stolenAt ?? w.cellOf(p));
+      endJob(w, p);
+    }
   }
   w.markDirty(p);
 }
@@ -54,13 +59,22 @@ export function controlTick(w: World, p: Pawn, j: Extract<Job, { type: 'control'
 export function interact(w: World, p: Pawn): void {
   const m = w.map;
   const here = w.cellOf(p);
-  const j = p.job?.type === 'control' ? p.job : null;
+  // Only while actually steering: a steered colonist sent off on an order (steal, move, equip)
+  // is carrying for that job, and taking its load away mid-haul would leave the job holding nothing.
+  if (p.job?.type !== 'control') return;
+  const j = p.job;
   if (p.carrying) {
     const c = p.carrying;
     const placed = w.dropInto(here, c.def, c.count, c.rot);
     if (placed < c.count) w.placeItemNear(c.def, c.count - placed, here, c.rot);
     p.carrying = null;
     w.markDirty(p);
+    // Put down, the theft is over: back in their own stockpile it was never missed, anywhere else they'll notice.
+    if (j.stolen) {
+      if (w.zoneAt(here)?.faction !== j.stolen) noticeTheft(w, j.stolen, c.def, c.count, j.stolenAt ?? here);
+      j.stolen = undefined;
+      j.stolenAt = undefined;
+    }
     makeNoise(w, p, NOISE.drop * (p.sneaking ? 0.5 : 1), (o) => o.faction !== p.faction);
     return;
   }
@@ -77,7 +91,7 @@ export function interact(w: World, p: Pawn): void {
     const got = w.takeFromItem(it, Math.min(it.count, ITEMS[def].stackLimit));
     p.carrying = { def, count: got, rot };
     w.markDirty(p);
-    if (owner && owner !== p.faction && j) {
+    if (owner && owner !== p.faction) {
       j.stolen = owner;
       j.stolenAt = c;
       theftPickupNoise(w, p, owner);

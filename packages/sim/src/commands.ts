@@ -1,4 +1,4 @@
-import { BUILDINGS, ITEM_CATEGORIES, PLANTS, RECIPES, TERRAINS, WEAPONS, WORK_TYPES } from '@fe/defs';
+import { BUILDINGS, ITEM_CATEGORIES, ITEMS, PLANTS, RECIPES, TERRAINS, WEAPONS, WORK_TYPES } from '@fe/defs';
 import { MAX_COMMAND_AREA } from './constants';
 import type { Building, Command, Construct, EntityId, Item, Pawn, Plant, Rect, Zone } from './types';
 import { canUseItem, endJob, setDrafted } from './pawns';
@@ -15,9 +15,56 @@ import { canStealFrom } from './stealth';
 import { interact, setPossessed } from './control';
 import { markHunt } from './wildlife';
 
+// ---------------------------------------------------------------- wire validation
+
+/** Fields that must be plain finite numbers when present. */
+const NUM_FIELDS = ['x', 'y', 'x0', 'y0', 'x1', 'y1', 'pawn', 'prio', 'zone', 'bench', 'target', 'bill', 'choice', 'to', 'settlement', 'request', 'item', 'dx', 'dy'];
+/** Fields that must be strings when present. */
+const STR_FIELDS = ['kind', 'def', 'plant', 'work', 'mode', 'recipe', 'option', 'note'];
+const DESIGNATE_KINDS = ['mine', 'chop', 'cut', 'harvest', 'steal', 'cancel'];
+const ZONE_KINDS = ['stockpile', 'grow'];
+
+const has = (table: object, key: unknown): boolean => typeof key === 'string' && Object.hasOwn(table, key);
+
+function tradeLines(v: unknown): boolean {
+  return Array.isArray(v) && v.length <= 8 && v.every((l) => Array.isArray(l) && has(ITEMS, l[0]) && typeof l[1] === 'number' && Number.isFinite(l[1]));
+}
+
+/**
+ * Commands arrive straight off the wire, so anything can be in them. True only when every field
+ * has the type the command needs: numbers that are finite, names that are real keys of their
+ * table (not "__proto__" or "constructor"), id lists of numbers. Everything else is dropped
+ * before it reaches the game rules, which can then use the fields as typed.
+ */
+export function wellFormed(cmd: unknown): cmd is Command {
+  if (!cmd || typeof cmd !== 'object' || Array.isArray(cmd)) return false;
+  const o = cmd as Record<string, unknown>;
+  if (typeof o.c !== 'string') return false;
+  for (const k of NUM_FIELDS) if (o[k] != null && (typeof o[k] !== 'number' || !Number.isFinite(o[k]))) return false;
+  for (const k of STR_FIELDS) if (o[k] != null && typeof o[k] !== 'string') return false;
+  if (o.pawns != null && !(Array.isArray(o.pawns) && o.pawns.every((id) => typeof id === 'number'))) return false;
+  if (o.allow != null && !(Array.isArray(o.allow) && o.allow.every((a) => typeof a === 'string'))) return false;
+  for (const k of ['give', 'want']) if (o[k] != null && !tradeLines(o[k])) return false;
+  switch (o.c) {
+    case 'designate':
+      return DESIGNATE_KINDS.includes(o.kind as string);
+    case 'build':
+      return has(BUILDINGS, o.def);
+    case 'zone':
+      return ZONE_KINDS.includes(o.kind as string);
+    case 'addBill':
+      return has(RECIPES, o.recipe);
+    case 'setPriority':
+      return has(WORK_TYPE_SET, o.work) && typeof o.prio === 'number';
+  }
+  return true;
+}
+
+const WORK_TYPE_SET = Object.fromEntries(WORK_TYPES.map((k) => [k, true]));
+
 /** Validate and apply one player command. Invalid commands are silently ignored. */
 export function applyCommand(w: World, faction: number, cmd: Command): void {
-  if (!w.factions.has(faction)) return;
+  if (!w.factions.has(faction) || !wellFormed(cmd)) return;
   switch (cmd.c) {
     case 'designate':
       return designate(w, faction, cmd.kind, cmd);
@@ -119,8 +166,14 @@ export function applyCommand(w: World, faction: number, cmd: Command): void {
       return;
     }
     case 'possess': {
-      const p = ownPawns(w, faction, [cmd.pawn])[0];
-      if (p) setPossessed(w, p, !!cmd.on);
+      if (cmd.on) {
+        const p = ownPawns(w, faction, [cmd.pawn])[0];
+        if (p) setPossessed(w, p, true);
+        return;
+      }
+      // Letting go always works, even of a colonist who has since been knocked down.
+      const p = w.get<Pawn>(cmd.pawn);
+      if (p && p.kind === 'pawn' && p.faction === faction && p.possessed) setPossessed(w, p, false);
       return;
     }
     case 'steer': {
@@ -301,7 +354,9 @@ function designate(w: World, faction: number, kind: string, r: Rect): void {
   const m = w.map;
   for (const c of rectCells(w, r)) {
     const owned = m.desig[c] === 0 || m.desigFaction[c] === faction;
-    const plant = m.plantAt[c] ? w.get<Plant>(m.plantAt[c]) : undefined;
+    // Plants in another colony's or settlement's field or stockpile are theirs: hands off.
+    const zone = w.zoneAt(c);
+    const plant = m.plantAt[c] && (!zone || zone.faction === faction) ? w.get<Plant>(m.plantAt[c]) : undefined;
     switch (kind) {
       case 'mine':
         if (m.rock[c] && owned) w.setDesig(c, DESIG.mine, faction);
@@ -317,8 +372,7 @@ function designate(w: World, faction: number, kind: string, r: Rect): void {
         break;
       case 'steal': {
         // Only goods in a living settlement's or another colony's stockpile.
-        const z = w.zoneAt(c);
-        if (m.itemAt[c] && z && z.kind === 'stockpile' && canStealFrom(w, faction, z.faction) && owned) w.setDesig(c, DESIG.steal, faction);
+        if (m.itemAt[c] && zone && zone.kind === 'stockpile' && canStealFrom(w, faction, zone.faction) && owned) w.setDesig(c, DESIG.steal, faction);
         break;
       }
       case 'cancel': {
@@ -336,7 +390,7 @@ function designate(w: World, faction: number, kind: string, r: Rect): void {
 
 export function canPlace(w: World, faction: number, def: string, c: number): boolean {
   const m = w.map;
-  const d = BUILDINGS[def];
+  const d = Object.hasOwn(BUILDINGS, def) ? BUILDINGS[def] : undefined;
   if (!d || d.special) return false;
   if (!TERRAINS[m.terrain[c]].buildable || m.rock[c] || m.constructAt[c]) return false;
   const z = w.zoneAt(c);
@@ -346,7 +400,7 @@ export function canPlace(w: World, faction: number, def: string, c: number): boo
 }
 
 function build(w: World, faction: number, def: string, hollow: boolean, r: Rect): void {
-  if (!BUILDINGS[def] || BUILDINGS[def].special) return;
+  if (!Object.hasOwn(BUILDINGS, def) || BUILDINGS[def].special) return;
   const cells = rectCells(w, r, hollow && !!BUILDINGS[def].wall);
   for (const c of cells) if (canPlace(w, faction, def, c)) w.spawnConstruct(def, c, faction);
 }

@@ -441,9 +441,11 @@ function haul(w: World, p: Pawn, j: J<'haul'>): JobResult {
     return 'continue';
   }
   if (theftTick(w, p, j) === 'dropped') return 'done';
+  // Nothing in hand (it was taken off them somehow): nothing to deliver.
+  if (!p.carrying) return 'fail';
   const r = goTo(w, p, j.dest, false);
   if (r !== 'arrived') return r === 'fail' ? 'fail' : 'continue';
-  const c = p.carrying!;
+  const c = p.carrying;
   if (j.stolen) noticeTheft(w, j.stolen, c.def, c.count, j.stolenAt ?? j.dest);
   const placed = w.dropInto(j.dest, c.def, c.count, c.rot);
   if (placed < c.count) w.placeItemNear(c.def, c.count - placed, j.dest, c.rot);
@@ -464,9 +466,10 @@ function deliver(w: World, p: Pawn, j: J<'deliver'>): JobResult {
     j.stage = 1;
     return 'continue';
   }
+  if (!p.carrying) return 'fail';
   const r = goTo(w, p, w.cellOf(con), true);
   if (r !== 'arrived') return r === 'fail' ? 'fail' : 'continue';
-  const c = p.carrying!;
+  const c = p.carrying;
   const need = (BUILDINGS[con.def].cost[c.def] ?? 0) - (con.delivered[c.def] ?? 0);
   const put = Math.max(0, Math.min(need, c.count));
   con.delivered[c.def] = (con.delivered[c.def] ?? 0) + put;

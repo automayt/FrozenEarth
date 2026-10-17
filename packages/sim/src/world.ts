@@ -100,6 +100,8 @@ export class World {
   story: StoryState = newStoryState();
   dirty = new Dirty();
   private queue: { faction: number; cmd: Command }[] = [];
+  /** Commands that threw while applying (a bug, logged). Not saved. */
+  commandErrors = 0;
 
   constructor(seed: number, w: number, h: number) {
     this.seed = seed;
@@ -119,7 +121,15 @@ export class World {
     this.queue = [];
     for (const { faction, cmd } of q) {
       this.replyTo = faction;
-      applyCommand(this, faction, cmd);
+      // One player's malformed command must never take the server down for everyone. Commands
+      // are validated before they act; this is the backstop, and it is deterministic (the same
+      // command fails the same way on replay).
+      try {
+        applyCommand(this, faction, cmd);
+      } catch (e) {
+        this.commandErrors++;
+        if (this.commandErrors <= 5) console.error(`Command ${JSON.stringify(cmd)?.slice(0, 200)} from faction ${faction} failed:`, e);
+      }
     }
     this.replyTo = 0;
   }
@@ -133,6 +143,7 @@ export class World {
     rareTick(this);
     fireTick(this);
     tickStoryteller(this);
+    if (this.tick % C.TICKS_PER_HOUR === 0) this.pruneUnreachable();
     this.tick++;
   }
 
@@ -648,6 +659,14 @@ export class World {
 
   markUnreachable(faction: number, cell: number): void {
     this.unreachable.set(unreachableKey(faction, cell), this.tick + 2500);
+  }
+
+  /**
+   * Forget pathing failures that have run out. isUnreachable drops one when it is asked about
+   * again, but most never are, and they would pile up (and be saved) for the rest of the game.
+   */
+  pruneUnreachable(): void {
+    for (const [k, until] of this.unreachable) if (until <= this.tick) this.unreachable.delete(k);
   }
 
   isUnreachable(faction: number, cell: number): boolean {

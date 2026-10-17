@@ -184,6 +184,11 @@ export function updateDowned(w: World, p: Pawn): void {
   const cell = w.cellOf(p);
   if (down) {
     p.drafted = false;
+    // Nobody steers a body on the ground: let go, so they don't get up still walking the old direction.
+    if (p.possessed) {
+      p.possessed = false;
+      p.steer = undefined;
+    }
     // Collapsing in bed leaves them there, so nobody has to carry them back to it.
     const rest = inBed(w, p) ? p.job : null;
     endJob(w, p);

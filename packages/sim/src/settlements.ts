@@ -427,6 +427,7 @@ export function settlementsTick(w: World): void {
     if (!people.length) {
       s.state = 'fallen';
       w.dirty.factions.add(f.id);
+      voidRequests(w, f);
       abandon(w, f, 1);
       notifyAll(w, f, `${f.name} has fallen. Whatever they had is there for the taking.`, 'neutral');
       continue;
@@ -473,6 +474,7 @@ function leave(w: World, f: Faction): void {
     // Nowhere left to go: they scatter into the wilds.
     s.state = 'fallen';
     w.dirty.factions.add(f.id);
+    voidRequests(w, f);
     for (const p of residentsOf(w, f.id)) w.despawn(p.id);
     abandon(w, f, 0.5);
     notifyAll(w, f, `The frost has reached ${f.name}. With nowhere left to go, its people scatter, leaving some stores behind.`, 'neutral');
@@ -553,7 +555,7 @@ function cleanLines(v: unknown): TradeLine[] | null {
   if (!Array.isArray(v) || v.length > 6) return null;
   const out: TradeLine[] = [];
   for (const l of v) {
-    if (!Array.isArray(l) || typeof l[0] !== 'string' || !ITEMS[l[0]]) return null;
+    if (!Array.isArray(l) || typeof l[0] !== 'string' || !Object.hasOwn(ITEMS, l[0])) return null;
     const n = Math.round(Number(l[1]));
     if (!(n >= 1 && n <= 9999)) return null;
     out.push([l[0], n]);
@@ -713,6 +715,12 @@ registerChoice('settlement_request', (w, c, option, d) => {
 function expireRequests(w: World, f: Faction): void {
   const s = f.settlement!;
   if (!s.requests?.length) return;
+  if (s.state === 'leaving') {
+    // Nobody can deliver to people on the move, so the clock stops until they settle again.
+    for (const r of s.requests) r.until += RARE_TICK * 4;
+    w.dirty.factions.add(f.id);
+    return;
+  }
   const keep: SettlementRequest[] = [];
   for (const r of s.requests) {
     if (w.tick < r.until) {
@@ -725,6 +733,20 @@ function expireRequests(w: World, f: Faction): void {
   if (keep.length !== s.requests.length) {
     s.requests = keep;
     w.dirty.factions.add(f.id);
+  }
+}
+
+/** A settlement that is gone can't be helped: promises to it lapse, with no hard feelings. */
+function voidRequests(w: World, f: Faction): void {
+  const s = f.settlement!;
+  for (const r of s.requests ?? []) w.message(r.faction, `${f.name} is gone. Your promise to bring them ${requestText(r.item, r.count)} no longer stands.`, 'neutral');
+  s.requests = [];
+  // Their letters asking for help go too: agreeing would do nothing.
+  for (const c of [...w.choices.values()]) {
+    if (c.event !== 'settlement_request' || Number(w.choiceData.get(c.id)?.settlement) !== f.id) continue;
+    w.choices.delete(c.id);
+    w.choiceData.delete(c.id);
+    w.dirty.choices = true;
   }
 }
 
