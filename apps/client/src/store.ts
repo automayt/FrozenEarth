@@ -4,7 +4,7 @@ import { TICKS_PER_SECOND, type ZoneKind } from '@fe/sim';
 
 export type Tool =
   | { kind: 'select' }
-  | { kind: 'designate'; what: 'mine' | 'chop' | 'cut' | 'harvest' | 'cancel' }
+  | { kind: 'designate'; what: 'mine' | 'chop' | 'cut' | 'harvest' | 'steal' | 'cancel' }
   | { kind: 'build'; def: string }
   | { kind: 'zone'; zone: ZoneKind; plant?: string }
   | { kind: 'unzone' }

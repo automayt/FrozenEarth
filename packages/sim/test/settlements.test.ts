@@ -16,6 +16,7 @@ import {
   siteProblem,
   START_TICK,
   TICKS_PER_DAY,
+  TICKS_PER_HOUR,
   type Building,
   type Faction,
   type Item,
@@ -62,9 +63,12 @@ describe('settlements', () => {
       // Nobody can found a colony on their doorstep.
       expect(siteProblem(w, f.home.x + 5, f.home.y)).toMatch(/Too close|open/);
     }
-    // Their people stay home and stay alive.
+    // Their people stay home and stay alive, sleep at night and get up in the morning.
     const before = all.map((f) => residents(w, f.id).length);
     run(w, 2 * TICKS_PER_DAY);
+    run(w, 6 * TICKS_PER_HOUR);
+    const people = all.flatMap((f) => residents(w, f.id));
+    expect(people.filter((p) => p.asleep).length).toBeLessThan(people.length / 4);
     all.forEach((f, k) => {
       const people = residents(w, f.id);
       expect(people.length).toBe(before[k]);
@@ -202,5 +206,83 @@ describe('settlements', () => {
     expect(s.settlement!.requests!.length).toBe(0);
     expect(s.settlement!.goodwill[player]).toBeLessThan(g);
     expect(w.dirty.msgs.some((m) => m.text.includes('never came'))).toBe(true);
+  });
+
+  describe('theft', () => {
+    /** A colony with a stockpile and a thief, next to a wary settlement, at the given hour. */
+    function heist(hour: number) {
+      const { w, s, player } = withSettlement(0);
+      w.tick = Math.floor(w.tick / TICKS_PER_DAY) * TICKS_PER_DAY + hour * TICKS_PER_HOUR;
+      const z = w.createZone(player, 'stockpile');
+      for (let x = 30; x < 40; x++) w.addZoneCell(z, w.map.idx(x, 60));
+      const thief = addPawn(w, 40, 50, player);
+      return { w, s, player, thief };
+    }
+    const mark = (w: World, player: number) => w.enqueue(player, { c: 'designate', kind: 'steal', x0: 36, y0: 37, x1: 44, y1: 43 });
+
+    it('at night, while they sleep, a thief walks in through the open gate and gets away with it', () => {
+      const { w, s, player } = heist(23);
+      runUntil(w, () => residents(w, s.id).every((p) => p.asleep), 3000);
+      const steel = stock(w, s.id, 'steel');
+      mark(w, player);
+      runUntil(w, () => stock(w, player, 'steel') > 0, 4000);
+      expect(stock(w, s.id, 'steel')).toBeLessThan(steel);
+      expect(s.settlement!.goodwill[player] ?? 0).toBe(0);
+    });
+
+    it('by day, anyone watching raises the alarm and the whole map hears of it', () => {
+      const { w, s, player } = heist(12);
+      // A settler minding the stores.
+      const guard = residents(w, s.id)[0];
+      guard.x = 40;
+      guard.y = 41;
+      guard.path = null;
+      guard.job = { type: 'hold', stage: 0, until: w.tick + 50_000 };
+      mark(w, player);
+      runUntil(w, () => (s.settlement!.goodwill[player] ?? 0) < 0, 4000);
+      expect(dispositionOf(s.settlement!, player)).toBe('hostile');
+      expect(w.dirty.msgs.some((m) => m.faction === 0 && m.text.includes('stealing'))).toBe(true);
+    });
+
+    it('a colonist sent to steal goes at once, even from their bed', () => {
+      const { w, s, player, thief } = heist(23);
+      thief.job = { type: 'sleep', stage: 1, bed: 0, cell: w.cellOf(thief), rest: false };
+      thief.asleep = true;
+      const z = w.zones.get(w.map.zoneAt[w.map.idx(37, 42)])!;
+      expect(z.faction).toBe(s.id);
+      const it = [...w.kinds.item].map((id) => w.get<Item>(id)!).find((i) => w.zoneAt(w.cellOf(i))?.faction === s.id)!;
+      w.enqueue(player, { c: 'steal', pawn: thief.id, item: it.id });
+      run(w, 2);
+      expect(thief.job?.type).toBe('haul');
+      expect(thief.asleep).toBe(false);
+    });
+
+    it("can't mark a colony's goods, only a settlement's", () => {
+      const { w, player } = heist(12);
+      w.factions.set(3, { id: 3, name: 'Other', color: 0x00ff00, home: { x: 60, y: 60 }, isPlayer: true });
+      const z = w.createZone(3, 'stockpile');
+      w.addZoneCell(z, w.map.idx(60, 60));
+      w.placeItemNear('gold', 5, w.map.idx(60, 60));
+      w.enqueue(player, { c: 'designate', kind: 'steal', x0: 60, y0: 60, x1: 60, y1: 60 });
+      run(w, 2);
+      expect(w.map.desig[w.map.idx(60, 60)]).toBe(0);
+    });
+  });
+
+  it('accept gifts even as enemies, and enough of them make peace', () => {
+    const { w, s, player } = withSettlement(-60);
+    const z = w.createZone(player, 'stockpile');
+    for (let x = 4; x < 20; x++) w.addZoneCell(z, w.map.idx(x, 12));
+    w.placeItemNear('gold', 75, w.map.idx(10, 12));
+    addPawn(w, 40, 47, player);
+    w.enqueue(player, { c: 'settlementTrade', settlement: s.id, give: [['gold', 1]], want: [['steel', 1]] });
+    run(w, 2);
+    expect(w.dirty.msgs.at(-1)!.text).toMatch(/won't trade/);
+    for (let k = 0; k < 2; k++) {
+      w.enqueue(player, { c: 'settlementTrade', settlement: s.id, give: [['gold', 30]], want: [] });
+      run(w, 2);
+    }
+    expect(dispositionOf(s.settlement!, player)).toBe('wary');
+    expect(w.dirty.msgs.some((m) => m.text.includes('accepts your gift'))).toBe(true);
   });
 });

@@ -230,6 +230,14 @@ export class Input {
     const cell = this.r.screenToCell(p.x, p.y);
     if (!store.mirror.inBounds(cell.x, cell.y)) return true;
     const it = store.mirror.get(store.mirror.itemAt[store.mirror.idx(cell.x, cell.y)]);
+    // Goods in a settlement's stores: the nearest drafted colonist goes to take them.
+    const zone = store.mirror.zones.get(store.mirror.zoneAt[store.mirror.idx(cell.x, cell.y)]);
+    if (it && it.kind === 'item' && zone?.kind === 'stockpile' && store.mirror.factions.get(zone.faction)?.settlement) {
+      const who = squad.reduce((a, b) => (Math.hypot(b.x - cell.x, b.y - cell.y) < Math.hypot(a.x - cell.x, a.y - cell.y) ? b : a));
+      command({ c: 'steal', pawn: who.id, item: it.id });
+      this.r.flashOrder(cell.x, cell.y, true);
+      return true;
+    }
     if (it && it.kind === 'item' && WEAPONS[it.def]) {
       const who = helpers(cell.x, cell.y).find((s) => s.drafted) ?? squad[0];
       command({ c: 'equip', pawn: who.id, item: it.id });

@@ -4,9 +4,9 @@ import type { Building, Command, Construct, EntityId, Item, Pawn, Plant, Rect, Z
 import { canUseItem, endJob, setDrafted } from './pawns';
 import { isRaider } from './combat';
 import { releasePrisoner } from './raids';
-import { bedFor } from './work';
+import { bedFor, findStorageCell } from './work';
 import { DESIG } from './types';
-import { NEIGHBORS4, rk, type World } from './world';
+import { NEIGHBORS4, rk, unreachableKey, type World } from './world';
 import { resolveChoice } from './choices';
 import { siteProblem } from './setup';
 import { offerTrade } from './trade';
@@ -94,6 +94,27 @@ export function applyCommand(w: World, faction: number, cmd: Command): void {
     case 'choose':
       resolveChoice(w, Number(cmd.choice), String(cmd.option), faction);
       return;
+    case 'steal': {
+      // Send one colonist (drafted or not, awake at any hour) to carry off an item from a settlement's stores.
+      const p = ownPawns(w, faction, [cmd.pawn])[0];
+      const it = w.get<Item>(Number(cmd.item));
+      if (!p || p.downed || !it || it.kind !== 'item') return;
+      const z = w.zoneAt(w.cellOf(it));
+      if (!z || z.kind !== 'stockpile' || !w.factions.get(z.faction)?.settlement || w.reservedByOther(rk.e(it.id), p.id)) return;
+      const dest = findStorageCell(w, faction, it, p.id);
+      if (dest < 0) {
+        w.message(faction, 'Nowhere to put stolen goods: make a stockpile first.', 'neutral');
+        return;
+      }
+      endJob(w, p);
+      // An explicit order always gets a fresh try, whatever earlier pathing gave up on.
+      w.unreachable.delete(unreachableKey(faction, w.cellOf(it)));
+      w.reserve(rk.e(it.id), p.id);
+      w.reserve(rk.c(dest), p.id);
+      p.job = { type: 'haul', stage: 0, item: it.id, dest };
+      w.markDirty(p);
+      return;
+    }
     case 'deliverRequest':
       deliverRequest(w, faction, Number(cmd.settlement), Number(cmd.request));
       return;
@@ -259,6 +280,13 @@ function designate(w: World, faction: number, kind: string, r: Rect): void {
       case 'harvest':
         if (plant && PLANTS[plant.def].yieldItem && !PLANTS[plant.def].tree && owned) w.setDesig(c, DESIG.harvest, faction);
         break;
+      case 'steal': {
+        // Only goods in a living settlement's stores.
+        const z = w.zoneAt(c);
+        const s = z ? w.factions.get(z.faction)?.settlement : undefined;
+        if (m.itemAt[c] && s && s.state !== 'fallen' && owned) w.setDesig(c, DESIG.steal, faction);
+        break;
+      }
       case 'cancel': {
         if (m.desig[c] && m.desigFaction[c] === faction) w.setDesig(c, 0, 0);
         const con = m.constructAt[c] ? w.get<Construct>(m.constructAt[c]) : undefined;

@@ -100,7 +100,7 @@ export function TradePanel() {
     const trader = traderNear(me, fac.home);
     const giveV = lineValue(lines(give));
     const wantV = lineValue(lines(want)) * factor;
-    blocked = mood === 'hostile' || st.state !== 'home' || !trader || giveV + 1e-9 < wantV;
+    blocked = (mood === 'hostile' && want.length > 0) || st.state !== 'home' || !trader || giveV + 1e-9 < wantV;
     settlementInfo = (
       <div className="settlement-info">
         <p>
@@ -111,7 +111,9 @@ export function TradePanel() {
           </button>
         </p>
         {mood === 'hostile' ? (
-          <p className="bad small">They won't trade with you. Their guards attack your colonists on sight.</p>
+          <p className="bad small">
+            They won't trade with you, and their guards attack your colonists on sight. A gift (give something, ask for nothing) might change their minds, if your envoy gets there{trader ? `: ${trader} is there now` : ''}.
+          </p>
         ) : st.state !== 'home' ? (
           <p className="muted small">They're on the move, fleeing the frost.</p>
         ) : trader ? (
@@ -170,7 +172,7 @@ export function TradePanel() {
       </div>
       {!st && <input className="trade-note" placeholder="Add a note (optional)" maxLength={140} value={note} onChange={(e) => setNote(e.target.value)} />}
       <button className="primary" disabled={(!give.length && !want.length) || blocked} onClick={send}>
-        {st ? 'Trade' : 'Send offer'}
+        {st ? (want.length ? 'Trade' : 'Give as a gift') : 'Send offer'}
       </button>
     </div>
   );

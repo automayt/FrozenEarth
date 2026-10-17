@@ -7,6 +7,7 @@ import { raiderGone, takePrisoner } from './raids';
 import { damageBuilding, repairBuilding } from './siege';
 import type { Building, Carried, Construct, Item, Job, Pawn, Plant } from './types';
 import { DESIG } from './types';
+import { thiefCheck } from './settlements';
 import type { World } from './world';
 
 export type JobResult = 'continue' | 'done' | 'fail';
@@ -359,12 +360,20 @@ function haul(w: World, p: Pawn, j: J<'haul'>): JobResult {
   if (j.stage === 0) {
     const it = w.get<Item>(j.item);
     if (!it || it.kind !== 'item') return 'fail';
-    const r = goTo(w, p, w.cellOf(it), false);
+    const cell = w.cellOf(it);
+    const r = goTo(w, p, cell, false);
     if (r !== 'arrived') return r === 'fail' ? 'fail' : 'continue';
+    const owner = w.zoneAt(cell)?.faction ?? 0;
     pickUp(w, p, it, Math.min(it.count, w.roomFor(j.dest, it.def) || ITEMS[it.def].stackLimit));
+    if (w.factions.get(owner)?.settlement) {
+      j.stolen = owner;
+      if (!w.map.itemAt[cell] && w.map.desig[cell] === DESIG.steal) w.setDesig(cell, 0, 0);
+    }
     j.stage = 1;
     return 'continue';
   }
+  // Sneaking off with someone's goods: anyone awake who sees it raises the alarm.
+  if (j.stolen && (w.tick + p.id) % 15 === 0 && !thiefCheck(w, p, j.stolen)) j.stolen = undefined;
   const r = goTo(w, p, j.dest, false);
   if (r !== 'arrived') return r === 'fail' ? 'fail' : 'continue';
   const c = p.carrying!;
@@ -591,6 +600,8 @@ function sleep(w: World, p: Pawn, j: J<'sleep'>): JobResult {
     if (w.tick % 60 === p.id % 60 && !effectsOf(w, p).bedRest) return 'done';
     return 'continue';
   }
+  // Settlers keep to the village's hours: abed until morning.
+  if (w.isNight() && w.factions.get(p.faction)?.settlement) return 'continue';
   if (p.needs.rest >= 1) return 'done';
   if (!w.isNight() && p.needs.rest > 0.95) return 'done';
   return 'continue';

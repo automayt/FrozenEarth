@@ -137,7 +137,7 @@ interface JobBase {
 
 export type Job =
   | (JobBase & { type: 'wander'; dest: number; until: number })
-  | (JobBase & { type: 'haul'; item: EntityId; dest: number })
+  | (JobBase & { type: 'haul'; item: EntityId; dest: number; /** Settlement the goods were taken from, while the thief is still at risk. */ stolen?: number })
   | (JobBase & { type: 'deliver'; item: EntityId; target: EntityId; count: number })
   | (JobBase & { type: 'build'; target: EntityId })
   | (JobBase & { type: 'mine'; cell: number; progress: number })
@@ -300,7 +300,7 @@ export interface Room {
 }
 
 /** Designation kinds stored per cell. */
-export const DESIG = { none: 0, mine: 1, cut: 2, harvest: 3 } as const;
+export const DESIG = { none: 0, mine: 1, cut: 2, harvest: 3, steal: 4 } as const;
 export type DesigKind = keyof typeof DESIG;
 
 export interface Rect {
@@ -311,7 +311,7 @@ export interface Rect {
 }
 
 export type Command =
-  | ({ c: 'designate'; kind: 'mine' | 'chop' | 'cut' | 'harvest' | 'cancel' } & Rect)
+  | ({ c: 'designate'; kind: 'mine' | 'chop' | 'cut' | 'harvest' | 'steal' | 'cancel' } & Rect)
   | ({ c: 'build'; def: string; hollow: boolean } & Rect)
   | ({ c: 'zone'; kind: ZoneKind; plant?: string } & Rect)
   | ({ c: 'unzone' } & Rect)
@@ -329,6 +329,7 @@ export type Command =
   | { c: 'offerTrade'; to: number; give: [string, number][]; want: [string, number][]; note?: string }
   | { c: 'settlementTrade'; settlement: number; give: [string, number][]; want: [string, number][] }
   | { c: 'deliverRequest'; settlement: number; request: number }
+  | { c: 'steal'; pawn: EntityId; item: EntityId }
   | { c: 'draft'; pawns: EntityId[]; on: boolean }
   | { c: 'move'; pawns: EntityId[]; x: number; y: number }
   | { c: 'attack'; pawns: EntityId[]; target: EntityId }

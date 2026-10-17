@@ -1,6 +1,6 @@
 import { ITEM_CATEGORIES, ITEMS, TERRAINS } from '@fe/defs';
 import { RARE_TICK, TICKS_PER_DAY } from './constants';
-import { cellDistance, hostile } from './combat';
+import { cellDistance, hostile, lineOfSight } from './combat';
 import { frostDistance } from './frost';
 import { pawnName } from './names';
 import { maybeReachable } from './pathfinding';
@@ -403,6 +403,10 @@ function resettle(w: World, f: Faction, people: Pawn[]): void {
 
 export type TradeLine = [item: string, count: number];
 
+/** Goodwill per this much value given beyond a fair price, up to GIFT_MAX per trade. */
+const GIFT_VALUE = 12;
+const GIFT_MAX = 20;
+
 /** What they ask over the value of what you give: 1.5 for strangers, 1.0 for close friends. */
 export function priceFactor(s: SettlementState, faction: number): number {
   return 1.5 - Math.max(0, goodwillOf(s, faction)) / 200;
@@ -443,7 +447,8 @@ export function settlementTrade(w: World, faction: number, settlement: number, g
   if (!f || !s || !g || !wa || (!g.length && !wa.length) || !w.factions.get(faction)?.isPlayer) return;
   const say = (t: string) => w.message(faction, t, 'neutral');
   if (s.state !== 'home') return say(`${f.name} isn't trading while they're on the move.`);
-  if (dispositionOf(s, faction) === 'hostile') return say(`${f.name} won't trade with you.`);
+  // Enemies won't trade, but a gift might change their minds.
+  if (dispositionOf(s, faction) === 'hostile' && wa.length) return say(`${f.name} won't trade with you. They might accept a gift.`);
   const trader = traderAt(w, faction, f);
   if (!trader) return say(`Send a colonist to ${f.name} to trade. They need to be within ${TRADE_RANGE} cells.`);
   for (const [d, n] of g) if (storedCount(w, faction, d) < n) return say(`You don't have ${n} ${ITEMS[d].label.toLowerCase()} in your stockpiles.`);
@@ -459,8 +464,11 @@ export function settlementTrade(w: World, faction: number, settlement: number, g
     const got = takeStored(w, f.id, d, n);
     w.placeItemNear(d, got, w.cellOf(trader));
   }
-  shiftGoodwill(w, f, faction, Math.min(6, Math.ceil(lineValue(g) / 150)));
-  w.message(faction, `Trade done with ${f.name}. ${trader.name} has the goods.`, 'good', w.cellOf(trader));
+  // Fair trades warm relations a little; generous ones (and gifts) a lot more.
+  const surplus = lineValue(g) - lineValue(wa) * factor;
+  shiftGoodwill(w, f, faction, (wa.length ? 1 : 0) + Math.min(GIFT_MAX, Math.floor(surplus / GIFT_VALUE)));
+  if (wa.length) w.message(faction, `Trade done with ${f.name}. ${trader.name} has the goods.`, 'good', w.cellOf(trader));
+  else w.message(faction, `${f.name} accepts your gift.`, 'good', w.cellOf(trader));
 }
 
 // ---------------------------------------------------------------- requests
@@ -646,4 +654,35 @@ export function deliverRequest(w: World, faction: number, settlement: number, re
     w.message(faction, `${f.name} thanks you for the ${requestText(r.item, r.count)}. ${trader.name} has ${requestText(r.reward[0], r.reward[1])}.`, 'good', at);
   }
   shiftGoodwill(w, f, faction, r.goodwill);
+}
+
+// ---------------------------------------------------------------- theft
+
+/** How far a settler can spot a thief, in cells. */
+const SIGHT = 9;
+/** Chance per look (every 15 ticks) that an awake settler with a clear view notices. */
+const SPOT_CHANCE = 0.3;
+const CAUGHT = -45;
+
+/**
+ * A colonist carrying goods stolen from `settlement`. Anyone there who's awake and can see them
+ * may raise the alarm. Returns false once they're clear of the place, or caught.
+ */
+export function thiefCheck(w: World, thief: Pawn, settlement: number): boolean {
+  const f = w.factions.get(settlement);
+  const s = f?.settlement;
+  if (!f || !s || s.state !== 'home') return false;
+  const here = w.cellOf(thief);
+  if (cellDistance(w, here, w.map.idx(f.home.x, f.home.y)) > s.radius + 6) return false;
+  for (const id of w.kinds.pawn) {
+    const o = w.get<Pawn>(id)!;
+    if (o.faction !== settlement || o.asleep || o.downed || o.prisoner) continue;
+    const c = w.cellOf(o);
+    if (cellDistance(w, c, here) > SIGHT || !lineOfSight(w, c, here) || !w.rng.chance(SPOT_CHANCE)) continue;
+    const colony = w.factions.get(thief.faction)?.name ?? 'a colony';
+    w.message(0, `${o.name} of ${f.name} caught ${thief.name} of ${colony} stealing!`, 'bad', here);
+    shiftGoodwill(w, f, thief.faction, CAUGHT);
+    return false;
+  }
+  return true;
 }

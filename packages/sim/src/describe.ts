@@ -16,7 +16,7 @@ export function describeJob(job: Job | null, lookup: (id: number) => Entity | un
     case 'wander':
       return 'Wandering';
     case 'haul':
-      return `Hauling ${name(job.item)}`;
+      return job.stolen ? 'Sneaking off with stolen goods' : `Hauling ${name(job.item)}`;
     case 'deliver':
       return `Delivering materials to ${name(job.target)}`;
     case 'build':

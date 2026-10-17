@@ -325,7 +325,8 @@ export class World {
       if (d.blocksMovement) solid = true;
       if (d.wall) wall = true;
       if (d.door) {
-        door = b.faction;
+        // Settlements keep their gates open to visitors (and thieves); colonies lock theirs.
+        door = this.factions.get(b.faction)?.settlement ? 0 : b.faction;
         extra += 4;
       }
     }

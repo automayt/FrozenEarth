@@ -68,13 +68,14 @@ function needsTick(w: World, p: Pawn): void {
   const n = p.needs;
   const cell = w.cellOf(p);
   const e = effectsOf(w, p);
-  // Raiders only stay a day or so, and settlers live off stores we don't model:
-  // wounds and weather matter, hunger and moods don't.
-  if (isRaider(w, p.faction) || w.factions.get(p.faction)?.settlement) {
+  // Raiders only stay a day or so: wounds and weather matter, hunger and moods don't.
+  if (isRaider(w, p.faction)) {
     if (healthTick(w, p, e)) w.markDirty(p);
     return;
   }
-  n.food = Math.max(0, n.food - (RARE_TICK * e.foodDrain) / (p.asleep ? 90_000 : 45_000));
+  // Settlers live off stores we don't model, but still tire and sleep.
+  const settler = !!w.factions.get(p.faction)?.settlement;
+  if (!settler) n.food = Math.max(0, n.food - (RARE_TICK * e.foodDrain) / (p.asleep ? 90_000 : 45_000));
   if (p.asleep) {
     const inBed = p.bed && p.job?.type === 'sleep' && p.job.bed === p.bed;
     n.rest = Math.min(1, n.rest + (RARE_TICK * (inBed ? 1 : 0.6)) / 9000);
@@ -83,6 +84,10 @@ function needsTick(w: World, p: Pawn): void {
   }
 
   if (!healthTick(w, p, e)) return; // died
+  if (settler) {
+    w.markPawnIfChanged(p);
+    return;
+  }
   if (p.prisoner) prisonerTick(w, p);
 
   const thoughts: string[] = [];

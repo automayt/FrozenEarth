@@ -138,6 +138,8 @@ export function deserializeWorld(data: SaveData): World {
     if (m.fire[i]) w.fireCells.add(i);
     w.refreshCell(i);
   }
+  // Factions first: adding buildings derives door locks from who owns them.
+  for (const f of d.factions) w.factions.set(f.id, f);
   for (const e of d.ents) {
     // Fields added without a version bump get defaults here.
     if (e.kind === 'pawn') {
@@ -147,7 +149,6 @@ export function deserializeWorld(data: SaveData): World {
     w.add(e);
   }
   w.nextId = d.nextId;
-  for (const f of d.factions) w.factions.set(f.id, f);
   for (const z of d.zones) {
     w.zones.set(z.id, z);
     for (const c of z.cells) m.zoneAt[c] = z.id;

@@ -10,6 +10,7 @@ const ORDERS: { label: string; tool: Tool; hint: string }[] = [
   { label: 'Harvest', tool: { kind: 'designate', what: 'harvest' }, hint: 'Harvest wild berries and crops' },
   { label: 'Cut plants', tool: { kind: 'designate', what: 'cut' }, hint: 'Clear any plants' },
   { label: 'Deconstruct', tool: { kind: 'deconstruct' }, hint: 'Remove your buildings (refunds 75%)' },
+  { label: 'Steal', tool: { kind: 'designate', what: 'steal' }, hint: "Mark goods in a settlement's stores for your haulers to carry off. Anyone awake who sees it raises the alarm: go at night. Or draft a colonist and right-click the goods to send them now." },
   { label: 'Move colony', tool: { kind: 'moveHome' }, hint: 'Click a new home site. Colonists gather there; frost warnings follow.' },
   { label: 'Pack up', tool: { kind: 'packUp' }, hint: 'Strip an area: remove zones, take down buildings (75% back), cancel blueprints' },
   { label: 'Cancel', tool: { kind: 'designate', what: 'cancel' }, hint: 'Cancel orders and blueprints' },

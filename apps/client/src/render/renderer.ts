@@ -595,7 +595,7 @@ export class GameRenderer {
       if (!d) continue;
       const x = (c % m.w) * PX;
       const y = ((c / m.w) | 0) * PX;
-      ctx.fillStyle = d === DESIG.mine ? 'rgba(240,180,60,0.85)' : d === DESIG.cut ? 'rgba(230,80,60,0.85)' : 'rgba(120,220,90,0.85)';
+      ctx.fillStyle = d === DESIG.mine ? 'rgba(240,180,60,0.85)' : d === DESIG.cut ? 'rgba(230,80,60,0.85)' : d === DESIG.steal ? 'rgba(190,110,240,0.9)' : 'rgba(120,220,90,0.85)';
       // Corner brackets so the cell content stays visible.
       const t = PX / 4;
       const l = PX / 2;

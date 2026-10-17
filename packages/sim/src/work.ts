@@ -296,9 +296,35 @@ function giveHaul(w: World, p: Pawn): Job | null {
   let hasStockpile = false;
   for (const z of w.zones.values()) if (z.faction === p.faction && z.kind === 'stockpile') hasStockpile = true;
   if (!hasStockpile) return null;
+  const steal = giveSteal(w, p);
+  if (steal) return steal;
   const cands: Item[] = [];
   for (const it of looseItems(w)) if (canUseItem(w, p, it)) cands.push(it);
   for (const it of nearest(w, p, cands, (i) => w.cellOf(i), false, 12)) {
+    const dest = findStorageCell(w, p.faction, it, p.id);
+    if (dest < 0) continue;
+    w.reserve(rk.e(it.id), p.id);
+    w.reserve(rk.c(dest), p.id);
+    return { type: 'haul', stage: 0, item: it.id, dest };
+  }
+  return null;
+}
+
+/** Goods marked for stealing from a settlement's stores, carried home to our stockpile. */
+function giveSteal(w: World, p: Pawn): Job | null {
+  const m = w.map;
+  const cands: Item[] = [];
+  for (const c of w.desigCells) {
+    if (m.desig[c] !== DESIG.steal || m.desigFaction[c] !== p.faction) continue;
+    const it = m.itemAt[c] ? w.get<Item>(m.itemAt[c]) : undefined;
+    const z = w.zoneAt(c);
+    if (!it || it.kind !== 'item' || !z || !w.factions.get(z.faction)?.settlement) {
+      w.setDesig(c, 0, 0);
+      continue;
+    }
+    if (it.rot < 1 && !w.reservedByOther(rk.e(it.id), p.id)) cands.push(it);
+  }
+  for (const it of nearest(w, p, cands, (i) => w.cellOf(i), false, 6)) {
     const dest = findStorageCell(w, p.faction, it, p.id);
     if (dest < 0) continue;
     w.reserve(rk.e(it.id), p.id);
