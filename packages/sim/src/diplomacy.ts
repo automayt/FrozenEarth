@@ -1,5 +1,5 @@
 import { ITEMS } from '@fe/defs';
-import { RARE_TICK, TICKS_PER_DAY, TICKS_PER_HOUR } from './constants';
+import { RARE_TICK, START_TICK, TICKS_PER_DAY, TICKS_PER_HOUR } from './constants';
 import { offerChoice, registerChoice } from './choices';
 import { storedCount, takeStored } from './eventHandlers';
 import { allied, atWar, pactOf, setPact, type RelView } from './pacts';
@@ -47,8 +47,10 @@ export const TRUCE_DAYS = 3;
 export const PLAYER_TRUCE_DAYS = 2;
 /** A pair of towns won't hear another peace offer for this long. */
 export const MEDIATE_COOLDOWN_DAYS = 2;
-/** A rival town sends fighters against another about this often (per rival pair, per day). */
+/** A rival town sends fighters against another about this often (per rival pair, per day)... */
 const FEUD_CHANCE = 0.1;
+/** ...but not in a world's first days: towns settle in before they start feuding. */
+const FEUD_GRACE_DAYS = 4;
 /** Where goodwill lands after paying for peace: wary, not friendly. */
 const PEACE_GOODWILL = HOSTILE_AT + 15;
 
@@ -436,15 +438,23 @@ export function diplomacyTick(w: World): void {
 
 /** Once a day: maybe one rival town sends fighters against another. At most one such fight at a time. */
 function feuds(w: World): void {
+  if (w.tick - START_TICK < FEUD_GRACE_DAYS * TICKS_PER_DAY) return;
   for (const f of w.factions.values()) if (f.raid?.sponsor && !f.raid.fled) return;
   const towns = liveTowns(w).filter((f) => f.settlement!.state === 'home');
   for (const a of towns) {
     for (const b of towns) {
       if (a.id === b.id || !areRivals(w, a, b) || opinionBetween(w, a, b) > HOSTILE_AT) continue;
       let people = 0;
-      for (const id of w.kinds.pawn) if (w.get<Pawn>(id)!.faction === a.id) people++;
-      if (people < 3 || !w.rng.chance(FEUD_CHANCE)) continue;
-      if (startRaid(w, b.id, 100 + people * 25, 'raid', a.id)) {
+      let theirs = 0;
+      for (const id of w.kinds.pawn) {
+        const f = w.get<Pawn>(id)!.faction;
+        if (f === a.id) people++;
+        else if (f === b.id) theirs++;
+      }
+      // Feuds wear a town down; they don't finish off one that is nearly gone.
+      if (people < 3 || theirs < 3 || !w.rng.chance(FEUD_CHANCE)) continue;
+      // A skirmish, not a massacre: a couple of fighters who head home once one of them is down.
+      if (startRaid(w, b.id, 100 + people * 25, 'scout', a.id)) {
         shiftOpinion(w, a, b, -10);
         return;
       }
