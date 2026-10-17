@@ -1,7 +1,7 @@
 import { Application, BitmapText, Container, Graphics, GraphicsContext, Sprite, TextStyle, Texture } from 'pixi.js';
 import { ANIMALS, BUILDINGS, maxHp, PLANTS, ROCKS, TERRAINS, WEAPON_KEYS, weaponOf, type TerrainDef } from '@fe/defs';
 import { pawnPosition } from '@fe/protocol';
-import { DESIG, FROST_BAND, MIN_COLONY_GAP, SHOT_FIELDS, TICKS_PER_DAY, TICKS_PER_HOUR, bleedRate, calendar, dispositionOf, hostile, NOISE, stealthMult, frostLevel, frostRadius, hash2, outdoorTempAt, weaponFor, woundTotal, type Construct, type Entity, type Pawn, type World } from '@fe/sim';
+import { DESIG, FROST_BAND, MIN_COLONY_GAP, SHOT_FIELDS, TICKS_PER_DAY, TICKS_PER_HOUR, bleedRate, calendar, dispositionOf, GUARD_REACH, hostile, NOISE, SETTLEMENT_WATCH, stealthMult, frostLevel, frostRadius, hash2, outdoorTempAt, weaponFor, woundTotal, type Construct, type Entity, type Pawn, type World } from '@fe/sim';
 import { ease, Particles, Tweens, Weather, type Precip } from './fx';
 import { sound } from '../audio';
 import { fog } from './fog';
@@ -1185,7 +1185,8 @@ export class GameRenderer {
         this.layers.ui.addChild(label);
         this.settlementLabels.set(f.id, label);
       }
-      const d = me ? dispositionOf(s, me) : 'wary';
+      // While settling you have no faction yet: show how the town takes to newcomers.
+      const d = dispositionOf(s, me);
       const color = s.state === 'fallen' ? 0x8796a6 : DISPOSITION_COLOR[d];
       const text = s.state === 'fallen' ? `${f.name} (ruins)` : s.state === 'leaving' ? `${f.name} (abandoned)` : f.name;
       if (label.text !== text) label.text = text;
@@ -1198,6 +1199,11 @@ export class GameRenderer {
         const cy = (f.home.y + 0.5) * TILE;
         g.circle(cx, cy, s.radius * TILE).stroke({ width: sw * 2.6, color: 0x000000, alpha: 0.22 });
         g.circle(cx, cy, s.radius * TILE).stroke({ width: sw, color, alpha: 0.7 });
+        if (d === 'hostile') {
+          // The ring is their land; their guards come out further, and their walls shoot further still.
+          g.circle(cx, cy, (s.radius + GUARD_REACH) * TILE).stroke({ width: sw, color, alpha: 0.35 });
+          g.circle(cx, cy, (s.radius + SETTLEMENT_WATCH) * TILE).stroke({ width: sw * 0.8, color, alpha: 0.18 });
+        }
       }
     }
     for (const [id, label] of this.settlementLabels) {
