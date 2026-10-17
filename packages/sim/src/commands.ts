@@ -10,7 +10,7 @@ import { NEIGHBORS4, rk, unreachableKey, type World } from './world';
 import { resolveChoice } from './choices';
 import { siteProblem } from './setup';
 import { offerTrade } from './trade';
-import { deliverRequest, settlementTrade } from './settlements';
+import { canStealFrom, deliverRequest, settlementTrade } from './settlements';
 import { markHunt } from './wildlife';
 
 /** Validate and apply one player command. Invalid commands are silently ignored. */
@@ -96,12 +96,12 @@ export function applyCommand(w: World, faction: number, cmd: Command): void {
       resolveChoice(w, Number(cmd.choice), String(cmd.option), faction);
       return;
     case 'steal': {
-      // Send one colonist (drafted or not, awake at any hour) to carry off an item from a settlement's stores.
+      // Send one colonist (drafted or not, awake at any hour) to carry off an item from a settlement's or colony's stores.
       const p = ownPawns(w, faction, [cmd.pawn])[0];
       const it = w.get<Item>(Number(cmd.item));
       if (!p || p.downed || !it || it.kind !== 'item') return;
       const z = w.zoneAt(w.cellOf(it));
-      if (!z || z.kind !== 'stockpile' || !w.factions.get(z.faction)?.settlement || w.reservedByOther(rk.e(it.id), p.id)) return;
+      if (!z || z.kind !== 'stockpile' || !canStealFrom(w, faction, z.faction) || w.reservedByOther(rk.e(it.id), p.id)) return;
       const dest = findStorageCell(w, faction, it, p.id);
       if (dest < 0) {
         w.message(faction, 'Nowhere to put stolen goods: make a stockpile first.', 'neutral');
@@ -285,10 +285,9 @@ function designate(w: World, faction: number, kind: string, r: Rect): void {
         if (plant && PLANTS[plant.def].yieldItem && !PLANTS[plant.def].tree && owned) w.setDesig(c, DESIG.harvest, faction);
         break;
       case 'steal': {
-        // Only goods in a living settlement's stores.
+        // Only goods in a living settlement's or another colony's stockpile.
         const z = w.zoneAt(c);
-        const s = z ? w.factions.get(z.faction)?.settlement : undefined;
-        if (m.itemAt[c] && s && s.state !== 'fallen' && owned) w.setDesig(c, DESIG.steal, faction);
+        if (m.itemAt[c] && z && z.kind === 'stockpile' && canStealFrom(w, faction, z.faction) && owned) w.setDesig(c, DESIG.steal, faction);
         break;
       }
       case 'cancel': {

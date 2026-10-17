@@ -272,17 +272,6 @@ describe('settlements', () => {
       expect(thief.job?.type).toBe('haul');
       expect(thief.asleep).toBe(false);
     });
-
-    it("can't mark a colony's goods, only a settlement's", () => {
-      const { w, player } = heist(12);
-      w.factions.set(3, { id: 3, name: 'Other', color: 0x00ff00, home: { x: 60, y: 60 }, isPlayer: true });
-      const z = w.createZone(3, 'stockpile');
-      w.addZoneCell(z, w.map.idx(60, 60));
-      w.placeItemNear('gold', 5, w.map.idx(60, 60));
-      w.enqueue(player, { c: 'designate', kind: 'steal', x0: 60, y0: 60, x1: 60, y1: 60 });
-      run(w, 2);
-      expect(w.map.desig[w.map.idx(60, 60)]).toBe(0);
-    });
   });
 
   it('accept gifts even as enemies, and enough of them make peace', () => {

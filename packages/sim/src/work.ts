@@ -6,7 +6,7 @@ import { bedBound, effectsOf, hoursToBleedOut, inBed, needsTending, type Effects
 import type { Building, Construct, Item, Job, Pawn, Plant, Zone } from './types';
 import { DESIG } from './types';
 import { giveHunt } from './wildlife';
-import { dangerZones } from './settlements';
+import { canStealFrom, dangerZones } from './settlements';
 import { rk, type World } from './world';
 
 type Giver = (w: World, p: Pawn) => Job | null;
@@ -317,7 +317,7 @@ function giveHaul(w: World, p: Pawn): Job | null {
   return null;
 }
 
-/** Goods marked for stealing from a settlement's stores, carried home to our stockpile. Only after dark. */
+/** Goods marked for stealing from a settlement's or another colony's stores, carried home to our stockpile. Only after dark. */
 function giveSteal(w: World, p: Pawn): Job | null {
   if (!w.isNight()) return null;
   const m = w.map;
@@ -326,7 +326,7 @@ function giveSteal(w: World, p: Pawn): Job | null {
     if (m.desig[c] !== DESIG.steal || m.desigFaction[c] !== p.faction) continue;
     const it = m.itemAt[c] ? w.get<Item>(m.itemAt[c]) : undefined;
     const z = w.zoneAt(c);
-    if (!it || it.kind !== 'item' || !z || !w.factions.get(z.faction)?.settlement) {
+    if (!it || it.kind !== 'item' || !z || z.kind !== 'stockpile' || !canStealFrom(w, p.faction, z.faction)) {
       w.setDesig(c, 0, 0);
       continue;
     }

@@ -7,7 +7,7 @@ import { raiderGone, takePrisoner } from './raids';
 import { damageBuilding, repairBuilding } from './siege';
 import type { Building, Carried, Construct, Item, Job, Pawn, Plant } from './types';
 import { DESIG } from './types';
-import { thiefCheck } from './settlements';
+import { canStealFrom, noticeTheft, thiefCheck } from './settlements';
 import { weaponFor } from './combat';
 import type { World } from './world';
 
@@ -366,18 +366,37 @@ function haul(w: World, p: Pawn, j: J<'haul'>): JobResult {
     if (r !== 'arrived') return r === 'fail' ? 'fail' : 'continue';
     const owner = w.zoneAt(cell)?.faction ?? 0;
     pickUp(w, p, it, Math.min(it.count, w.roomFor(j.dest, it.def) || ITEMS[it.def].stackLimit));
-    if (w.factions.get(owner)?.settlement) {
+    // Ordinary hauling never touches another faction's stockpile, so this is theft.
+    if (canStealFrom(w, p.faction, owner)) {
       j.stolen = owner;
+      j.stolenAt = cell;
       if (!w.map.itemAt[cell] && w.map.desig[cell] === DESIG.steal) w.setDesig(cell, 0, 0);
     }
     j.stage = 1;
     return 'continue';
   }
   // Sneaking off with someone's goods: anyone awake who sees it raises the alarm.
-  if (j.stolen && (w.tick + p.id) % 15 === 0 && !thiefCheck(w, p, j.stolen)) j.stolen = undefined;
+  if (j.stolen && p.carrying && (w.tick + p.id) % 15 === 0) {
+    const verdict = thiefCheck(w, p, j.stolen, j.stolenAt ?? w.cellOf(p));
+    if (verdict === 'clear') {
+      noticeTheft(w, j.stolen, p.carrying.def, p.carrying.count, j.stolenAt ?? w.cellOf(p));
+      j.stolen = undefined;
+    } else if (verdict === 'caught') {
+      // Caught by a colony: drop the goods and run. (A settlement's guards deal with thieves themselves.)
+      const victim = j.stolen;
+      j.stolen = undefined;
+      if (w.factions.get(victim)?.isPlayer) {
+        w.placeItemNear(p.carrying.def, p.carrying.count, w.cellOf(p), p.carrying.rot);
+        p.carrying = null;
+        w.markDirty(p);
+        return 'done';
+      }
+    }
+  }
   const r = goTo(w, p, j.dest, false);
   if (r !== 'arrived') return r === 'fail' ? 'fail' : 'continue';
   const c = p.carrying!;
+  if (j.stolen) noticeTheft(w, j.stolen, c.def, c.count, j.stolenAt ?? j.dest);
   const placed = w.dropInto(j.dest, c.def, c.count, c.rot);
   if (placed < c.count) w.placeItemNear(c.def, c.count - placed, j.dest, c.rot);
   p.carrying = null;

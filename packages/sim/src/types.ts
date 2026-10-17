@@ -143,7 +143,7 @@ interface JobBase {
 
 export type Job =
   | (JobBase & { type: 'wander'; dest: number; until: number })
-  | (JobBase & { type: 'haul'; item: EntityId; dest: number; /** Settlement the goods were taken from, while the thief is still at risk. */ stolen?: number })
+  | (JobBase & { type: 'haul'; item: EntityId; dest: number; /** Settlement or colony the goods were taken from, while the thief is still at risk. */ stolen?: number; /** Where they were taken from. */ stolenAt?: number })
   | (JobBase & { type: 'deliver'; item: EntityId; target: EntityId; count: number })
   | (JobBase & { type: 'build'; target: EntityId })
   | (JobBase & { type: 'mine'; cell: number; progress: number })

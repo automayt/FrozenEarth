@@ -595,6 +595,8 @@ export class GameRenderer {
     for (let c = 0; c < n; c++) {
       const d = m.desig[c];
       if (!d) continue;
+      // Someone else's plan to rob you stays their secret.
+      if (d === DESIG.steal && m.desigFaction[c] !== store.me?.faction) continue;
       const x = (c % m.w) * PX;
       const y = ((c / m.w) | 0) * PX;
       ctx.fillStyle = d === DESIG.mine ? 'rgba(240,180,60,0.85)' : d === DESIG.cut ? 'rgba(230,80,60,0.85)' : d === DESIG.steal ? 'rgba(190,110,240,0.9)' : 'rgba(120,220,90,0.85)';
