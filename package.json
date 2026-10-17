@@ -22,7 +22,8 @@
     "bots": "tsx tools/bots/src/main.ts",
     "smoke": "tsx tools/bots/src/smoke.ts",
     "docs:events": "tsx tools/docs/events-doc.ts",
-    "bench": "tsx tools/bench/sim.ts"
+    "bench": "tsx tools/bench/sim.ts",
+    "soak": "node --expose-gc node_modules/tsx/dist/cli.mjs tools/bench/soak.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.14.0",

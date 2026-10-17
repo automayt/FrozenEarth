@@ -175,4 +175,45 @@ describe('game server', () => {
     expect(pawn.drafted).toBe(true);
     g.stop();
   });
+  it('a player who leaves, or a server that restarts, lets go of anyone being steered', () => {
+    const path = worldPath(dir, 'steer');
+    const g = new GameServer({ savePath: path, seed: 7, size: 80, log: () => {} });
+    const ann = new FakeSocket();
+    const bob = new FakeSocket();
+    g.onConnect(ann as unknown as WebSocket);
+    g.onConnect(bob as unknown as WebSocket);
+    ann.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Ann' });
+    bob.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Bob' });
+    ann.say({ t: 'settle' });
+    const fa = ann.take('settled')[0].faction;
+    const mine = () => [...g.world.kinds.pawn].map((id) => g.world.get<Pawn>(id)!).filter((p) => p.faction === fa);
+    const [walker, other] = mine();
+    ann.say({ t: 'cmd', cmd: { c: 'possess', pawn: walker.id, on: true } });
+    ann.say({ t: 'cmd', cmd: { c: 'steer', pawn: walker.id, dx: 1, dy: 0 } });
+    pump(g);
+    g.world.applyCommands();
+    expect(walker.possessed).toBe(true);
+    expect(walker.steer).toEqual([1, 0]);
+    // Ann closes the tab; Bob plays on. Her colonist must not keep walking east, drafted and starving.
+    ann.close();
+    pump(g);
+    g.world.applyCommands();
+    expect(walker.possessed).toBe(false);
+    expect(walker.steer).toBeUndefined();
+    expect(walker.drafted).toBe(false);
+
+    // Steering again, then the server dies and comes back: nobody is online to be steering.
+    const again = new FakeSocket();
+    g.onConnect(again as unknown as WebSocket);
+    again.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Ann2' });
+    g.world.enqueue(fa, { c: 'possess', pawn: other.id, on: true });
+    g.world.applyCommands();
+    expect(other.possessed).toBe(true);
+    g.save();
+    g.stop();
+    const h = new GameServer({ savePath: path, log: () => {} });
+    h.world.applyCommands();
+    expect(h.world.get<Pawn>(other.id)!.possessed).toBe(false);
+    h.stop();
+  });
 });

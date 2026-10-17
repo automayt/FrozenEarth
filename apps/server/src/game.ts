@@ -15,6 +15,7 @@ import {
   TICKS_PER_SECOND,
   type Command,
   type Delta,
+  type Pawn,
   type World,
 } from '@fe/sim';
 import { EVENTS } from '@fe/defs';
@@ -120,6 +121,23 @@ export class GameServer {
       this.save();
     }
     this.lastDay = this.world.day();
+    // Nobody is online after a restart, so nobody is steering anyone.
+    for (const f of this.world.factions.values()) if (f.isPlayer) this.releaseControl(f.id);
+  }
+
+  /**
+   * A player who goes away lets go of any colonist they were steering. Otherwise it keeps walking
+   * the last held direction (into the frost, off to the enemy) and, drafted, never eats or sleeps.
+   * Done as commands, so it lands in order with everything else.
+   */
+  private releaseControl(faction: number): void {
+    if (!faction) return;
+    for (const id of this.world.kinds.pawn) {
+      const p = this.world.get<Pawn>(id)!;
+      if (p.faction !== faction || !p.possessed) continue;
+      this.world.enqueue(faction, { c: 'possess', pawn: p.id, on: false });
+      this.world.enqueue(faction, { c: 'draft', pawns: [p.id], on: false });
+    }
   }
 
   start(): void {
@@ -243,6 +261,7 @@ export class GameServer {
     ws.on('close', () => {
       if (player && player.ws === ws) {
         player.ws = null;
+        this.releaseControl(player.faction);
         this.system(`${player.name} left.`);
         this.broadcastPlayers();
         if (this.connected().length === 0) this.save();

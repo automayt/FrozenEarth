@@ -132,5 +132,14 @@ describe('determinism under random play', () => {
     expect(fired).toContain('raid');
     expect(fired).toContain('settlement_raid');
     expect(a.frostRadius()).toBeLessThan(1.4);
+
+    // Tripwires for state that piles up over a long game (see tools/bench/soak.ts for the long run).
+    const pawns = [...a.kinds.pawn].map((id) => a.get(id) as import('../src').Pawn);
+    expect([...a.unreachable.values()].filter((until) => until < a.tick - TICKS_PER_HOUR), 'expired unreachable marks').toEqual([]);
+    expect(a.choiceData.size).toBe(a.choices.size);
+    expect([...a.reservations.values()].every((id) => a.entities.has(id)), 'reservations held by the gone').toBe(true);
+    expect([...a.factions.values()].filter((f) => f.raid).length).toBeLessThanOrEqual(6);
+    expect(pawns.filter((p) => p.possessed && p.downed).length, 'steered while down').toBe(0);
+    expect(a.commandErrors).toBe(0);
   });
 });

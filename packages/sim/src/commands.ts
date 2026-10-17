@@ -166,8 +166,14 @@ export function applyCommand(w: World, faction: number, cmd: Command): void {
       return;
     }
     case 'possess': {
-      const p = ownPawns(w, faction, [cmd.pawn])[0];
-      if (p) setPossessed(w, p, !!cmd.on);
+      if (cmd.on) {
+        const p = ownPawns(w, faction, [cmd.pawn])[0];
+        if (p) setPossessed(w, p, true);
+        return;
+      }
+      // Letting go always works, even of a colonist who has since been knocked down.
+      const p = w.get<Pawn>(cmd.pawn);
+      if (p && p.kind === 'pawn' && p.faction === faction && p.possessed) setPossessed(w, p, false);
       return;
     }
     case 'steer': {
