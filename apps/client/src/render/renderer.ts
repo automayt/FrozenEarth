@@ -155,7 +155,7 @@ export class GameRenderer {
     el.appendChild(this.app.canvas);
     this.tex = new TextureBank(this.app.renderer);
     await this.tex.loadArt();
-    this.app.stage.addChild(this.world, this.night, this.weather.g);
+    this.app.stage.addChild(this.world, this.night, this.weather.view);
     for (const l of Object.values(this.layers)) {
       // Each layer is its own render group: redrawing the per-frame Graphics (ui, shots, fire, particles)
       // or moving pawns then only rebuilds that layer's draw list, not one covering thousands of
@@ -165,7 +165,7 @@ export class GameRenderer {
     }
     this.layers.pawns.sortableChildren = true;
     this.layers.ui.addChild(this.ui);
-    this.layers.fx.addChild(this.fireGfx, this.particles.g, this.shotGfx);
+    this.layers.fx.addChild(this.fireGfx, this.particles.view, this.shotGfx);
     this.layers.frost.addChild(this.frostRing);
     this.input = new Input(this, this.app.canvas);
     this.app.ticker.add(() => this.frame());
