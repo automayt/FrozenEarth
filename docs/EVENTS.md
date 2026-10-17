@@ -120,6 +120,7 @@ Hosts have an **Events** button (bottom bar) that fires any event on demand, for
 | --- | --- | --- | --- | --- | --- |
 | **Wanderer joins** `wanderer_joins` | uncommon | good | a colony | day 1+ | Someone walks in from the edge of the map and joins without asking questions. |
 | **Refugee** `refugee` | common | neutral | a colony | day 2+ | Choice: take in someone fleeing trouble. They may be sick, or not who they say they are. |
+| **A settlement asks for help** `settlement_plea` | common | neutral | a colony | day 2+ | Choice: a settlement your colonists have met asks for goods, for a reward (sometimes one of their people joins you). Agree and fail to deliver, and they remember. |
 | **Peddler** `peddler` | common | neutral | a colony | day 1+ | Choice: a travelling peddler offers a trade from your stockpiles. |
 | **Beggars** `beggars` | uncommon | neutral | a colony | day 2+ | Choice: hungry travellers ask for food. Kindness is sometimes repaid. |
 | **Lost child** `lost_child` | uncommon | neutral | a colony | day 3+ | Choice: a child wanders in alone. They can’t work hard, but they grow up. |

@@ -10,7 +10,7 @@ import { NEIGHBORS4, rk, type World } from './world';
 import { resolveChoice } from './choices';
 import { siteProblem } from './setup';
 import { offerTrade } from './trade';
-import { settlementTrade } from './settlements';
+import { deliverRequest, settlementTrade } from './settlements';
 
 /** Validate and apply one player command. Invalid commands are silently ignored. */
 export function applyCommand(w: World, faction: number, cmd: Command): void {
@@ -93,6 +93,9 @@ export function applyCommand(w: World, faction: number, cmd: Command): void {
     }
     case 'choose':
       resolveChoice(w, Number(cmd.choice), String(cmd.option), faction);
+      return;
+    case 'deliverRequest':
+      deliverRequest(w, faction, Number(cmd.settlement), Number(cmd.request));
       return;
     case 'settlementTrade':
       settlementTrade(w, faction, Number(cmd.settlement), cmd.give, cmd.want);

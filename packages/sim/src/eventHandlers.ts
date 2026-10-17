@@ -11,6 +11,7 @@ import { addCondition, hasCondition, isMental, removeCondition } from './health'
 import { pawnName } from './names';
 import { scheduleEvent } from './schedule';
 import { raidPoints, spendThreat, startRaid } from './raids';
+import { askForHelp, settlementsThatCouldAsk } from './settlements';
 import type { Item, Pawn, Plant, Tone } from './types';
 import { NEIGHBORS8, type World } from './world';
 
@@ -612,6 +613,11 @@ const OFFERS: Offer[] = [
   { give: ['parka', 2], want: [['wood', 80], ['steel', 45], ['gold', 6]] },
   { give: ['tuque', 3], want: [['wood', 30], ['cloth', 25]] },
 ];
+
+HANDLERS.settlement_plea = (w, faction) => {
+  const options = settlementsThatCouldAsk(w, faction);
+  return options.length > 0 && askForHelp(w, w.rng.pick(options), faction);
+};
 
 HANDLERS.peddler = (w, faction) => {
   const offer = w.rng.pick(OFFERS);

@@ -61,7 +61,7 @@ describe('event catalogue', () => {
     }
     // A few need specific circumstances (crops ready to blight, rock near home...);
     // the rest must always succeed on this world.
-    const allowedToSkip = new Set(['blight', 'bumper_crop', 'ore_discovered', 'pests', 'miracle_recovery', 'wildfire']);
+    const allowedToSkip = new Set(['blight', 'bumper_crop', 'ore_discovered', 'pests', 'miracle_recovery', 'wildfire', 'settlement_plea']);
     for (const [key, ok] of Object.entries(results)) if (!allowedToSkip.has(key)) expect(ok, key).toBe(true);
     run(w, 3 * TICKS_PER_DAY);
   });

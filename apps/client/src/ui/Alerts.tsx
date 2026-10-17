@@ -1,5 +1,5 @@
 import { BUILDINGS, CONDITIONS, ITEMS } from '@fe/defs';
-import { calendar, daysUntilFrost, DAYS_PER_SEASON, stageOf, type Building, type Item, type Pawn } from '@fe/sim';
+import { calendar, daysUntilFrost, DAYS_PER_SEASON, requestText, stageOf, TICKS_PER_DAY, type Building, type Item, type Pawn } from '@fe/sim';
 import { store, useStore } from '../store';
 
 type Severity = 'critical' | 'warning' | 'info';
@@ -56,6 +56,21 @@ function computeAlerts(): Alert[] {
   }
   const sick = pawns.filter((p) => p.conditions.some((c) => CONDITIONS[c.key]?.kind === 'disease'));
   if (sick.length) out.push({ key: 'sick', severity: 'info', title: `${sick.length} sick`, detail: sick.map((p) => p.name.split(' ')[0]).join(', '), focus: at(sick[0]) });
+
+  // Promises to settlements.
+  for (const f of m.factions.values()) {
+    for (const r of f.settlement?.requests ?? []) {
+      if (r.faction !== me) continue;
+      const days = (r.until - store.estTick()) / TICKS_PER_DAY;
+      out.push({
+        key: `request-${r.id}`,
+        severity: days < 1 ? 'warning' : 'info',
+        title: `${f.name} wants ${requestText(r.item, r.count)}`,
+        detail: `${days < 1 ? `Under ${Math.max(1, Math.round(days * 24))} hours` : `${Math.ceil(days)} days`} left. Send a colonist and deliver from the Trade panel.`,
+        focus: { x: f.home.x, y: f.home.y },
+      });
+    }
+  }
 
   const idle = pawns.filter((p) => !p.job || p.job.type === 'wander');
   if (idle.length) out.push({ key: 'idle', severity: 'info', title: `${idle.length} idle colonist${idle.length > 1 ? 's' : ''}`, detail: 'Give them orders or check work priorities.', focus: at(idle[0]) });

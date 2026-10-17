@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ITEMS } from '@fe/defs';
-import { dispositionOf, goodwillOf, lineValue, priceFactor, TRADE_RANGE, type Item } from '@fe/sim';
+import { dispositionOf, goodwillOf, lineValue, priceFactor, requestText, TICKS_PER_DAY, TRADE_RANGE, type Item } from '@fe/sim';
 import { DISPOSITION_COLOR } from '../render/renderer';
 import { command } from '../net';
 import { store, useStore } from '../store';
@@ -119,6 +119,23 @@ export function TradePanel() {
         ) : (
           <p className="muted small">Send a colonist within {TRADE_RANGE} cells of {fac.name} to trade.</p>
         )}
+        {(st.requests ?? [])
+          .filter((r) => r.faction === me)
+          .map((r) => {
+            const have = r.item.startsWith('cat:') ? [...stockOf(me).entries()].filter(([d]) => ITEMS[d].category === r.item.slice(4)).reduce((a, [, n]) => a + n, 0) : (stockOf(me).get(r.item) ?? 0);
+            const days = Math.max(0, (r.until - s.estTick()) / TICKS_PER_DAY);
+            const reward = r.reward === 'recruit' ? 'a new colonist' : requestText(r.reward[0], r.reward[1]);
+            return (
+              <div key={r.id} className="request">
+                <span>
+                  They need <b>{requestText(r.item, r.count)}</b> (you have {have}) · {days >= 1 ? `${Math.ceil(days)}d` : `${Math.max(1, Math.round(days * 24))}h`} left · reward: {reward}
+                </span>
+                <button disabled={!trader || have < r.count || st.state !== 'home'} onClick={() => command({ c: 'deliverRequest', settlement: target.faction, request: r.id })}>
+                  Deliver
+                </button>
+              </div>
+            );
+          })}
         {(give.length > 0 || want.length > 0) && (
           <p className={`small ${giveV + 1e-9 >= wantV ? 'good' : 'bad'}`}>
             You offer {Math.round(giveV)} worth; they ask {Math.round(wantV)}.

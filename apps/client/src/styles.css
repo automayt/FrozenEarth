@@ -1077,3 +1077,15 @@ button.link {
   font-weight: 400;
   color: var(--ice);
 }
+
+.settlement-info .request {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 6px 0;
+  padding: 5px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  font-size: 12px;
+}

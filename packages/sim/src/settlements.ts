@@ -1,12 +1,13 @@
-import { ITEMS, TERRAINS } from '@fe/defs';
+import { ITEM_CATEGORIES, ITEMS, TERRAINS } from '@fe/defs';
 import { RARE_TICK, TICKS_PER_DAY } from './constants';
 import { cellDistance, hostile } from './combat';
 import { frostDistance } from './frost';
 import { pawnName } from './names';
 import { maybeReachable } from './pathfinding';
 import { findSleep } from './pawns';
+import { offerChoice, registerChoice } from './choices';
 import { storedCount, takeStored } from './eventHandlers';
-import type { Building, Faction, Item, Job, Pawn, SettlementState } from './types';
+import type { Building, Faction, Item, Job, Pawn, SettlementRequest, SettlementState } from './types';
 import type { World } from './world';
 
 /** Goodwill at or below this and the settlement's people fight a colony's colonists on sight. */
@@ -304,6 +305,7 @@ export function settlementsTick(w: World): void {
       notifyAll(w, f, `${f.name} has fallen. Whatever they had is there for the taking.`, 'neutral');
       continue;
     }
+    expireRequests(w, f);
     if (s.state === 'home') {
       meetNeighbours(w, f, people);
       if (w.frostAt(w.map.idx(f.home.x, f.home.y)) > 0.25) leave(w, f);
@@ -459,4 +461,189 @@ export function settlementTrade(w: World, faction: number, settlement: number, g
   }
   shiftGoodwill(w, f, faction, Math.min(6, Math.ceil(lineValue(g) / 150)));
   w.message(faction, `Trade done with ${f.name}. ${trader.name} has the goods.`, 'good', w.cellOf(trader));
+}
+
+// ---------------------------------------------------------------- requests
+
+/** Days to deliver once accepted. */
+const REQUEST_DAYS = 4;
+const REQUEST_GOODWILL = 15;
+const BROKEN_PROMISE = -12;
+
+const NEEDS: { item: string; lo: number; hi: number; why: string }[] = [
+  { item: 'wood', lo: 40, hi: 90, why: 'to shore up their walls before the cold comes' },
+  { item: 'cat:raw_food', lo: 40, hi: 80, why: 'because their harvest failed' },
+  { item: 'cat:meal', lo: 6, hi: 14, why: 'because their cook fell sick and stores are running low' },
+  { item: 'cloth', lo: 20, hi: 45, why: 'to sew winter clothes' },
+  { item: 'steel', lo: 25, hi: 50, why: 'to mend their tools' },
+  { item: 'parka', lo: 1, hi: 2, why: 'because a child has nothing warm to wear' },
+  { item: 'stone', lo: 40, hi: 80, why: 'to build a proper hearth' },
+];
+const REWARDS = ['gold', 'steel', 'cloth', 'survival_meal', 'parka', 'rifle', 'bow'];
+
+/** Label for a request's goods: "40 wood", "10 meals". */
+export function requestText(item: string, n: number): string {
+  if (item.startsWith('cat:')) return `${n} ${ITEM_CATEGORIES.find((c) => c.key === item.slice(4))?.label.toLowerCase() ?? item.slice(4)}`;
+  return `${n} ${ITEMS[item]?.label.toLowerCase() ?? item}`;
+}
+
+function rewardText(r: SettlementRequest['reward']): string {
+  return r === 'recruit' ? 'one of their people, who wants to join your colony' : requestText(r[0], r[1]);
+}
+
+/** How many of an item (or "cat:x") a faction has stored. */
+export function storedOf(w: World, faction: number, of: string): number {
+  if (!of.startsWith('cat:')) return storedCount(w, faction, of);
+  const cat = of.slice(4);
+  let n = 0;
+  for (const id of w.kinds.item) {
+    const it = w.get<Item>(id)!;
+    const z = w.zoneAt(w.cellOf(it));
+    if (z && z.faction === faction && z.kind === 'stockpile' && ITEMS[it.def].category === cat) n += it.count;
+  }
+  return n;
+}
+
+function itemValue(of: string): number {
+  if (!of.startsWith('cat:')) return ITEMS[of]?.marketValue ?? 1;
+  const vals = Object.values(ITEMS)
+    .filter((d) => d.category === of.slice(4))
+    .map((d) => d.marketValue);
+  return Math.min(...vals);
+}
+
+/** Settlements that could ask this colony for help: they've met, aren't enemies, nothing already pending. */
+export function settlementsThatCouldAsk(w: World, faction: number): Faction[] {
+  return [...w.factions.values()].filter((f) => f.settlement?.state === 'home' && canAsk(w, f).includes(faction));
+}
+
+function canAsk(w: World, f: Faction): number[] {
+  const s = f.settlement!;
+  const asking = new Set([...w.choices.values()].filter((c) => c.event === 'settlement_request' && w.choiceData.get(c.id)?.settlement === f.id).map((c) => c.faction));
+  const open = new Set((s.requests ?? []).map((r) => r.faction));
+  return s.met.filter((p) => w.factions.get(p)?.isPlayer && dispositionOf(s, p) !== 'hostile' && !asking.has(p) && !open.has(p));
+}
+
+/**
+ * Ask a colony this settlement knows (and doesn't hate) for goods: `only` if given, else any of them.
+ * The storyteller fires this as the settlement_plea event. Returns whether it asked.
+ */
+export function askForHelp(w: World, f: Faction, only?: number): boolean {
+  const s = f.settlement!;
+  if (s.state !== 'home') return false;
+  const people = residentsOf(w, f.id);
+  const who = canAsk(w, f).filter((p) => only === undefined || p === only);
+  if (!who.length) return false;
+  const faction = w.rng.pick(who);
+  const need = w.rng.pick(NEEDS);
+  const count = need.lo + w.rng.int(need.hi - need.lo + 1);
+  const worth = itemValue(need.item) * count * w.rng.range(1.5, 2.2);
+  let reward: SettlementRequest['reward'];
+  if (people.length >= 3 && w.rng.chance(0.12)) reward = 'recruit';
+  else {
+    const affordable = REWARDS.filter((d) => ITEMS[d].marketValue <= worth);
+    const def = affordable.length ? w.rng.pick(affordable) : 'gold';
+    reward = [def, Math.max(1, Math.round(worth / ITEMS[def].marketValue))];
+  }
+  offerChoice(
+    w,
+    faction,
+    'settlement_request',
+    `${f.name} asks for help`,
+    `${f.name} asks you for ${requestText(need.item, count)} ${need.why}. Bring it within ${REQUEST_DAYS} days and they'll give you ${rewardText(reward)}. If you agree and don't come, they'll remember.`,
+    [
+      { key: 'accept', label: 'Agree' },
+      { key: 'decline', label: 'Decline' },
+    ],
+    12,
+    { settlement: f.id, item: need.item, count, reward, why: need.why },
+    w.map.idx(f.home.x, f.home.y),
+  );
+  return true;
+}
+
+registerChoice('settlement_request', (w, c, option, d) => {
+  const f = w.factions.get(Number(d.settlement));
+  const s = f?.settlement;
+  if (!f || !s || s.state === 'fallen' || option !== 'accept') return;
+  const r: SettlementRequest = {
+    id: w.nextChoiceId++,
+    faction: c.faction,
+    item: String(d.item),
+    count: Number(d.count),
+    reward: d.reward as SettlementRequest['reward'],
+    goodwill: REQUEST_GOODWILL,
+    until: w.tick + REQUEST_DAYS * TICKS_PER_DAY,
+    why: String(d.why),
+  };
+  (s.requests ??= []).push(r);
+  w.dirty.factions.add(f.id);
+  w.message(c.faction, `You agreed to bring ${f.name} ${requestText(r.item, r.count)}. Send a colonist there and deliver it from the Trade panel.`, 'neutral', w.map.idx(f.home.x, f.home.y));
+});
+
+function expireRequests(w: World, f: Faction): void {
+  const s = f.settlement!;
+  if (!s.requests?.length) return;
+  const keep: SettlementRequest[] = [];
+  for (const r of s.requests) {
+    if (w.tick < r.until) {
+      keep.push(r);
+      continue;
+    }
+    w.message(r.faction, `You promised ${f.name} ${requestText(r.item, r.count)} and never came. They won't forget it.`, 'bad', w.map.idx(f.home.x, f.home.y));
+    shiftGoodwill(w, f, r.faction, BROKEN_PROMISE);
+  }
+  if (keep.length !== s.requests.length) {
+    s.requests = keep;
+    w.dirty.factions.add(f.id);
+  }
+}
+
+/** Hand over what a settlement asked for, in person, and collect the reward. */
+export function deliverRequest(w: World, faction: number, settlement: number, request: number): void {
+  const f = w.factions.get(settlement);
+  const s = f?.settlement;
+  const r = s?.requests?.find((x) => x.id === request && x.faction === faction);
+  if (!f || !s || !r) return;
+  const say = (t: string) => w.message(faction, t, 'neutral');
+  if (s.state !== 'home') return say(`${f.name} is on the move; there's nobody to take it.`);
+  const trader = traderAt(w, faction, f);
+  if (!trader) return say(`Send a colonist to ${f.name} to deliver. They need to be within ${TRADE_RANGE} cells.`);
+  if (storedOf(w, faction, r.item) < r.count) return say(`You don't have ${requestText(r.item, r.count)} in your stockpiles.`);
+  const drop = w.map.idx(f.home.x - HW + 1, f.home.y + HH - 1);
+  // Item by item, so a category hands over whatever's in stock.
+  const cat = r.item.startsWith('cat:') ? r.item.slice(4) : null;
+  let left = r.count;
+  for (const id of [...w.kinds.item]) {
+    if (left <= 0) break;
+    const it = w.get<Item>(id)!;
+    const z = w.zoneAt(w.cellOf(it));
+    if (!z || z.faction !== faction || z.kind !== 'stockpile' || (cat ? ITEMS[it.def].category !== cat : it.def !== r.item)) continue;
+    const def = it.def;
+    const got = w.takeFromItem(it, left);
+    left -= got;
+    w.placeItemNear(def, got, drop);
+  }
+  s.requests = s.requests!.filter((x) => x !== r);
+  w.dirty.factions.add(f.id);
+  const at = w.cellOf(trader);
+  if (r.reward === 'recruit') {
+    const joiner = residentsOf(w, f.id).find((p) => !p.downed);
+    if (joiner) {
+      if (joiner.bed) {
+        const bed = w.get<Building>(joiner.bed);
+        if (bed && bed.kind === 'building') bed.owner = 0;
+      }
+      joiner.faction = faction;
+      joiner.job = null;
+      joiner.path = null;
+      joiner.bed = 0;
+      w.markDirty(joiner);
+      w.message(faction, `${joiner.name} of ${f.name} has joined your colony, grateful for your help.`, 'good', at);
+    }
+  } else {
+    w.placeItemNear(r.reward[0], r.reward[1], at);
+    w.message(faction, `${f.name} thanks you for the ${requestText(r.item, r.count)}. ${trader.name} has ${requestText(r.reward[0], r.reward[1])}.`, 'good', at);
+  }
+  shiftGoodwill(w, f, faction, r.goodwill);
 }

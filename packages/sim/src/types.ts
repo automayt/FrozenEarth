@@ -238,6 +238,22 @@ export interface SettlementState {
   until: number;
   /** Player factions whose colonists have come near (and had the letter). */
   met: number[];
+  /** Jobs colonies have agreed to do for them. Missing on older saves. */
+  requests?: SettlementRequest[];
+}
+
+/** Goods a settlement asked a colony for, and what it promised in return. */
+export interface SettlementRequest {
+  id: number;
+  faction: number;
+  /** An item key, or "cat:<category>" for any item of that category. */
+  item: string;
+  count: number;
+  /** What they'll hand over: items, or a settler who wants to join you. */
+  reward: [item: string, count: number] | 'recruit';
+  goodwill: number;
+  until: number;
+  why: string;
 }
 
 export type Tone = 'good' | 'neutral' | 'bad';
@@ -312,6 +328,7 @@ export type Command =
   | { c: 'choose'; choice: number; option: string }
   | { c: 'offerTrade'; to: number; give: [string, number][]; want: [string, number][]; note?: string }
   | { c: 'settlementTrade'; settlement: number; give: [string, number][]; want: [string, number][] }
+  | { c: 'deliverRequest'; settlement: number; request: number }
   | { c: 'draft'; pawns: EntityId[]; on: boolean }
   | { c: 'move'; pawns: EntityId[]; x: number; y: number }
   | { c: 'attack'; pawns: EntityId[]; target: EntityId }

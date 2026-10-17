@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { BUILDINGS } from '@fe/defs';
 import {
+  askForHelp,
   createWorld,
+  resolveChoice,
+  storedOf,
   deserializeWorld,
   dispositionOf,
   foundSettlement,
@@ -157,5 +160,47 @@ describe('settlements', () => {
     run(w, 3000);
     run(b, 3000);
     expect(hashWorld(b)).toBe(hashWorld(w));
+  });
+
+  it('ask colonies they know for help, reward deliveries, and remember broken promises', () => {
+    const { w, s, player } = withSettlement(45);
+    // Strangers don't get asked.
+    expect(askForHelp(w, s)).toBe(false);
+    s.settlement!.met.push(player);
+    expect(askForHelp(w, s)).toBe(true);
+    const c = [...w.choices.values()].find((x) => x.event === 'settlement_request')!;
+    expect(c.faction).toBe(player);
+    resolveChoice(w, c.id, 'accept', player);
+    const r = s.settlement!.requests![0];
+    expect(r.faction).toBe(player);
+
+    // Stock up what they asked for, then go there and hand it over.
+    const z = w.createZone(player, 'stockpile');
+    for (let x = 4; x < 20; x++) w.addZoneCell(z, w.map.idx(x, 12));
+    const def = r.item.startsWith('cat:') ? ({ 'cat:raw_food': 'potato', 'cat:meal': 'simple_meal' } as Record<string, string>)[r.item] : r.item;
+    w.placeItemNear(def, r.count, w.map.idx(10, 12));
+    expect(storedOf(w, player, r.item)).toBe(r.count);
+    w.enqueue(player, { c: 'deliverRequest', settlement: s.id, request: r.id });
+    run(w, 2);
+    expect(s.settlement!.requests!.length).toBe(1); // nobody there yet
+    const courier = addPawn(w, 40, 47, player);
+    const before = residents(w, player).length;
+    w.enqueue(player, { c: 'deliverRequest', settlement: s.id, request: r.id });
+    run(w, 2);
+    expect(s.settlement!.requests!.length).toBe(0);
+    expect(storedOf(w, player, r.item)).toBe(0);
+    expect(s.settlement!.goodwill[player]).toBeGreaterThanOrEqual(60);
+    if (r.reward === 'recruit') expect(residents(w, player).length).toBe(before + 1);
+    else expect(w.dirty.msgs.some((m) => m.text.includes(`${courier.name} has`))).toBe(true);
+
+    // Agree again and never come.
+    askForHelp(w, s);
+    const c2 = [...w.choices.values()].find((x) => x.event === 'settlement_request')!;
+    resolveChoice(w, c2.id, 'accept', player);
+    const g = s.settlement!.goodwill[player];
+    run(w, 4 * TICKS_PER_DAY + 2000);
+    expect(s.settlement!.requests!.length).toBe(0);
+    expect(s.settlement!.goodwill[player]).toBeLessThan(g);
+    expect(w.dirty.msgs.some((m) => m.text.includes('never came'))).toBe(true);
   });
 });
