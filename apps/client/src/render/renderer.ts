@@ -1,4 +1,4 @@
-import { Application, BitmapText, Container, Graphics, Sprite, Texture } from 'pixi.js';
+import { Application, BitmapText, Container, Graphics, GraphicsContext, Sprite, TextStyle, Texture } from 'pixi.js';
 import { ANIMALS, BUILDINGS, maxHp, PLANTS, ROCKS, TERRAINS, WEAPON_KEYS, weaponOf, type TerrainDef } from '@fe/defs';
 import { pawnPosition } from '@fe/protocol';
 import { DESIG, FROST_BAND, MIN_COLONY_GAP, SHOT_FIELDS, TICKS_PER_DAY, TICKS_PER_HOUR, bleedRate, calendar, dispositionOf, NOISE, stealthMult, frostLevel, frostRadius, hash2, outdoorTempAt, woundTotal, type Construct, type Entity, type Pawn } from '@fe/sim';
@@ -18,6 +18,12 @@ const CHUNK = 16;
 export const DISPOSITION_COLOR = { friendly: 0x7ad07a, wary: 0xf0b43c, hostile: 0xf07a5a } as const;
 
 const LABEL_STYLE = { fontFamily: 'IBM Plex Sans', fontSize: 22, fill: 0xffffff, stroke: { color: 0x000000, width: 5 } };
+/**
+ * One shared TextStyle for every label. A stroked style keys its bitmap font by TextStyle instance,
+ * so handing BitmapText a plain style object built a whole new glyph atlas per label (~15 ms each,
+ * and never freed); sharing the instance means one atlas for all of them.
+ */
+const LABEL_TEXT = new TextStyle(LABEL_STYLE);
 /** Pixels per cell in the terrain and overlay canvases. */
 const PX = 8;
 /** Texture pixels skipped per canvas pixel when sampling terrain art (texture repeats every 128/(PX*STEP) cells). */
@@ -119,6 +125,8 @@ export class GameRenderer {
   private settlementLabels = new Map<number, BitmapText>();
   private night = new Graphics();
   private views = new Map<number, EntityView>();
+  /** Shared geometry for the small shapes on entity views (see shape()). */
+  private shapes = new Map<string, GraphicsContext>();
   private pawnIds = new Set<number>();
   /** Static entity views are grouped into CHUNK x CHUNK cell containers so off-screen ones can be hidden. */
   private chunks = new Map<string, Container>();
@@ -167,6 +175,9 @@ export class GameRenderer {
     } catch {
       // init may not have finished
     }
+    // Shared shape geometry outlives the Graphics that used it; free it once they're gone.
+    for (const c of this.shapes.values()) c.destroy();
+    this.shapes.clear();
   }
 
   // ---------------------------------------------------------------- camera
@@ -708,7 +719,7 @@ export class GameRenderer {
 
   /** Arrivals pop in with a little overshoot. */
   private popIn(root: Container, dur = 260): void {
-    this.tweens.add(dur, (k) => root.scale.set(0.35 + 0.65 * ease.outBack(k)));
+    this.tweens.add(dur, (k) => root.scale.set(0.35 + 0.65 * ease.outBack(k)), undefined, root);
   }
 
   /** Add a static view to its layer's chunk container. */
@@ -765,6 +776,13 @@ export class GameRenderer {
     const key = this.viewKey(e);
     const old = this.views.get(e.id);
     if (old && old.key === key) return;
+    if (old && e.kind === 'item' && old.kind === 'item' && old.def === e.def && old.root.x === (e.x + 0.5) * TILE && old.root.y === (e.y + 0.5) * TILE) {
+      // A stack growing or shrinking as haulers come and go: update it in place rather than rebuild.
+      (old.root.children[0] as Sprite).tint = e.rot >= 0.5 ? 0xa0b070 : 0xffffff;
+      this.setCountLabel(old, e.count);
+      old.key = key;
+      return;
+    }
     if (old) this.removeView(e.id);
     const root = new Container();
     const v: EntityView = { root, key, kind: e.kind, def: 'def' in e ? e.def : '' };
@@ -790,15 +808,7 @@ export class GameRenderer {
         s.width = s.height = TILE * 0.9;
         if (e.rot >= 0.5) s.tint = 0xa0b070;
         root.addChild(s);
-        if (e.count > 1) {
-          const t = new BitmapText({ text: String(e.count), style: LABEL_STYLE });
-          t.scale.set(this.countLabelScale());
-          t.anchor.set(1, 1);
-          t.position.set(TILE / 2 - 1, TILE / 2);
-          t.visible = this.lod !== 0 && this.lod !== 1;
-          v.label = t;
-          root.addChild(t);
-        }
+        this.setCountLabel(v, e.count);
         this.place('items', root, e.x, e.y);
         break;
       }
@@ -815,18 +825,20 @@ export class GameRenderer {
           // Battered: darker, with a strip showing what's left.
           const k = Math.round(0x60 + 0x9f * health);
           s.tint = (k << 16) | (k << 8) | k;
+          const left = Math.round(health * 32) / 32;
           root.addChild(
-            new Graphics()
-              .rect(-TILE / 2 + 2, -TILE / 2 + 2, TILE - 4, 3)
-              .fill(0x301010)
-              .rect(-TILE / 2 + 2, -TILE / 2 + 2, (TILE - 4) * health, 3)
-              .fill(health < 0.35 ? 0xe05040 : 0xe0b040),
+            this.shape(`dmg:${left}`, (g) =>
+              g
+                .rect(-TILE / 2 + 2, -TILE / 2 + 2, TILE - 4, 3)
+                .fill(0x301010)
+                .rect(-TILE / 2 + 2, -TILE / 2 + 2, (TILE - 4) * left, 3)
+                .fill(left < 0.35 ? 0xe05040 : 0xe0b040),
+            ),
           );
         }
         if (d.door) {
-          const f = store.mirror.factions.get(e.faction);
-          const g = new Graphics().rect(-TILE / 2, TILE / 2 - 4, TILE, 3).fill(f?.color ?? 0xffffff);
-          root.addChild(g);
+          const color = store.mirror.factions.get(e.faction)?.color ?? 0xffffff;
+          root.addChild(this.shape(`door:${color}`, (g) => g.rect(-TILE / 2, TILE / 2 - 4, TILE, 3).fill(color)));
         }
         this.place(d.floorTerrain ? 'floorThings' : 'buildings', root, e.x, e.y);
         break;
@@ -843,10 +855,61 @@ export class GameRenderer {
     }
     this.views.set(e.id, v);
     if (!old && this.built) {
-      if (e.kind === 'pawn') this.tweens.add(400, (k) => (root.alpha = k));
+      if (e.kind === 'pawn') this.tweens.add(400, (k) => (root.alpha = k), undefined, root);
       else this.popIn(root);
       if (e.kind === 'building') sound.play('pop', root.x, root.y);
     }
+  }
+
+  /**
+   * A Graphics drawing a shared, cached shape. Views are rebuilt whenever their entity changes, and
+   * building fresh geometry for every ring, bar and chevron each time cost ~0.5 ms per pawn at
+   * render; shared contexts are tessellated once. (Destroying the Graphics leaves the context.)
+   */
+  private shape(key: string, draw: (g: GraphicsContext) => void): Graphics {
+    let ctx = this.shapes.get(key);
+    if (!ctx) {
+      ctx = new GraphicsContext();
+      draw(ctx);
+      this.shapes.set(key, ctx);
+    }
+    return new Graphics(ctx);
+  }
+
+  /**
+   * A pawn's health strip: dark outlined track, fill coloured by how bad it is (green, amber, red),
+   * bright red while bleeding.
+   */
+  private healthBar(width: number, y: number, hurt: number, bleeding: boolean): Graphics {
+    const left = Math.round(Math.max(0, 1 - hurt) * 24) / 24;
+    const fill = bleeding ? 0xff4848 : left > 0.6 ? 0x5ccf5c : left > 0.3 ? 0xe8b83c : 0xe85a3c;
+    return this.shape(`hp:${width}:${y}:${left}:${fill}`, (g) =>
+      g
+        .rect(-width / 2 - 1, y - 1, width + 2, 6)
+        .fill({ color: 0x000000, alpha: 0.75 })
+        .rect(-width / 2, y, width * left, 4)
+        .fill(fill),
+    );
+  }
+
+  /** The stack size in an item's corner, shown for stacks of two or more. */
+  private setCountLabel(v: EntityView, count: number): void {
+    if (count <= 1) {
+      v.label?.destroy();
+      v.label = undefined;
+      return;
+    }
+    if (v.label) {
+      v.label.text = String(count);
+      return;
+    }
+    const t = new BitmapText({ text: String(count), style: LABEL_TEXT });
+    t.scale.set(this.countLabelScale());
+    t.anchor.set(1, 1);
+    t.position.set(TILE / 2 - 1, TILE / 2);
+    t.visible = this.lod !== 0 && this.lod !== 1;
+    v.label = t;
+    v.root.addChild(t);
   }
 
   /** Bits: 1 = wall above, 2 = right, 4 = below, 8 = left. */
@@ -867,20 +930,22 @@ export class GameRenderer {
     ghost.width = ghost.height = TILE;
     ghost.alpha = ready ? 0.65 : 0.3;
     ghost.tint = ready ? 0xd8c8a0 : 0x8ac8ff;
-    const frame = new Graphics()
-      .rect(-TILE / 2 + 1, -TILE / 2 + 1, TILE - 2, TILE - 2)
-      .fill({ color: ready ? 0x8a7050 : 0x3a7ac0, alpha: ready ? 0.25 : 0.2 })
-      .stroke({ width: 1.5, color: ready ? 0xc8a878 : 0x8ac8ff, alpha: 0.9 });
+    const frame = this.shape(`cframe:${ready}`, (g) =>
+      g
+        .rect(-TILE / 2 + 1, -TILE / 2 + 1, TILE - 2, TILE - 2)
+        .fill({ color: ready ? 0x8a7050 : 0x3a7ac0, alpha: ready ? 0.25 : 0.2 })
+        .stroke({ width: 1.5, color: ready ? 0xc8a878 : 0x8ac8ff, alpha: 0.9 }),
+    );
     root.addChild(frame, ghost);
-    const p = ready ? e.progress / d.work : total ? got / total : 0;
-    if (p > 0) root.addChild(new Graphics().rect(-TILE / 2 + 3, TILE / 2 - 6, (TILE - 6) * Math.min(1, p), 3).fill(ready ? 0xf0c060 : 0x8ac8ff));
+    const p = Math.min(1, Math.round((ready ? e.progress / d.work : total ? got / total : 0) * 20) / 20);
+    if (p > 0) root.addChild(this.shape(`cprog:${ready}:${p}`, (g) => g.rect(-TILE / 2 + 3, TILE / 2 - 6, (TILE - 6) * p, 3).fill(ready ? 0xf0c060 : 0x8ac8ff)));
   }
 
   /** A wild animal: its sprite on a shadow, a crosshair when your hunters are after it. */
   private drawAnimal(root: Container, e: Pawn, v: EntityView): void {
     const def = ANIMALS[e.species!];
     const size = TILE * 1.15 * (def?.size ?? 1);
-    root.addChild(new Graphics().ellipse(0, TILE * 0.3, size * 0.38, size * 0.12).fill({ color: 0x000000, alpha: 0.3 }));
+    root.addChild(this.shape(`shadow:${size}`, (g) => g.ellipse(0, TILE * 0.3, size * 0.38, size * 0.12).fill({ color: 0x000000, alpha: 0.3 })));
     const body = new Sprite(this.tex.animal(e.species!));
     // The ComfyUI sprites stand on the bottom of their frame; the fallback shapes a little higher.
     body.anchor.set(0.5, this.tex.hasArt(`animal_${e.species}`) ? 0.95 : 0.85);
@@ -899,18 +964,20 @@ export class GameRenderer {
     v.animal = true;
     const hurt = woundTotal(e);
     if (hurt > 0.02 || e.downed) {
-      root.addChild(healthBar(TILE * 0.6, -size * 0.75, hurt, bleedRate(e) > 0));
+      root.addChild(this.healthBar(TILE * 0.6, -size * 0.75, hurt, bleedRate(e) > 0));
     }
     if (e.hunted && e.hunted === store.me?.faction) {
       const y = -size * 0.75 - 8;
       root.addChild(
-        new Graphics()
-          .circle(0, y, 5)
-          .moveTo(-8, y)
-          .lineTo(8, y)
-          .moveTo(0, y - 8)
-          .lineTo(0, y + 8)
-          .stroke({ width: 1.5, color: 0xff5040 }),
+        this.shape(`hunt:${y}`, (g) =>
+          g
+            .circle(0, y, 5)
+            .moveTo(-8, y)
+            .lineTo(8, y)
+            .moveTo(0, y - 8)
+            .lineTo(0, y + 8)
+            .stroke({ width: 1.5, color: 0xff5040 }),
+        ),
       );
     }
   }
@@ -919,8 +986,13 @@ export class GameRenderer {
     if (e.species) return this.drawAnimal(root, e, v);
     const f = store.mirror.factions.get(e.faction);
     const color = f?.color ?? 0xffffff;
-    const ring = new Graphics().ellipse(0, TILE * 0.3, TILE * 0.38, TILE * 0.16).fill({ color: 0x000000, alpha: 0.35 });
-    ring.ellipse(0, TILE * 0.28, TILE * 0.34, TILE * 0.13).stroke({ width: 2.5, color });
+    const ring = this.shape(`ring:${color}`, (g) =>
+      g
+        .ellipse(0, TILE * 0.3, TILE * 0.38, TILE * 0.16)
+        .fill({ color: 0x000000, alpha: 0.35 })
+        .ellipse(0, TILE * 0.28, TILE * 0.34, TILE * 0.13)
+        .stroke({ width: 2.5, color }),
+    );
     const body = new Sprite(this.tex.pawn());
     body.anchor.set(0.5, 0.6);
     body.width = body.height = TILE * 1.05;
@@ -940,25 +1012,32 @@ export class GameRenderer {
     const wd = weaponOf(e.weapon);
     if (e.weapon && !e.downed) {
       // A small weapon glyph at the pawn's side: a bow arc, a long barrel, or a short blade.
-      const g = new Graphics();
-      if (e.weapon === 'bow') g.arc(TILE * 0.3, 0, TILE * 0.18, -Math.PI / 2.2, Math.PI / 2.2).stroke({ width: 2, color: 0xc8a070 });
-      else
-        g.moveTo(TILE * 0.22, TILE * 0.12)
-          .lineTo(TILE * (wd.melee ? 0.42 : 0.55), -TILE * (wd.melee ? 0.12 : 0.18))
-          .stroke({ width: wd.melee ? 2.5 : 2, color: wd.melee ? 0xd8d8d8 : 0x6a5a48 });
-      rig.addChild(g);
+      const bow = e.weapon === 'bow';
+      const melee = !!wd.melee;
+      rig.addChild(
+        this.shape(bow ? 'wpn:bow' : `wpn:${melee}`, (g) => {
+          if (bow) g.arc(TILE * 0.3, 0, TILE * 0.18, -Math.PI / 2.2, Math.PI / 2.2).stroke({ width: 2, color: 0xc8a070 });
+          else
+            g.moveTo(TILE * 0.22, TILE * 0.12)
+              .lineTo(TILE * (melee ? 0.42 : 0.55), -TILE * (melee ? 0.12 : 0.18))
+              .stroke({ width: melee ? 2.5 : 2, color: melee ? 0xd8d8d8 : 0x6a5a48 });
+        }),
+      );
     }
     if (e.drafted) {
       // Drafted: a chevron over the head in the faction colour.
-      const d = new Graphics()
-        .poly([-6, -TILE * 0.86, 0, -TILE * 0.74, 6, -TILE * 0.86, 6, -TILE * 0.98, 0, -TILE * 0.86, -6, -TILE * 0.98])
-        .fill(color)
-        .stroke({ width: 1.2, color: 0x000000, alpha: 0.8 });
-      root.addChild(d);
+      root.addChild(
+        this.shape(`chevron:${color}`, (g) =>
+          g
+            .poly([-6, -TILE * 0.86, 0, -TILE * 0.74, 6, -TILE * 0.86, 6, -TILE * 0.98, 0, -TILE * 0.86, -6, -TILE * 0.98])
+            .fill(color)
+            .stroke({ width: 1.2, color: 0x000000, alpha: 0.8 }),
+        ),
+      );
     }
     const hurt = woundTotal(e);
     if (hurt > 0.02 || e.downed) {
-      root.addChild(healthBar(TILE * 0.7, -TILE * 0.68, hurt, bleedRate(e) > 0));
+      root.addChild(this.healthBar(TILE * 0.7, -TILE * 0.68, hurt, bleedRate(e) > 0));
     }
     if (e.carrying) {
       const c = new Sprite(this.tex.item(e.carrying.def));
@@ -967,7 +1046,7 @@ export class GameRenderer {
       c.position.set(TILE * 0.3, -TILE * 0.05);
       rig.addChild(c);
     }
-    const label = new BitmapText({ text: e.name.split(' ')[0] + (e.prisoner ? ' (prisoner)' : '') + (e.downed ? ' (down)' : e.asleep ? ' z' : ''), style: LABEL_STYLE });
+    const label = new BitmapText({ text: e.name.split(' ')[0] + (e.prisoner ? ' (prisoner)' : '') + (e.downed ? ' (down)' : e.asleep ? ' z' : ''), style: LABEL_TEXT });
     label.scale.set(this.pawnLabelScale());
     label.anchor.set(0.5, 0);
     label.position.set(0, TILE * 0.42);
@@ -1097,7 +1176,7 @@ export class GameRenderer {
       seen.add(f.id);
       let label = this.settlementLabels.get(f.id);
       if (!label) {
-        label = new BitmapText({ text: '', style: LABEL_STYLE });
+        label = new BitmapText({ text: '', style: LABEL_TEXT });
         label.anchor.set(0.5, 1);
         this.layers.ui.addChild(label);
         this.settlementLabels.set(f.id, label);
@@ -1505,20 +1584,6 @@ function precipFor(tick: number): { kind: Precip; wind: number } {
   const cold = outdoorTempAt(tick, m.coldOffset, m.conditions) < 0;
   if (cold && (cal.season === 'Winter' || active.has('cold_snap') || active.has('early_frost')) && hash2(cal.day, 7, m.seed) < 0.6) return { kind: 'snow', wind: 0.35 };
   return { kind: 'none', wind: 0 };
-}
-
-/**
- * A pawn's health strip: dark outlined track, fill coloured by how bad it is (green, amber, red),
- * flashing red-pink while bleeding.
- */
-function healthBar(width: number, y: number, hurt: number, bleeding: boolean): Graphics {
-  const left = Math.max(0, 1 - hurt);
-  const fill = bleeding ? 0xff4848 : left > 0.6 ? 0x5ccf5c : left > 0.3 ? 0xe8b83c : 0xe85a3c;
-  return new Graphics()
-    .rect(-width / 2 - 1, y - 1, width + 2, 6)
-    .fill({ color: 0x000000, alpha: 0.75 })
-    .rect(-width / 2, y, width * left, 4)
-    .fill(fill);
 }
 
 function isWall(e: Entity | undefined): boolean {
