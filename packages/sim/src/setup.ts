@@ -68,7 +68,8 @@ const SETTLEMENT_GAP = 28;
  */
 export function siteProblem(w: World, x: number, y: number, self = 0): string | null {
   const m = w.map;
-  if (x < 6 || y < 6 || x >= m.w - 6 || y >= m.h - 6) return 'Too close to the edge of the map.';
+  // Written so NaN fails it too (every comparison with NaN is false).
+  if (!(x >= 6 && y >= 6 && x < m.w - 6 && y < m.h - 6)) return 'Too close to the edge of the map.';
   if (frostLevel(x, y, m.w, m.h, w.frostRadius()) > 0) return 'That land has already frozen over.';
   let open = 0;
   let total = 0;

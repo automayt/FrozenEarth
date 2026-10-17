@@ -17,7 +17,7 @@ function clean(lines: unknown): TradeLine[] | null {
   if (!Array.isArray(lines) || lines.length > MAX_LINES) return null;
   const out: TradeLine[] = [];
   for (const l of lines) {
-    if (!Array.isArray(l) || !ITEMS[l[0]]) return null;
+    if (!Array.isArray(l) || typeof l[0] !== 'string' || !Object.hasOwn(ITEMS, l[0])) return null;
     const n = Math.round(Number(l[1]));
     if (!(n >= 1 && n <= 999)) return null;
     out.push([String(l[0]), n]);

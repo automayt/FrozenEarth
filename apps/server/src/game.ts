@@ -226,12 +226,19 @@ export class GameServer {
       } catch {
         return;
       }
-      if (!player) {
-        if (msg.t !== 'hello') return;
-        player = this.handleHello(ws, msg);
-        return;
+      // Anything can come off the wire: nil, a number, an array, fields of the wrong type.
+      if (!msg || typeof msg !== 'object' || typeof msg.t !== 'string') return;
+      // One bad message must never bring the server down for everyone else.
+      try {
+        if (!player) {
+          if (msg.t !== 'hello') return;
+          player = this.handleHello(ws, msg);
+          return;
+        }
+        this.handle(player, msg);
+      } catch (e) {
+        this.log(`Dropped a bad ${msg.t} message from ${player?.name ?? 'a new connection'}: ${e instanceof Error ? e.message : e}`);
       }
-      this.handle(player, msg);
     });
     ws.on('close', () => {
       if (player && player.ws === ws) {
@@ -253,7 +260,7 @@ export class GameServer {
     let p = msg.token ? [...this.players.values()].find((x) => x.token === msg.token) : undefined;
     if (!p) {
       if (this.opts.password && msg.password !== this.opts.password) return fail('Wrong server password.');
-      const name = String(msg.name ?? '').replace(/[^\p{L}\p{N} _'-]/gu, '').trim().slice(0, 20);
+      const name = (typeof msg.name === 'string' ? msg.name : '').replace(/[^\p{L}\p{N} _'-]/gu, '').trim().slice(0, 20);
       if (!name) return fail('Pick a name.');
       if ([...this.players.values()].some((x) => x.name.toLowerCase() === name.toLowerCase())) return fail('That name is taken on this server.');
       // New players pick where to settle before their colony exists.
@@ -298,7 +305,8 @@ export class GameServer {
         if (p.faction) return;
         let at: { x: number; y: number } | undefined;
         if (msg.x !== undefined && msg.y !== undefined) {
-          at = { x: Math.round(Number(msg.x)), y: Math.round(Number(msg.y)) };
+          if (!Number.isFinite(msg.x) || !Number.isFinite(msg.y)) return;
+          at = { x: Math.round(msg.x), y: Math.round(msg.y) };
           const problem = siteProblem(this.world, at.x, at.y);
           if (problem) {
             this.send(p.ws!, { t: 'error', msg: problem, fatal: false });
@@ -320,7 +328,7 @@ export class GameServer {
         this.world.enqueue(p.faction, msg.cmd);
         return;
       case 'speed': {
-        const s = Math.max(0, Math.min(MAX_SPEED, Math.round(Number(msg.speed) || 0)));
+        const s = Math.max(0, Math.min(MAX_SPEED, Math.round(typeof msg.speed === 'number' ? msg.speed : 0) || 0));
         if (s === 0 && this.connected().length > 1 && p.pauseBudget <= 0) {
           this.send(p.ws!, { t: 'error', msg: 'You have no pause time left today.', fatal: false });
           return;
@@ -331,21 +339,21 @@ export class GameServer {
         return;
       }
       case 'chat': {
-        const text = String(msg.text ?? '').slice(0, 300).trim();
+        const text = (typeof msg.text === 'string' ? msg.text : '').slice(0, 300).trim();
         if (!text) return;
         const color = this.world.factions.get(p.faction)?.color ?? 0xffffff;
         this.broadcast({ t: 'chat', from: p.name, color, text, at: Date.now() });
         return;
       }
       case 'ping':
-        this.send(p.ws!, { t: 'pong', at: msg.at });
+        this.send(p.ws!, { t: 'pong', at: typeof msg.at === 'number' ? msg.at : 0 });
         return;
       case 'admin':
         if (!p.admin) return;
         if (msg.action === 'save') {
           this.save();
           this.system('World saved.');
-        } else if (msg.action === 'event' && msg.key) {
+        } else if (msg.action === 'event' && typeof msg.key === 'string' && msg.key) {
           const ok = fireEvent(this.world, String(msg.key), p.faction);
           if (ok) this.system(`The host triggered an event: ${EVENTS[String(msg.key)]?.label ?? msg.key}.`);
           else this.send(p.ws!, { t: 'error', msg: 'That event had nothing to act on right now.', fatal: false });

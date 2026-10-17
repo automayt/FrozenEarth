@@ -124,4 +124,55 @@ describe('game server', () => {
     expect(c.readyState).toBe(3);
     g.stop();
   });
+  it('survives garbage on the wire, before and after hello, and keeps serving everyone', () => {
+    const g = new GameServer({ savePath: worldPath(dir, 'garbage'), seed: 6, size: 80, log: () => {} });
+    const good = new FakeSocket();
+    g.onConnect(good as unknown as WebSocket);
+    good.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Ann' });
+    good.say({ t: 'settle' });
+    const fa = good.take('settled')[0].faction;
+    const pawn = [...g.world.kinds.pawn].map((id) => g.world.get<Pawn>(id)!).find((p) => p.faction === fa)!;
+    const evil = new FakeSocket();
+    g.onConnect(evil as unknown as WebSocket);
+    const raw = (v: unknown) => evil.emit('message', Buffer.from(encode(v as ClientMsg)), true);
+    // msgpack hands these over for {"toString":1,"valueOf":1}: String() and Number() throw on them.
+    const poison = { toString: 1, valueOf: 1 };
+    const junk: unknown[] = [null, 0, 'hello', [], [1, 2], {}, { t: 5 }, { t: poison }];
+    for (const j of junk) expect(() => raw(j), JSON.stringify(j)).not.toThrow();
+    expect(() => evil.emit('message', Buffer.from([0xc1, 0xff, 0x00]), true)).not.toThrow();
+    // A hello with a poisoned name is turned away, not a crash.
+    const nameless = new FakeSocket();
+    g.onConnect(nameless as unknown as WebSocket);
+    expect(() => nameless.emit('message', Buffer.from(encode({ t: 'hello', v: PROTOCOL_VERSION, name: poison } as unknown as ClientMsg)), true)).not.toThrow();
+    expect(nameless.take('error')[0]).toMatchObject({ fatal: true });
+    raw({ t: 'hello', v: PROTOCOL_VERSION, name: 'Eve' });
+    expect(evil.take('welcome')).toHaveLength(1);
+    const after: unknown[] = [
+      null,
+      { t: 'settle', x: NaN, y: NaN },
+      { t: 'settle', x: poison, y: poison },
+      { t: 'chat', text: poison },
+      { t: 'speed', speed: poison },
+      { t: 'ping', at: poison },
+      { t: 'cmd', cmd: null },
+      { t: 'cmd', cmd: { c: poison } },
+      { t: 'cmd', cmd: { c: 'draft', pawns: [poison], on: true } },
+      { t: 'cmd', cmd: { c: 'setPriority', pawn: pawn.id, work: 'haul', prio: poison } },
+      { t: 'cmd', cmd: { c: 'build', def: '__proto__', hollow: false, x0: 1, y0: 1, x1: 3, y1: 3 } },
+      { t: 'admin', action: 'event', key: poison },
+    ];
+    for (const j of after) expect(() => raw(j), JSON.stringify(j)).not.toThrow();
+    expect(() => pump(g)).not.toThrow();
+    expect(g.world.commandErrors).toBe(0);
+    // Eve never got a colony at NaN, and Ann's colonist is untouched.
+    expect([...g.world.factions.values()].every((f) => Number.isFinite(f.home.x) && Number.isFinite(f.home.y))).toBe(true);
+    expect(pawn.drafted).toBe(false);
+    // The server is still up for everyone: chat and commands still work.
+    good.say({ t: 'chat', text: 'still here' });
+    expect(evil.take('chat').some((m) => m.text === 'still here')).toBe(true);
+    good.say({ t: 'cmd', cmd: { c: 'draft', pawns: [pawn.id], on: true } });
+    pump(g);
+    expect(pawn.drafted).toBe(true);
+    g.stop();
+  });
 });

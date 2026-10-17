@@ -533,7 +533,7 @@ function cleanLines(v: unknown): TradeLine[] | null {
   if (!Array.isArray(v) || v.length > 6) return null;
   const out: TradeLine[] = [];
   for (const l of v) {
-    if (!Array.isArray(l) || typeof l[0] !== 'string' || !ITEMS[l[0]]) return null;
+    if (!Array.isArray(l) || typeof l[0] !== 'string' || !Object.hasOwn(ITEMS, l[0])) return null;
     const n = Math.round(Number(l[1]));
     if (!(n >= 1 && n <= 9999)) return null;
     out.push([l[0], n]);
