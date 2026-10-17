@@ -27,6 +27,11 @@ export class Fog {
     return this.isNight() && !this.lit[cell] ? SIGHT_NIGHT : SIGHT_DAY;
   }
 
+  /** Lit by a fire or heater: people see their full daytime range here even at night. */
+  isLit(cell: number): boolean {
+    return this.lit[cell] === 1;
+  }
+
   /** Recompute at most a few times a second. Returns true if it changed. */
   update(now: number): boolean {
     if (now - this.last < 250) return false;

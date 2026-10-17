@@ -24,4 +24,4 @@ export * from './frost';
 export { spawnAnimal, wildFaction, speciesOf, populateWildlife } from './wildlife';
 export { weaponFor, coverAgainst } from './combat';
 export { SIGHT_DAY, SIGHT_NIGHT, NOISE, sightRange, stealthMult, canStealFrom } from './stealth';
-export { placeSettlements, foundSettlement, dispositionOf, goodwillOf, priceFactor, lineValue, traderAt, requestText, askForHelp, storedOf, HOSTILE_AT, FRIENDLY_AT, TRADE_RANGE, type Disposition } from './settlements';
+export { placeSettlements, foundSettlement, dispositionOf, goodwillOf, priceFactor, lineValue, traderAt, requestText, askForHelp, storedOf, HOSTILE_AT, FRIENDLY_AT, TRADE_RANGE, GOODWILL, GUARD_REACH, WATCH as SETTLEMENT_WATCH, type Disposition } from './settlements';
