@@ -24,4 +24,6 @@ export * from './frost';
 export { spawnAnimal, wildFaction, speciesOf, populateWildlife } from './wildlife';
 export { weaponFor, coverAgainst } from './combat';
 export { SIGHT_DAY, SIGHT_NIGHT, NOISE, sightRange, stealthMult, canStealFrom } from './stealth';
-export { placeSettlements, foundSettlement, dispositionOf, goodwillOf, priceFactor, lineValue, traderAt, requestText, askForHelp, storedOf, HOSTILE_AT, FRIENDLY_AT, TRADE_RANGE, GOODWILL, GUARD_REACH, WATCH as SETTLEMENT_WATCH, type Disposition } from './settlements';
+export { placeSettlements, foundSettlement, dispositionOf, goodwillOf, priceFactor, lineValue, traderAt, requestText, askForHelp, storedOf, HOSTILE_AT, FRIENDLY_AT, TRADE_RANGE, GOODWILL, GUARD_REACH, WATCH as SETTLEMENT_WATCH, opinionBetween, baseOpinion, areRivals, rivalsOf, liveTowns, type Disposition } from './settlements';
+export { ALLY_AT, DIPLO, TRUCE_DAYS, PLAYER_TRUCE_DAYS, MEDIATE_COOLDOWN_DAYS, stanceOf, envoySocial, peacePrice, mediationChance, allianceProblem, attackRefusal, type Stance } from './diplomacy';
+export { pactOf, allied, atWar, type RelView } from './pacts';

@@ -47,7 +47,7 @@ const KEYS: { title: string; rows: [string, string][] }[] = [
     title: 'Menus',
     rows: [
       ['O  Z  B', 'Orders, Zones, Build (Structure)'],
-      ['P  L  T', 'Work priorities, Colonist list, Trade'],
+      ['P  L  T  G', 'Work priorities, Colonist list, Trade, Diplomacy'],
       ['Enter', 'Chat'],
       ['M', 'Mute sound'],
       ['?  or  F1', 'This help'],
@@ -67,6 +67,7 @@ const KEYS: { title: string; rows: [string, string][] }[] = [
 const HOWTO: [string, string][] = [
   ['The frost', 'Permanent winter creeps inward from the map edge; the ❄ chip at the top counts the days until it reaches you. To move inward: Orders → Move colony and hover the map (it shows how long each spot stays warm), click the new site, then Orders → Pack up the old one so haulers carry everything over.'],
   ['Settlements', 'Walled towns of non-player people; the ring around each is their land, coloured by their mood toward you. Click any of their people or buildings for goodwill, prices, what they want and what they have. To trade, open Trade (T) and get a colonist within 14 cells. Towns that know you sometimes ask for help in a letter: agree, gather the goods, then Deliver from the Trade panel.'],
+  ['Diplomacy', 'Open Diplomacy (G) to see where every town and colony stands, with you and with each other, and why. Towns that like you enough (goodwill 60) will swear an alliance: they send fighters when you are raided. A hostile town takes tribute for a truce. Rival towns resent whoever helps the other side; a colonist with good Social skill can talk them into peace. Other players: propose an alliance or peace (they get a letter), or declare war. Attacking a colony without declaring war starts one anyway, and the towns hear of it.'],
   ['Goodwill', 'Runs from -100 to 100. At -40 or below a town turns hostile and its guards attack your colonists near their land; at 30 or above they are friends. Gifts, fair trades and kept promises raise it. Getting caught stealing (-45), attacking their people and broken promises lower it. Hover a risky order to see the exact change.'],
   ['Stealing', 'Orders → Steal, then drag over goods in a town or colony stockpile: haulers sneak in after dark (you need a stockpile of your own to carry it to). Or draft a colonist and right-click the goods to go now. Hovering shows who can see that spot and what getting caught would cost. Fires light the ground around them, even at night.'],
   ['Hunting', 'Select an animal and press Hunt, or Orders → Hunt and drag over animals. Colonists with a bow or rifle bring them down for meat and hides; make bows at a workbench. Predators bite back, and wolves come for people once winter sets in.'],

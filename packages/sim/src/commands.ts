@@ -14,13 +14,15 @@ import { deliverRequest, settlementTrade } from './settlements';
 import { canStealFrom } from './stealth';
 import { interact, setPossessed } from './control';
 import { markHunt } from './wildlife';
+import { attackRefusal, diplomacy } from './diplomacy';
 
 // ---------------------------------------------------------------- wire validation
 
 /** Fields that must be plain finite numbers when present. */
-const NUM_FIELDS = ['x', 'y', 'x0', 'y0', 'x1', 'y1', 'pawn', 'prio', 'zone', 'bench', 'target', 'bill', 'choice', 'to', 'settlement', 'request', 'item', 'dx', 'dy'];
+const NUM_FIELDS = ['x', 'y', 'x0', 'y0', 'x1', 'y1', 'pawn', 'prio', 'zone', 'bench', 'target', 'bill', 'choice', 'to', 'settlement', 'request', 'item', 'dx', 'dy', 'other'];
 /** Fields that must be strings when present. */
-const STR_FIELDS = ['kind', 'def', 'plant', 'work', 'mode', 'recipe', 'option', 'note'];
+const STR_FIELDS = ['kind', 'def', 'plant', 'work', 'mode', 'recipe', 'option', 'note', 'act'];
+const DIPLOMACY_ACTS = ['ally', 'peace', 'war', 'breakAlly', 'mediate'];
 const DESIGNATE_KINDS = ['mine', 'chop', 'cut', 'harvest', 'steal', 'cancel'];
 const ZONE_KINDS = ['stockpile', 'grow'];
 
@@ -56,6 +58,8 @@ export function wellFormed(cmd: unknown): cmd is Command {
       return has(RECIPES, o.recipe);
     case 'setPriority':
       return has(WORK_TYPE_SET, o.work) && typeof o.prio === 'number';
+    case 'diplomacy':
+      return DIPLOMACY_ACTS.includes(o.act as string) && typeof o.target === 'number';
   }
   return true;
 }
@@ -206,6 +210,9 @@ export function applyCommand(w: World, faction: number, cmd: Command): void {
     case 'deliverRequest':
       deliverRequest(w, faction, Number(cmd.settlement), Number(cmd.request));
       return;
+    case 'diplomacy':
+      diplomacy(w, faction, cmd);
+      return;
     case 'settlementTrade':
       settlementTrade(w, faction, Number(cmd.settlement), cmd.give, cmd.want);
       return;
@@ -221,6 +228,8 @@ export function applyCommand(w: World, faction: number, cmd: Command): void {
       // The only way one player's pawns ever fight another's: an explicit order from drafted pawns.
       const t = w.get<Pawn>(Number(cmd.target));
       if (!t || t.kind !== 'pawn' || t.faction === faction) return;
+      const refusal = attackRefusal(w, faction, t.faction);
+      if (refusal) return w.message(faction, refusal, 'neutral');
       for (const p of ownPawns(w, faction, cmd.pawns)) {
         if (!p.drafted) continue;
         endJob(w, p);

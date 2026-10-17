@@ -1,3 +1,4 @@
+import { alliesWhoStayedHome, callAllies, townCallsAllies } from './diplomacy';
 import { BUILDINGS, DEFAULT_PRIORITY, ITEMS, START_PRIORITY, WEAPONS, WORK_TYPES } from '@fe/defs';
 import { RARE_TICK, TICKS_PER_DAY } from './constants';
 import { endJob } from './pawns';
@@ -123,6 +124,7 @@ function raiderFaction(w: World, target: number, home: number): Faction {
     w.factions.set(id, f);
   }
   f.name = `Raiders of ${w.rng.pick(RAIDER_GROUPS)}`;
+  f.color = RAIDER_COLOR;
   f.home = { x: m.cx(home), y: m.cy(home) };
   f.raid = { target, size: 0, breakAt: 1, dead: 0, until: w.tick + RAID_TICKS, fled: false };
   w.dirty.factions.add(f.id);
@@ -156,12 +158,14 @@ function sideName(w: World, c: number): string {
  * Raiders arrive at the map edge nearest the target colony. `points` buys them: richer raids
  * bring more fighters and better guns. Returns the raiders, or null if nobody could arrive.
  */
-export function startRaid(w: World, target: number, points: number, kind: RaidKind): Pawn[] | null {
+export function startRaid(w: World, target: number, points: number, kind: RaidKind, sponsor?: number): Pawn[] | null {
   const f = w.factions.get(target);
   if (!f || !(f.isPlayer || f.settlement?.state === 'home') || !pawnsOf(w, target).length) return null;
   const m = w.map;
   const home = m.idx(f.home.x, f.home.y);
-  const arrive = arrivalCell(w, home);
+  // A town's own fighters set out from just outside their compound; raiders come in from the edge.
+  const from = sponsor ? w.factions.get(sponsor) : undefined;
+  const arrive = from ? nearOpenCell(w, m.idx(from.home.x, from.home.y), home) : arrivalCell(w, home);
   if (arrive < 0) return null;
   const weapons: string[] = [];
   let budget = points;
@@ -174,6 +178,11 @@ export function startRaid(w: World, target: number, points: number, kind: RaidKi
   }
   if (!weapons.length) weapons.push(kind === 'night' ? 'knife' : 'bow');
   const rf = raiderFaction(w, target, arrive);
+  if (from) {
+    rf.name = `${from.name}'s fighters`;
+    rf.color = from.color;
+    rf.raid!.sponsor = from.id;
+  }
   const raiders: Pawn[] = [];
   const ax = m.cx(arrive);
   const ay = m.cy(arrive);
@@ -208,9 +217,33 @@ export function startRaid(w: World, target: number, points: number, kind: RaidKi
         : kind === 'sapper'
           ? `${rf.name} (${raiders.length}) have come from the ${sideName(w, arrive)} with picks and hammers. They will dig and smash their way in!`
           : `${rf.name} (${raiders.length}) have arrived from the ${sideName(w, arrive)} edge to attack you!`;
-  if (f.isPlayer) w.message(target, `${what} Draft your colonists (R) and right-click to fight.`, 'bad', arrive);
-  else raidNews(w, rf.raid!, `${rf.name} (${raiders.length}) are attacking ${f.name}! Help them hold out, and they'll remember it.`, 'bad', m.idx(f.home.x, f.home.y));
+  if (f.isPlayer) {
+    w.message(target, `${what} Draft your colonists (R) and right-click to fight.`, 'bad', arrive);
+    callAllies(w, target, rf);
+  } else {
+    const why = from ? ` ${from.name} and ${f.name} are rivals; whoever helps ${f.name} will be resented in ${from.name}.` : '';
+    raidNews(w, rf.raid!, `${rf.name} (${raiders.length}) are attacking ${f.name}! Help them hold out, and they'll remember it.${why}`, 'bad', m.idx(f.home.x, f.home.y));
+    townCallsAllies(w, f);
+  }
   return raiders;
+}
+
+/** An open cell outside any building near `near`, that can reach `goal`. -1 if none. */
+function nearOpenCell(w: World, near: number, goal: number): number {
+  const m = w.map;
+  const x0 = m.cx(near);
+  const y0 = m.cy(near);
+  for (let r = 6; r <= 14; r += 2) {
+    for (let k = 0; k < 24; k++) {
+      const a = (k / 24) * Math.PI * 2;
+      const x = Math.round(x0 + Math.cos(a) * r);
+      const y = Math.round(y0 + Math.sin(a) * r);
+      if (!m.inBounds(x, y)) continue;
+      const c = m.idx(x, y);
+      if (!m.solid[c] && !m.roomAt[c] && m.component(c) === m.component(goal)) return c;
+    }
+  }
+  return -1;
 }
 
 /**
@@ -243,11 +276,15 @@ export function helpedDefend(w: World, raider: Pawn, helper: Pawn, dmg: number):
 /** The raid on a settlement is over: thank those who helped. */
 function thankHelpers(w: World, raid: RaidState): void {
   const f = w.factions.get(raid.target);
-  if (!f?.settlement || !raid.helpers) return;
+  if (!f?.settlement) return;
+  alliesWhoStayedHome(w, f, raid.helpers);
+  if (!raid.helpers) return;
+  const sponsor = raid.sponsor ? w.factions.get(raid.sponsor) : undefined;
   for (const [faction, dmg] of Object.entries(raid.helpers)) {
     if (dmg < 0.1) continue;
-    shiftGoodwill(w, f, Number(faction), Math.min(30, Math.round(8 + dmg * 12)));
+    shiftGoodwill(w, f, Number(faction), Math.min(30, Math.round(8 + dmg * 12)), 'Helped drive off raiders', !sponsor);
     w.message(Number(faction), `${f.name} thanks you for helping drive off the raiders.`, 'good', w.map.idx(f.home.x, f.home.y));
+    if (sponsor?.settlement) shiftGoodwill(w, sponsor, Number(faction), -Math.min(20, Math.round(6 + dmg * 8)), `Fought our people at ${f.name}`, false);
   }
   raid.helpers = {};
 }

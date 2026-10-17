@@ -1,6 +1,6 @@
 /** Skills improve with practice and make the matching work faster. */
 
-export const SKILLS = ['construction', 'mining', 'plants', 'cooking', 'crafting', 'stealth'] as const;
+export const SKILLS = ['construction', 'mining', 'plants', 'cooking', 'crafting', 'stealth', 'social'] as const;
 export type SkillKey = (typeof SKILLS)[number];
 
 export const SKILL_LABELS: Record<SkillKey, string> = {
@@ -10,6 +10,7 @@ export const SKILL_LABELS: Record<SkillKey, string> = {
   cooking: 'Cooking',
   crafting: 'Crafting',
   stealth: 'Stealth',
+  social: 'Social',
 };
 
 export const MAX_SKILL = 20;

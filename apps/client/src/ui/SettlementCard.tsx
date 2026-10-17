@@ -1,5 +1,5 @@
 import { ITEMS } from '@fe/defs';
-import { dispositionOf, FRIENDLY_AT, goodwillOf, GOODWILL, GUARD_REACH, HOSTILE_AT, priceFactor, requestText, TICKS_PER_DAY, TRADE_RANGE, type Faction } from '@fe/sim';
+import { dispositionOf, FRIENDLY_AT, goodwillOf, GOODWILL, GUARD_REACH, HOSTILE_AT, pactOf, priceFactor, requestText, rivalsOf, TICKS_PER_DAY, TICKS_PER_HOUR, TRADE_RANGE, type Faction } from '@fe/sim';
 import { DISPOSITION_COLOR } from '../render/renderer';
 import { store } from '../store';
 import { traderNear } from './trade';
@@ -52,6 +52,29 @@ export function GoodwillRules() {
   );
 }
 
+/** Your pact with them, if any, and the towns they feud with. */
+function Relations({ f }: { f: Faction }) {
+  const m = store.mirror;
+  const me = store.me?.faction ?? 0;
+  const pact = pactOf(m, me, f.id);
+  const rivals = rivalsOf(m, f);
+  if (!pact && !rivals.length) return null;
+  return (
+    <div className="sc-row">
+      <span className="muted small">Ties</span>
+      <span className="small">
+        {pact?.kind === 'ally' && <b className="good">Your ally. </b>}
+        {pact?.kind === 'truce' && <b>Truce for {Math.max(1, Math.ceil(((pact.until ?? 0) - store.estTick()) / TICKS_PER_HOUR))}h. </b>}
+        {rivals.length > 0 && (
+          <>
+            Rivals of {rivals.map((r) => r.name).join(', ')}: <span className="muted">helping one sours the other.</span>
+          </>
+        )}
+      </span>
+    </div>
+  );
+}
+
 /** Everything about a settlement at a glance: mood, goodwill, prices, what they want and have, where it is. */
 export function SettlementCard({ f, trade = true }: { f: Faction; trade?: boolean }) {
   const m = store.mirror;
@@ -94,6 +117,7 @@ export function SettlementCard({ f, trade = true }: { f: Faction; trade?: boolea
         </span>
       </div>
       <GoodwillMeter f={f} />
+      <Relations f={f} />
       {mood === 'hostile' ? (
         <p className="bad small">Enemies: they won't trade, and attack your colonists within about {st.radius + GUARD_REACH} cells of their town. Only a gift might change their minds, and your envoy has to survive getting there.</p>
       ) : (
@@ -134,6 +158,7 @@ export function SettlementCard({ f, trade = true }: { f: Faction; trade?: boolea
       <GoodwillRules />
       <div className="sc-actions">
         {trade && <button onClick={() => store.openTrade(f.id)}>Trade…</button>}
+        <button onClick={() => store.openDiplomacy(f.id)}>Diplomacy…</button>
         <button className="link" onClick={() => store.set({ focus: { x: f.home.x, y: f.home.y } })}>
           Show on map
         </button>

@@ -9,10 +9,10 @@ import { hex } from './util';
 import { settlementDeal, traderNear as traderAt } from './trade';
 import { GoodwillMeter, GoodwillRules } from './SettlementCard';
 
-type Line = { item: string; count: number };
+export type Line = { item: string; count: number };
 
 /** What a colony has in its stockpiles. Everyone can see the whole map, so this is public. */
-function stockOf(faction: number): Map<string, number> {
+export function stockOf(faction: number): Map<string, number> {
   const m = store.mirror;
   const out = new Map<string, number>();
   for (const e of m.entities.values()) {
@@ -25,7 +25,7 @@ function stockOf(faction: number): Map<string, number> {
 
 const worth = (v: number) => (v >= 10 ? Math.round(v).toString() : v.toFixed(1));
 
-function LineEditor({ title, lines, setLines, stock, empty, factor }: { title: string; lines: Line[]; setLines: (l: Line[]) => void; stock: Map<string, number>; empty: string; factor: number }) {
+export function LineEditor({ title, lines, setLines, stock, empty, factor }: { title: string; lines: Line[]; setLines: (l: Line[]) => void; stock: Map<string, number>; empty: string; factor: number }) {
   const options = [...stock.entries()].sort((a, b) => ITEMS[a[0]].label.localeCompare(ITEMS[b[0]].label));
   const set = (i: number, patch: Partial<Line>) => setLines(lines.map((x, k) => (k === i ? { ...x, ...patch } : x)));
   // Offer the next item not already on the list.
@@ -79,7 +79,7 @@ function traderNear(faction: number, home: { x: number; y: number }): string | n
 }
 
 /** Draft the nearest free colonist and walk them to just outside the settlement's walls. */
-function sendEnvoy(f: Faction): void {
+export function sendEnvoy(f: Faction): void {
   const who: Pawn | undefined = helpers(f.home.x, f.home.y).find((p) => !p.possessed);
   if (!who) {
     store.toast('Nobody is free to go.', 'bad');

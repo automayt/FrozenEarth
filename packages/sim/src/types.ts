@@ -141,6 +141,8 @@ export interface Pawn extends Base {
   steer?: [dx: number, dy: number];
   /** Someone this pawn couldn't find a way to attack, and until when it leaves them be. */
   giveUp?: [target: EntityId, until: number];
+  /** Settlers sent to help an ally fight off a raid, and when they head home regardless. */
+  aid?: [faction: number, until: number];
 }
 
 export type PrisonerState = '' | 'held' | 'leaving';
@@ -237,6 +239,8 @@ export interface RaidState {
   fires?: number;
   /** Defenders standing when the current goal was set, to tell progress from stalemate. */
   foes?: number;
+  /** A town that sent these fighters against a rival town (they leave their own people alone). */
+  sponsor?: number;
   /** Raids on settlements: wounds each player colony dealt the raiders, to thank them after. */
   helpers?: Record<number, number>;
 }
@@ -256,12 +260,35 @@ export interface Faction {
   settlement?: SettlementState;
   /** The wildlife factions: grazing prey, and predators that hunt. */
   wild?: 'prey' | 'predator';
+  /** Agreements with other factions, by their id; kept on both sides. */
+  pacts?: Record<number, Pact>;
+}
+
+/** ally: fight for each other. truce: a ceasefire that runs out. war: fight on sight. */
+export type PactKind = 'ally' | 'truce' | 'war';
+
+export interface Pact {
+  kind: PactKind;
+  since: number;
+  /** Truces end on their own at this tick. */
+  until?: number;
+}
+
+export type DiplomacyAct = 'ally' | 'peace' | 'war' | 'breakAlly' | 'mediate';
+
+/** Why a settlement's feelings toward someone moved: shown so players can see what they did. */
+export interface Memory {
+  /** Whose standing moved. */
+  f: number;
+  why: string;
+  by: number;
+  tick: number;
 }
 
 export interface SettlementState {
   /** Starting goodwill toward any colony; set by the settlement's temperament. */
   temper: number;
-  /** Goodwill toward each player faction, -100..100. Missing = temper. */
+  /** Goodwill toward each colony, -100..100 (missing = temper), and toward each other town (missing = a starting feeling from both tempers). */
   goodwill: Record<number, number>;
   /** Cells from home its people consider theirs. */
   radius: number;
@@ -275,6 +302,10 @@ export interface SettlementState {
   met: number[];
   /** Jobs colonies have agreed to do for them. Missing on older saves. */
   requests?: SettlementRequest[];
+  /** Recent reasons goodwill moved, oldest first (capped). */
+  memories?: Memory[];
+  /** Last time a colony tried to make peace between them and another town, by that town's id. */
+  mediated?: Record<number, number>;
 }
 
 /** Goods a settlement asked a colony for, and what it promised in return. */
@@ -366,6 +397,8 @@ export type Command =
   | { c: 'offerTrade'; to: number; give: [string, number][]; want: [string, number][]; note?: string }
   | { c: 'settlementTrade'; settlement: number; give: [string, number][]; want: [string, number][] }
   | { c: 'deliverRequest'; settlement: number; request: number }
+  /** Diplomacy toward another faction: propose an alliance or peace, declare war, break an alliance, or mediate between two rival towns. */
+  | { c: 'diplomacy'; act: DiplomacyAct; target: number; other?: number; give?: [string, number][] }
   | { c: 'steal'; pawn: EntityId; item: EntityId }
   | { c: 'hunt'; pawns: EntityId[]; on: boolean }
   | { c: 'possess'; pawn: EntityId; on: boolean }

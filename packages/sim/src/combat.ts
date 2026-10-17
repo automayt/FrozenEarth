@@ -1,6 +1,8 @@
 import { ANIMALS, FISTS, WEAPON_KEYS, weaponOf, type WeaponDef } from '@fe/defs';
 import { effectsOf, injure } from './health';
-import { HOSTILE_AT, settlerAttacked } from './settlements';
+import { HOSTILE_AT, opinionBetween, settlerAttacked } from './settlements';
+import { pactOf } from './pacts';
+import { noteAttack } from './diplomacy';
 import { helpedDefend } from './raids';
 import type { Faction, Pawn } from './types';
 import { NEIGHBORS8, type World } from './world';
@@ -20,9 +22,9 @@ function settlementHates(s: Faction | undefined, player: Faction | undefined): b
 }
 
 /**
- * Factions that fight on sight: raiders against everyone else, and settlements against colonies
- * they've turned on. Two players are never hostile here; their pawns only fight each other on an
- * explicit attack order.
+ * Factions that fight on sight: raiders against everyone else (but the town that sent them),
+ * factions at war, settlements against colonies they've turned on, and rival towns. Allies and
+ * truces never. Two colonies at peace aren't hostile; their pawns only fight on an explicit order.
  */
 export function hostile(w: World, a: number, b: number): boolean {
   if (a === b) return false;
@@ -31,7 +33,13 @@ export function hostile(w: World, a: number, b: number): boolean {
   // Grazing animals never start fights; predators are everyone's enemy (but each other's).
   if (fa?.wild === 'prey' || fb?.wild === 'prey') return false;
   if (fa?.wild === 'predator' || fb?.wild === 'predator') return !(fa?.wild && fb?.wild);
-  if (fa?.raid || fb?.raid) return !!fa?.raid !== !!fb?.raid;
+  if (fa?.raid || fb?.raid) {
+    if (fa?.raid?.sponsor === b || fb?.raid?.sponsor === a) return false;
+    return !!fa?.raid !== !!fb?.raid;
+  }
+  const pact = pactOf(w, a, b);
+  if (pact) return pact.kind === 'war';
+  if (fa?.settlement && fb?.settlement) return opinionBetween(w, fa, fb) <= HOSTILE_AT || opinionBetween(w, fb, fa) <= HOSTILE_AT;
   return settlementHates(fa, fb) || settlementHates(fb, fa);
 }
 
@@ -181,6 +189,7 @@ export function strike(w: World, p: Pawn, t: Pawn): void {
   const wd = weaponFor(p);
   const hit = w.rng.chance(hitChance(w, p, t));
   w.dirty.shots.push(p.id, t.id, p.x, p.y, t.x, t.y, hit ? 1 : 0, Math.max(0, WEAPON_KEYS.indexOf(p.weapon)));
+  noteAttack(w, p.faction, t.faction);
   if (w.factions.get(t.faction)?.settlement) settlerAttacked(w, t, p, hit);
   if (!hit) return;
   const dmg = wd.damage * w.rng.range(0.7, 1.3);

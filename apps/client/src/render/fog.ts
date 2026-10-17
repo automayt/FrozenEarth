@@ -60,10 +60,13 @@ export class Fog {
       }
     }
     this.visible.fill(0);
-    const me = store.me?.faction;
+    const me = store.me?.faction ?? 0;
     const night = this.isNight();
+    // Allies share what their colonists see.
+    const eyes = new Set([me]);
+    for (const [k, p] of Object.entries(m.factions.get(me)?.pacts ?? {})) if (p.kind === 'ally') eyes.add(Number(k));
     for (const e of m.entities.values()) {
-      if (e.kind !== 'pawn' || e.faction !== me || e.downed || (e.asleep && !e.possessed)) continue;
+      if (e.kind !== 'pawn' || !eyes.has(e.faction) || e.downed || (e.asleep && !e.possessed)) continue;
       this.cast(e.x, e.y, night ? SIGHT_NIGHT + 2 : SIGHT_DAY);
     }
     this.version++;

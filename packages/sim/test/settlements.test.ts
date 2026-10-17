@@ -166,7 +166,8 @@ describe('settlements', () => {
     expect(w.tick - START_TICK).toBeLessThan(30 * TICKS_PER_DAY);
     runUntil(w, () => f.settlement!.state !== 'home', 2 * TICKS_PER_DAY);
     expect(f.settlement!.state).toBe('leaving');
-    for (const id of oldBuildings) expect(w.get<Building>(id)?.faction).toBe(0);
+    // Nothing is theirs any more (a rival's fighters may have smashed a wall or two first).
+    for (const id of oldBuildings) expect(w.get<Building>(id)?.faction ?? 0).toBe(0);
     runUntil(w, () => f.settlement!.state !== 'leaving', 5 * TICKS_PER_DAY);
     expect(f.settlement!.state).toBe('home');
     expect(frostDistance(f.home.x, f.home.y, 200, 200)).toBeLessThan(frostDistance(old.x, old.y, 200, 200));

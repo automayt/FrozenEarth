@@ -2131,3 +2131,144 @@ button.danger {
 .player.away {
   opacity: 0.5;
 }
+
+/* ------------------------------------------------------------------ diplomacy */
+
+.diplo-panel {
+  width: min(820px, calc(100vw - 16px));
+}
+
+.diplo-body {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  gap: 14px;
+  min-height: 0;
+}
+
+.diplo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.diplo-list > button {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+}
+
+.diplo-list > button i,
+.relations-web i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.diplo-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip.stance {
+  font-size: 10px;
+  padding: 0 6px;
+  border: 1px solid;
+  border-radius: 9px;
+  white-space: nowrap;
+}
+
+.diplo-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.diplo-detail h4,
+.relations-web h4 {
+  margin: 0 0 3px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.75;
+}
+
+.diplo-why ul,
+.diplo-act ul.needs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.diplo-act {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.diplo-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.mediate-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.relations-web {
+  margin-top: 10px;
+}
+
+.relations-web table {
+  border-collapse: separate;
+  border-spacing: 2px;
+  font-size: 10px;
+}
+
+.relations-web th {
+  font-weight: normal;
+  text-align: right;
+  padding-right: 4px;
+  max-width: 70px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relations-web thead th {
+  text-align: center;
+  padding: 0;
+}
+
+.relations-web td {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  opacity: 0.85;
+}
+
+.relations-web td.self {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+@media (max-width: 720px) {
+  .diplo-body {
+    grid-template-columns: 1fr;
+  }
+}

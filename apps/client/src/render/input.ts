@@ -1,7 +1,7 @@
 import type { Graphics } from 'pixi.js';
 import { BUILDINGS, ITEMS, WEAPONS } from '@fe/defs';
 import { pawnPosition } from '@fe/protocol';
-import { dispositionOf, type Pawn, type Rect } from '@fe/sim';
+import { attackRefusal, atWar, dispositionOf, type Pawn, type Rect } from '@fe/sim';
 import { command } from '../net';
 import { store } from '../store';
 import { sound } from '../audio';
@@ -18,7 +18,7 @@ const PAN_SPEED = 900;
 const STEER_KEYS = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright']);
 
 /** Panels and menus with their own key. */
-const PANEL_KEYS: Record<string, 'work' | 'colonists' | 'trade'> = { p: 'work', l: 'colonists', t: 'trade' };
+const PANEL_KEYS: Record<string, 'work' | 'colonists' | 'trade' | 'diplomacy'> = { p: 'work', l: 'colonists', t: 'trade', g: 'diplomacy' };
 const MENU_KEYS: Record<string, string> = { o: 'orders', z: 'zones', b: 'structure' };
 
 /** How long a "right-click again to attack" warning stays armed. */
@@ -343,12 +343,24 @@ export class Input {
         this.r.flashOrder(t.x, t.y, false);
         return true;
       }
+      // Allies and truces: your colonists won't (the server says the same).
+      const refusal = attackRefusal(store.mirror, store.me!.faction, t.faction);
+      if (refusal) {
+        store.toast(refusal, 'bad');
+        return true;
+      }
       // Attacking someone you aren't at war with starts a war: ask once more first.
       const st = f?.settlement;
-      const peaceful = !t.species && !raider && !t.prisoner && (!!f?.isPlayer || (!!st && st.state !== 'fallen' && dispositionOf(st, store.me!.faction) !== 'hostile'));
+      const colonyAtPeace = !!f?.isPlayer && !atWar(store.mirror, store.me!.faction, t.faction);
+      const peaceful = !t.species && !raider && !t.prisoner && (colonyAtPeace || (!!st && st.state !== 'fallen' && dispositionOf(st, store.me!.faction) !== 'hostile'));
       if (peaceful && !(this.armed?.target === t.id && performance.now() < this.armed.until)) {
         this.armed = { target: t.id, until: performance.now() + CONFIRM_MS };
-        store.toast(`Right-click ${t.name.split(' ')[0]} again to attack. ${f?.isPlayer ? 'Their colony' : f?.name} will treat you as enemies.`, 'bad');
+        store.toast(
+          f?.isPlayer
+            ? `Right-click ${t.name.split(' ')[0]} again to attack. That is a surprise attack: it starts a war with ${f.name}, and every town that knows you hears of it.`
+            : `Right-click ${t.name.split(' ')[0]} again to attack. ${f?.name} will treat you as enemies.`,
+          'bad',
+        );
         return true;
       }
       this.armed = null;

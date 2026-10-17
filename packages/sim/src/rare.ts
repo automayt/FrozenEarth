@@ -6,6 +6,7 @@ import { endJob, exposureSeverity, needsWarmth, warmthJob } from './pawns';
 import { isRaider } from './combat';
 import { prisonerTick, reviewRaids } from './raids';
 import { settlementsTick } from './settlements';
+import { diplomacyTick } from './diplomacy';
 import { animalNeeds, wildlifeTick } from './wildlife';
 import { answerUrgentCare } from './work';
 import type { Building, Item, Pawn, Plant, Room } from './types';
@@ -26,6 +27,7 @@ export function rareTick(w: World): void {
   plantsTick(w);
   freezeWater(w);
   settlementsTick(w);
+  diplomacyTick(w);
   reviewRaids(w);
   wildlifeTick(w);
   rotTick(w);

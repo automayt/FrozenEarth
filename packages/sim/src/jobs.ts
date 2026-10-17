@@ -412,7 +412,13 @@ export function theftTick(w: World, p: Pawn, j: { stolen?: number; stolenAt?: nu
     j.stolen = undefined;
     w.markDirty(p);
     if (w.factions.get(victim)?.isPlayer) {
-      w.placeItemNear(p.carrying.def, p.carrying.count, w.cellOf(p), p.carrying.rot);
+      const at = w.cellOf(p);
+      w.placeItemNear(p.carrying.def, p.carrying.count, at, p.carrying.rot);
+      // The goods are theirs: the thief's colony doesn't just walk back and pick them up again.
+      const m = w.map;
+      for (let dy = -2; dy <= 2; dy++) {
+        for (let dx = -2; dx <= 2; dx++) if (m.inBounds(m.cx(at) + dx, m.cy(at) + dy)) w.markUnreachable(p.faction, m.idx(m.cx(at) + dx, m.cy(at) + dy));
+      }
       p.carrying = null;
       w.markDirty(p);
       return 'dropped';

@@ -1,3 +1,4 @@
+import { allied } from './pacts';
 import { BUILDINGS, DEFAULT_PRIORITY, ITEMS, maxHp, PLANTS, RANDOM_TRAITS, SKILLS, START_PRIORITY, TERRAINS, TREE_COVER, WALL_COVER, WEATHER, WORK_TYPES, type SkillKey, type WorkType } from '@fe/defs';
 import * as C from './constants';
 import { GameMap } from './map';
@@ -382,8 +383,9 @@ export class World {
     return d === 0 || d === faction || this.gateOpen(d, faction);
   }
 
-  /** Settlements keep their gates open to visitors (and thieves), and shut to anyone hostile. Colonies lock theirs. */
+  /** Settlements keep their gates open to visitors (and thieves), and shut to anyone hostile. Colonies lock theirs, except to allies. */
   private gateOpen(owner: number, faction: number): boolean {
+    if (allied(this, owner, faction)) return true;
     const s = this.factions.get(owner)?.settlement;
     return !!s && s.state !== 'fallen' && !hostile(this, owner, faction);
   }

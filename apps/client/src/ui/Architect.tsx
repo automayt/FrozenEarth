@@ -131,6 +131,9 @@ export function Architect() {
         <button className={s.panel === 'trade' ? 'on' : ''} onClick={() => store.set({ panel: s.panel === 'trade' ? 'none' : 'trade', menu: null })}>
           Trade <small className="hotkey">T</small>
         </button>
+        <button className={s.panel === 'diplomacy' ? 'on' : ''} onClick={() => store.set({ panel: s.panel === 'diplomacy' ? 'none' : 'diplomacy', menu: null })} title="Alliances, rivalries, war and peace (G)">
+          Diplomacy <small className="hotkey">G</small>
+        </button>
         {myPlayer()?.admin && (
           <button className={s.panel === 'events' ? 'on' : ''} onClick={() => store.set({ panel: s.panel === 'events' ? 'none' : 'events', menu: null })} title="Host tool: trigger events">
             Events

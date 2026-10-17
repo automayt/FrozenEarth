@@ -10,6 +10,18 @@ export function traderNear(m: Mirror, faction: number, home: { x: number; y: num
   return null;
 }
 
+/** Your colonist near a town who would speak for you, and the best Social skill among those there. Same rule as the sim's envoySocial. */
+export function envoyNear(m: Mirror, faction: number, home: { x: number; y: number }): { name: string; social: number } | null {
+  let best: { name: string; social: number } | null = null;
+  for (const e of m.entities.values()) {
+    if (e.kind !== 'pawn' || e.faction !== faction || e.downed || e.prisoner || e.species) continue;
+    if (Math.hypot(e.x - home.x, e.y - home.y) > TRADE_RANGE) continue;
+    const social = e.skills.social?.level ?? 0;
+    if (!best || social > best.social) best = { name: e.name.split(' ')[0], social };
+  }
+  return best;
+}
+
 export interface SettlementDeal {
   mood: Disposition;
   /** What they ask over the value you give. */

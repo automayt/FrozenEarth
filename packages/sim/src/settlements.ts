@@ -7,6 +7,8 @@ import { maybeReachable } from './pathfinding';
 import { findSleep } from './pawns';
 import { offerChoice, registerChoice } from './choices';
 import { storedCount, takeStored } from './eventHandlers';
+import { allied, setPact, type RelView } from './pacts';
+import { hash2 } from './rng';
 import type { Building, Faction, Item, Job, Pawn, SettlementRequest, SettlementState } from './types';
 import { NEIGHBORS4, type World } from './world';
 
@@ -60,14 +62,41 @@ export function dispositionOf(s: SettlementState, faction: number): Disposition 
   return g <= HOSTILE_AT ? 'hostile' : g >= FRIENDLY_AT ? 'friendly' : 'wary';
 }
 
-/** Change a settlement's feelings toward a colony, with a letter when it crosses a line. */
-export function shiftGoodwill(w: World, f: Faction, faction: number, by: number): void {
+/** Most remembered reasons a settlement keeps (all colonies together). */
+const MEMORIES = 30;
+/** Share of goodwill a town's rivals feel the other way: help their enemy and they cool on you; hurt it and they warm. */
+const RIVAL_RIPPLE_HELP = 0.3;
+const RIVAL_RIPPLE_HURT = 0.25;
+
+/**
+ * Change a settlement's feelings toward a colony, with a letter when it crosses a line. `why`
+ * is remembered and shown to the player. Big swings ripple to the town's rivals, who hear of it.
+ */
+export function shiftGoodwill(w: World, f: Faction, faction: number, by: number, why?: string, ripple = true): void {
   const s = f.settlement;
   const pf = w.factions.get(faction);
   if (!s || !pf?.isPlayer || s.state === 'fallen') return;
   const before = dispositionOf(s, faction);
-  s.goodwill[faction] = Math.max(-100, Math.min(100, Math.round(goodwillOf(s, faction) + by)));
+  const old = goodwillOf(s, faction);
+  s.goodwill[faction] = Math.max(-100, Math.min(100, Math.round(old + by)));
   w.dirty.factions.add(f.id);
+  if (why && s.goodwill[faction] !== old) {
+    const mem = (s.memories ??= []);
+    mem.push({ f: faction, why, by: s.goodwill[faction] - old, tick: w.tick });
+    if (mem.length > MEMORIES) mem.splice(0, mem.length - MEMORIES);
+  }
+  if (ripple && Math.abs(by) >= 5) {
+    for (const r of rivalsOf(w, f)) {
+      if (!r.settlement!.met.includes(faction)) continue;
+      const echo = by > 0 ? -Math.round(by * RIVAL_RIPPLE_HELP) : Math.round(-by * RIVAL_RIPPLE_HURT);
+      if (echo) shiftGoodwill(w, r, faction, echo, by > 0 ? `Befriended ${f.name}, our rival` : `Hurt ${f.name}, our rival`, false);
+    }
+  }
+  // An alliance needs friendship to hold.
+  if (allied(w, f.id, faction) && s.goodwill[faction] < FRIENDLY_AT) {
+    setPact(w, f.id, faction, null);
+    w.message(faction, `${f.name} has ended its alliance with you.`, 'bad', w.map.idx(f.home.x, f.home.y));
+  }
   const after = dispositionOf(s, faction);
   if (before === after) return;
   const at = w.map.idx(f.home.x, f.home.y);
@@ -79,7 +108,68 @@ export function shiftGoodwill(w: World, f: Faction, faction: number, by: number)
 /** Your colonist shot or swung at one of theirs: bad; actually hurting them: much worse. */
 export function settlerAttacked(w: World, victim: Pawn, attacker: Pawn, hit: boolean): void {
   const f = w.factions.get(victim.faction);
-  if (f?.settlement) shiftGoodwill(w, f, attacker.faction, hit ? GOODWILL.attackHit : GOODWILL.attackMiss);
+  if (f?.settlement) shiftGoodwill(w, f, attacker.faction, hit ? GOODWILL.attackHit : GOODWILL.attackMiss, hit ? `Wounded ${victim.name.split(' ')[0]}` : 'Attacked our people');
+}
+
+// ---------------------------------------------------------------- towns and each other
+
+/** How two towns feel about each other before anything happens: like tempers get along, a hostile town feuds, and old grudges vary. */
+export function baseOpinion(w: RelView, a: Faction, b: Faction): number {
+  const ta = a.settlement?.temper ?? 0;
+  const tb = b.settlement?.temper ?? 0;
+  const grudge = Math.round(hash2(Math.min(a.id, b.id), Math.max(a.id, b.id), w.seed) * 40) - 20;
+  return Math.max(-100, Math.min(100, Math.round((ta + tb) / 4 - Math.abs(ta - tb) / 2 + grudge)));
+}
+
+/** How town `a` feels about town `b`. */
+export function opinionBetween(w: RelView, a: Faction, b: Faction): number {
+  return a.settlement?.goodwill[b.id] ?? baseOpinion(w, a, b);
+}
+
+/** Towns that are still standing. */
+export function liveTowns(w: RelView): Faction[] {
+  return [...w.factions.values()].filter((f) => f.settlement && f.settlement.state !== 'fallen');
+}
+
+export function areRivals(w: RelView, a: Faction, b: Faction): boolean {
+  return a.id !== b.id && !!a.settlement && !!b.settlement && Math.min(opinionBetween(w, a, b), opinionBetween(w, b, a)) <= HOSTILE_AT;
+}
+
+/** Rivals: towns on either side of a feud (feeling at or below the hostile line, either way). */
+export function rivalsOf(w: RelView, f: Faction): Faction[] {
+  if (!f.settlement) return [];
+  return liveTowns(w).filter((o) => areRivals(w, f, o));
+}
+
+/** Move how two towns feel about each other (both ways), telling colonies that know them when a feud starts or ends. */
+export function shiftOpinion(w: World, a: Faction, b: Faction, by: number): void {
+  if (!a.settlement || !b.settlement) return;
+  const was = areRivals(w, a, b);
+  for (const [x, y] of [
+    [a, b],
+    [b, a],
+  ]) {
+    x.settlement!.goodwill[y.id] = Math.max(-100, Math.min(100, Math.round(opinionBetween(w, x, y) + by)));
+    w.dirty.factions.add(x.id);
+  }
+  const now = areRivals(w, a, b);
+  if (was === now) return;
+  const known = new Set([...a.settlement.met, ...b.settlement.met]);
+  for (const p of known) w.message(p, now ? `${a.name} and ${b.name} have fallen out. They are rivals now.` : `${a.name} and ${b.name} have put their feud behind them.`, now ? 'bad' : 'good');
+}
+
+/** Once a day: feelings fade back toward where they started, so grudges and favours both wear off. */
+function driftFeelings(w: World, f: Faction): void {
+  const s = f.settlement!;
+  for (const [k, g] of Object.entries(s.goodwill)) {
+    const o = w.factions.get(Number(k));
+    if (!o) continue;
+    // Allies come to rest at firm friendship at worst; anyone else at the town's own temper.
+    const rest = o.settlement ? baseOpinion(w, f, o) : allied(w, f.id, o.id) ? Math.max(s.temper, FRIENDLY_AT + 20) : s.temper;
+    if (g === rest) continue;
+    s.goodwill[Number(k)] = g + Math.sign(rest - g);
+    w.dirty.factions.add(f.id);
+  }
 }
 
 /** Land held by settlements hostile to this colony, as circles: places workers should stay out of. */
@@ -269,6 +359,8 @@ export function settlerThink(w: World, p: Pawn): Job {
   const here = w.cellOf(p);
   const home = m.idx(f.home.x, f.home.y);
   if (s.state === 'leaving') return { type: 'goto', stage: 0, dest: s.dest };
+  const help = aidThink(w, p);
+  if (help) return help;
   const defend = garrisonThink(w, p, f);
   if (defend) return defend;
   // Intruders: hostile pawns on their land.
@@ -300,6 +392,37 @@ export function settlerThink(w: World, p: Pawn): Job {
     if (w.passable(c, p.faction) && m.component(c) === m.component(here)) return { type: 'wander', stage: 0, dest: c, until: w.tick + 200 + w.rng.int(400) };
   }
   return { type: 'hold', stage: 0, until: w.tick + 300 };
+}
+
+/** Sent to help an ally: fight the raiders attacking them, then go home once they're beaten or time's up. */
+function aidThink(w: World, p: Pawn): Job | null {
+  if (!p.aid) return null;
+  const [ally, until] = p.aid;
+  const raiders: Pawn[] = [];
+  for (const id of w.kinds.pawn) {
+    const o = w.get<Pawn>(id)!;
+    const raid = w.factions.get(o.faction)?.raid;
+    if (raid && raid.target === ally && !raid.fled && !o.downed) raiders.push(o);
+  }
+  const f = w.factions.get(ally);
+  if (!raiders.length || !f || w.tick >= until) {
+    delete p.aid;
+    w.markDirty(p);
+    return null;
+  }
+  const here = w.cellOf(p);
+  let best: Pawn | null = null;
+  let bestD = Infinity;
+  for (const o of raiders) {
+    const c = w.cellOf(o);
+    const d = cellDistance(w, here, c);
+    if (d < bestD && !gaveUpOn(w, p, o) && maybeReachable(w, here, c, true)) {
+      best = o;
+      bestD = d;
+    }
+  }
+  if (best) return { type: 'attack', stage: 0, target: best.id, forced: false, chase: true, next: 0, until: w.tick + 300 };
+  return { type: 'goto', stage: 0, dest: w.map.idx(f.home.x, f.home.y) };
 }
 
 /** How far out a settlement watches for trouble. */
@@ -420,9 +543,11 @@ function notifyAll(w: World, f: Faction, text: string, tone: 'good' | 'neutral' 
 /** Once a day or so: first contact, the frost driving them out, arriving somewhere new, falling. */
 export function settlementsTick(w: World): void {
   if (w.tick % (RARE_TICK * 4) !== 0) return;
+  const daily = w.tick % TICKS_PER_DAY === 0;
   for (const f of w.factions.values()) {
     const s = f.settlement;
     if (!s || s.state === 'fallen') continue;
+    if (daily) driftFeelings(w, f);
     const people = residentsOf(w, f.id);
     if (!people.length) {
       s.state = 'fallen';
@@ -551,7 +676,7 @@ export function traderAt(w: World, faction: number, f: Faction): Pawn | null {
   return null;
 }
 
-function cleanLines(v: unknown): TradeLine[] | null {
+export function cleanLines(v: unknown): TradeLine[] | null {
   if (!Array.isArray(v) || v.length > 6) return null;
   const out: TradeLine[] = [];
   for (const l of v) {
@@ -591,7 +716,8 @@ export function settlementTrade(w: World, faction: number, settlement: number, g
   }
   // Fair trades warm relations a little; generous ones (and gifts) a lot more.
   const surplus = lineValue(g) - lineValue(wa) * factor;
-  shiftGoodwill(w, f, faction, (wa.length ? GOODWILL.fairTrade : 0) + Math.min(GOODWILL.giftMax, Math.floor(surplus / GOODWILL.giftValue)));
+  const gift = Math.min(GOODWILL.giftMax, Math.floor(surplus / GOODWILL.giftValue));
+  shiftGoodwill(w, f, faction, (wa.length ? GOODWILL.fairTrade : 0) + gift, gift > 0 ? (wa.length ? 'A generous trade' : 'A gift') : 'A fair trade');
   if (wa.length) w.message(faction, `Trade done with ${f.name}. ${trader.name} has the goods.`, 'good', w.cellOf(trader));
   else w.message(faction, `${f.name} accepts your gift.`, 'good', w.cellOf(trader));
 }
@@ -728,7 +854,7 @@ function expireRequests(w: World, f: Faction): void {
       continue;
     }
     w.message(r.faction, `You promised ${f.name} ${requestText(r.item, r.count)} and never came. They won't forget it.`, 'bad', w.map.idx(f.home.x, f.home.y));
-    shiftGoodwill(w, f, r.faction, GOODWILL.brokenPromise);
+    shiftGoodwill(w, f, r.faction, GOODWILL.brokenPromise, `Never brought the ${requestText(r.item, r.count)}`);
   }
   if (keep.length !== s.requests.length) {
     s.requests = keep;
@@ -799,7 +925,7 @@ export function deliverRequest(w: World, faction: number, settlement: number, re
     w.placeItemNear(r.reward[0], r.reward[1], at);
     w.message(faction, `${f.name} thanks you for the ${requestText(r.item, r.count)}. ${trader.name} has ${requestText(r.reward[0], r.reward[1])}.`, 'good', at);
   }
-  shiftGoodwill(w, f, faction, r.goodwill);
+  shiftGoodwill(w, f, faction, r.goodwill, `Brought the ${requestText(r.item, r.count)} we asked for`);
 }
 
 // ---------------------------------------------------------------- theft
@@ -807,5 +933,5 @@ export function deliverRequest(w: World, faction: number, settlement: number, re
 /** One of their people caught a colony's colonist stealing from them. */
 export function caughtStealing(w: World, owner: number, thiefFaction: number): void {
   const f = w.factions.get(owner);
-  if (f?.settlement) shiftGoodwill(w, f, thiefFaction, GOODWILL.caughtStealing);
+  if (f?.settlement) shiftGoodwill(w, f, thiefFaction, GOODWILL.caughtStealing, 'Caught stealing from us');
 }

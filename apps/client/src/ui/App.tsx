@@ -14,6 +14,7 @@ import { Alerts } from './Alerts';
 import { Minimap } from './Minimap';
 import { SettlePanel } from './SettlePanel';
 import { TradePanel } from './TradePanel';
+import { DiplomacyPanel } from './DiplomacyPanel';
 import { ControlBar } from './ControlBar';
 import { Toasts } from './Toasts';
 import { Help } from './Help';
@@ -47,6 +48,7 @@ export function App() {
           {s.panel === 'colonists' && <ColonistsPanel />}
           {s.panel === 'events' && <EventsPanel />}
           {s.panel === 'trade' && <TradePanel />}
+          {s.panel === 'diplomacy' && <DiplomacyPanel />}
           <Architect />
           <OrderPreview />
           <Toasts />

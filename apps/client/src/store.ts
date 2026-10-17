@@ -34,7 +34,7 @@ export interface Toast {
 const TOAST_MS = 6000;
 
 export type Status = 'join' | 'connecting' | 'playing' | 'error';
-export type Panel = 'none' | 'work' | 'colonists' | 'events' | 'trade';
+export type Panel = 'none' | 'work' | 'colonists' | 'events' | 'trade' | 'diplomacy';
 
 /** All client state. React reads it through useStore; the renderer reads it directly. */
 class Store {
@@ -69,6 +69,8 @@ class Store {
   help = false;
   /** Partner the Trade panel opens on. */
   tradeWith: number | null = null;
+  /** Faction the Diplomacy panel shows. */
+  diploWith: number | null = null;
   private nextToast = 1;
 
   private lastTick = 0;
@@ -92,7 +94,7 @@ class Store {
     this.lastTickAt = performance.now();
   }
 
-  set(patch: Partial<Pick<Store, 'status' | 'error' | 'me' | 'players' | 'time' | 'tool' | 'selected' | 'squad' | 'selectedCell' | 'panel' | 'menu' | 'hoverCell' | 'focus' | 'ping' | 'sites' | 'settlePick' | 'help' | 'tradeWith'>>): void {
+  set(patch: Partial<Pick<Store, 'status' | 'error' | 'me' | 'players' | 'time' | 'tool' | 'selected' | 'squad' | 'selectedCell' | 'panel' | 'menu' | 'hoverCell' | 'focus' | 'ping' | 'sites' | 'settlePick' | 'help' | 'tradeWith' | 'diploWith'>>): void {
     Object.assign(this, patch);
     this.emit();
   }
@@ -114,6 +116,11 @@ class Store {
   /** Open the Trade panel on a partner. */
   openTrade(faction: number): void {
     this.set({ panel: 'trade', menu: null, tradeWith: faction });
+  }
+
+  /** Open the Diplomacy panel on a faction. */
+  openDiplomacy(faction: number): void {
+    this.set({ panel: 'diplomacy', menu: null, diploWith: faction });
   }
 
   /** Coalesce bursts of updates into one React render per frame. */
