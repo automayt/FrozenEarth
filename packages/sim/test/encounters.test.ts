@@ -187,5 +187,7 @@ describe('towns holding out', () => {
     const rf = w.factions.get(raiders[0].faction)!;
     const helped = (rf.raid?.helpers?.[2] ?? 0) > 0 || (s.settlement!.goodwill[2] ?? before) > before;
     expect(helped).toBe(true);
+    // Letters about someone else's fight talk about them, not "your colony".
+    expect(w.dirty.msgs.filter((m) => m.faction === 2).some((m) => /your colony|your fields/.test(m.text))).toBe(false);
   });
 });

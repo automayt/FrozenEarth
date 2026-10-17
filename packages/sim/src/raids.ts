@@ -224,7 +224,12 @@ function raidNews(w: World, raid: RaidState, text: string, tone: 'good' | 'neutr
     w.message(raid.target, text, tone, at);
     return;
   }
-  for (const p of f.settlement?.met ?? []) w.message(p, text, tone === 'good' ? 'neutral' : tone, at);
+  // Written for the colony being raided; retold about the town.
+  const told = text
+    .replace(/your colony/g, f.name)
+    .replace(/\byour /g, `${f.name}'s `)
+    .replace(/\byou\b/g, f.name);
+  for (const p of f.settlement?.met ?? []) w.message(p, told, tone === 'good' ? 'neutral' : tone, at ?? w.map.idx(f.home.x, f.home.y));
 }
 
 /** A colony's colonist hurt a raider who's attacking a settlement. */
@@ -493,8 +498,7 @@ function setGoal(w: World, f: Faction, goal: RaidGoal): void {
   raid.goalSince = w.tick;
   raid.foes = standing(w, raid.target);
   w.dirty.factions.add(f.id);
-  const t = w.factions.get(raid.target);
-  raidNews(w, raid, t?.settlement ? `${GOAL_NEWS[goal](f.name).replace(/your /g, `${t.name}'s `).replace(/ you\b/g, ` ${t.name}`)}` : GOAL_NEWS[goal](f.name), 'bad');
+  raidNews(w, raid, GOAL_NEWS[goal](f.name), 'bad');
   // Everyone drops what they were doing and acts on the new plan.
   for (const p of pawnsOf(w, f.id)) if (!p.downed && p.job?.type !== 'flee') endJob(w, p);
 }
