@@ -21,3 +21,8 @@ export const MAX_COMMAND_AREA = 80 * 80;
 
 /** The game starts at 6am on the third day of spring, once the thaw has set in. */
 export const START_TICK = TICKS_PER_DAY * 2 + TICKS_PER_HOUR * 6;
+
+/** Deep rock holds a steady temperature: the air under a mountain's roof drifts toward this. */
+export const CAVE_TEMP = 12;
+/** How far toward CAVE_TEMP the air is pulled, by roof (ROOF in defs): none, rock roof, overhead mountain. */
+export const ROOF_SHELTER = [0, 0.3, 0.6] as const;

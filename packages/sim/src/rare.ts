@@ -1,5 +1,5 @@
 import { BUILDINGS, COMFORT_MAX, COMFORT_MIN, EVENTS, ITEMS, PLANTS, T, TERRAINS } from '@fe/defs';
-import { RARE_TICK, TICKS_PER_DAY } from './constants';
+import { CAVE_TEMP, RARE_TICK, ROOF_SHELTER, TICKS_PER_DAY } from './constants';
 import { FROST_BAND, FROST_COLD, frostDistance } from './frost';
 import { effectsOf, healthTick } from './health';
 import { endJob, exposureSeverity, needsWarmth, warmthJob } from './pawns';
@@ -114,7 +114,7 @@ function needsTick(w: World, p: Pawn): void {
   const temp = w.tempAt(cell);
   if (temp < COMFORT_MIN + e.coldShift) add('Cold', -0.04);
   else if (temp > COMFORT_MAX + e.heatShift) add('Too hot', -0.04);
-  if (w.map.roomAt[cell]) add('Sheltered', 0.05);
+  if (w.map.roomAt[cell] || w.map.roof[cell]) add('Sheltered', 0.05);
   for (const [label, v] of effectsOf(w, p).thoughts) add(label, v);
   n.mood += (Math.max(0, Math.min(1, target)) - n.mood) * 0.2;
   p.thoughts = thoughts;
@@ -239,7 +239,7 @@ export function rebuildRooms(w: World): void {
     let sum = 0;
     for (const c of cells) {
       const r = old[c] ? oldRooms.get(old[c]) : undefined;
-      sum += r ? r.temp : w.outdoorTempAtCell(c);
+      sum += r ? r.temp : w.ambientTempAtCell(c);
     }
     const room: Room = { id: w.nextRoomId++, cells, temp: sum / cells.length };
     for (const c of cells) m.roomAt[c] = room.id;
@@ -321,7 +321,7 @@ export function updateRooms(w: World): void {
       continue;
     }
     let sum = 0;
-    for (const c of cells) sum += oldTemp.get(c) ?? w.outdoorTempAtCell(c);
+    for (const c of cells) sum += oldTemp.get(c) ?? w.ambientTempAtCell(c);
     const room: Room = { id: w.nextRoomId++, cells, temp: sum / cells.length };
     for (const c of cells) m.roomAt[c] = room.id;
     w.rooms.set(room.id, room);
@@ -347,7 +347,11 @@ function roomTemps(w: World): void {
     const size = room.cells.length;
     const leak = 0.04 / (1 + size / 60);
     // Rooms out in the frozen zone leak toward much colder air.
-    const outside = outdoor - FROST_COLD * w.frostAt(room.cells[0]);
+    let outside = outdoor - FROST_COLD * w.frostAt(room.cells[0]);
+    // Rooms dug into a mountain leak toward the rock's steadier temperature instead.
+    let shelter = 0;
+    for (const c of room.cells) shelter += ROOF_SHELTER[w.map.roof[c]];
+    if (shelter > 0) outside += (CAVE_TEMP - outside) * (shelter / size);
     room.temp += (outside - room.temp) * leak + ((heat.get(room.id) ?? 0) * 2) / size;
   }
   w.dirty.roomTemps = true;

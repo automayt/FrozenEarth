@@ -27,3 +27,4 @@ export { SIGHT_DAY, SIGHT_NIGHT, NOISE, sightRange, stealthMult, canStealFrom } 
 export { placeSettlements, foundSettlement, dispositionOf, goodwillOf, priceFactor, lineValue, traderAt, requestText, askForHelp, storedOf, HOSTILE_AT, FRIENDLY_AT, TRADE_RANGE, GOODWILL, GUARD_REACH, WATCH as SETTLEMENT_WATCH, opinionBetween, baseOpinion, areRivals, rivalsOf, liveTowns, type Disposition } from './settlements';
 export { ALLY_AT, DIPLO, TRUCE_DAYS, PLAYER_TRUCE_DAYS, MEDIATE_COOLDOWN_DAYS, stanceOf, envoySocial, peacePrice, mediationChance, allianceProblem, attackRefusal, type Stance } from './diplomacy';
 export { pactOf, allied, atWar, type RelView } from './pacts';
+export { computeRoof, rockDepth, THICK_ROOF_DEPTH } from './mapgen';

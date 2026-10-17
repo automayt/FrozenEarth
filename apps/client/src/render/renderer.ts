@@ -12,6 +12,7 @@ import { Ground } from './ground';
 import { FOG_RES, paintFog, paintOverlayCell, PX } from './paint';
 import { coverColor, coverFrom, type CoverHit } from './cover';
 import { Marks } from './marks';
+import { RockLayer, rockDust } from './rock';
 import { Input } from './input';
 import { Lighting } from './light';
 import { Shadows } from './shadows';
@@ -100,8 +101,11 @@ export class GameRenderer {
   private overlayKeys = new Int32Array(0);
   /** Faction the overlay was drawn for: your zones are drawn stronger, and only your theft plans show. */
   private overlayFor = -1;
+  /** Mountains: their own static layer over the ground (see rock.ts). */
+  private rockLayer: RockLayer | null = null;
   private layers = {
     terrain: new Container(),
+    rock: new Container(),
     overlay: new Container(),
     /** Sun shadows (render/shadows.ts): above the ground, below everything that casts one. */
     shadows: new Container(),
@@ -278,6 +282,7 @@ export class GameRenderer {
 
     if (m.allCellsChanged) {
       this.drawAllTerrain();
+      this.rockLayer?.drawAll(m);
       m.allCellsChanged = false;
       m.changedCells.clear();
       m.zonesChanged = true;
@@ -291,7 +296,7 @@ export class GameRenderer {
         if (this.prevRock[c] && !m.rock[c]) {
           const x = ((c % m.w) + 0.5) * TILE;
           const y = (((c / m.w) | 0) + 0.5) * TILE;
-          this.particles.burst(x, y, { count: 14, color: [0x8a8580, 0x6a6560, 0xa8a49c], speed: 70, size: 2.2, life: 700, gravity: 60, drag: 3, chips: true });
+          this.particles.burst(x, y, { count: 14, color: rockDust(this.prevRock[c]), speed: 70, size: 2.2, life: 700, gravity: 60, drag: 3, chips: true });
           this.particles.burst(x, y, { count: 8, color: 0xb0aaa0, speed: 25, size: 4, grow: 6, life: 900, lift: 10, alpha: 0.5 });
           sound.play('rock', x, y);
         }
@@ -299,7 +304,10 @@ export class GameRenderer {
     }
     for (const c of m.changedCells) this.prevRock[c] = m.rock[c];
     this.shadows.note(m, m.changedEnts, m.removedEnts, m.changedCells.size > 0);
-    if (m.changedCells.size) this.drawTerrainCells(m.changedCells);
+    if (m.changedCells.size) {
+      this.drawTerrainCells(m.changedCells);
+      this.rockLayer?.update(m, m.changedCells);
+    }
     if (m.zonesChanged || this.overlayFor !== (store.me?.faction ?? 0)) {
       this.drawOverlay(null);
       m.zonesChanged = false;
@@ -557,6 +565,9 @@ export class GameRenderer {
     this.layers.terrain.addChild(this.terrainMap.root);
     this.layers.overlay.addChild(this.overlayMap.root);
     this.ground?.setup(m.w, m.h, this.layers.terrain);
+    this.rockLayer?.destroy();
+    this.rockLayer = new RockLayer(m.w, m.h, TILE);
+    this.layers.rock.addChild(this.rockLayer.root);
     this.overlayKeys = new Int32Array(m.w * m.h).fill(-1);
     m.allCellsChanged = true;
   }
