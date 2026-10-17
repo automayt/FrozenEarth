@@ -6,6 +6,7 @@ import { command } from '../net';
 import { store, useStore } from '../store';
 import { helpers } from '../actions';
 import { hex } from './util';
+import { settlementDeal, traderNear as traderAt } from './trade';
 
 type Line = { item: string; count: number };
 
@@ -73,11 +74,7 @@ function LineEditor({ title, lines, setLines, stock, empty, factor }: { title: s
 
 /** Your colonist close enough to a settlement to trade there, if any. */
 function traderNear(faction: number, home: { x: number; y: number }): string | null {
-  for (const e of store.mirror.entities.values()) {
-    if (e.kind !== 'pawn' || e.faction !== faction || e.downed || e.prisoner) continue;
-    if (Math.hypot(e.x - home.x, e.y - home.y) <= TRADE_RANGE) return e.name.split(' ')[0];
-  }
-  return null;
+  return traderAt(store.mirror, faction, home);
 }
 
 /** Draft the nearest free colonist and walk them to just outside the settlement's walls. */
@@ -156,15 +153,21 @@ export function TradePanel() {
   let why = '';
   const factor = st ? priceFactor(st, me) : 1;
   if (st && fac) {
-    const mood = dispositionOf(st, me);
     const trader = traderNear(me, fac.home);
-    const giveV = lineValue(lines(give));
-    const wantV = lineValue(lines(want)) * factor;
-    if (st.state !== 'home') why = "They're on the move.";
-    else if (!trader) why = 'Nobody of yours is there.';
-    else if (mood === 'hostile' && want.length > 0) why = "Enemies only take gifts: remove what you're asking for.";
-    else if (giveV + 1e-9 < wantV) why = `Offer ${worth(wantV - giveV)} more worth, or ask for less.`;
-    blocked = !!why;
+    // The same rules the server applies (tested against it in trade.test.ts); stock is checked separately below.
+    const deal = settlementDeal(st, me, lines(give), lines(want), !!trader);
+    const mood = deal.mood;
+    why =
+      deal.why === 'moving'
+        ? "They're on the move."
+        : deal.why === 'no-trader'
+          ? 'Nobody of yours is there.'
+          : deal.why === 'hostile'
+            ? "Enemies only take gifts: remove what you're asking for."
+            : deal.why === 'value'
+              ? `Offer ${worth(deal.wantV - deal.giveV)} more worth, or ask for less.`
+              : '';
+    blocked = deal.blocked;
     settlementInfo = (
       <div className="settlement-info">
         <p>
