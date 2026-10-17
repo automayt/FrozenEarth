@@ -57,7 +57,7 @@ const STYLES: Record<string, StoneStyle> = {
   granite: { rgb: rgbOf(0x3d3431), pattern: 'granite' },
   limestone: { rgb: rgbOf(0x544c3d), pattern: 'limestone' },
   slate: { rgb: rgbOf(0x2c3038), pattern: 'slate' },
-  marble: { rgb: rgbOf(0x55524d), pattern: 'marble' },
+  marble: { rgb: rgbOf(0x4f4d4a), pattern: 'marble' },
 };
 
 /** Stone rock id by the terrain id of its rough floor: an ore vein shows its host stone around the ore. */
@@ -73,7 +73,7 @@ function stoneOf(m: RockMap, c: number): number {
 }
 
 const ORE: Record<string, { speck: [number, number, number]; glint: [number, number, number]; tint: number }> = {
-  steel_ore: { speck: [104, 122, 142], glint: [196, 210, 226], tint: 0.2 },
+  steel_ore: { speck: [96, 112, 132], glint: [168, 184, 204], tint: 0.2 },
   gold_ore: { speck: [196, 150, 44], glint: [255, 228, 140], tint: 0.22 },
 };
 
@@ -124,7 +124,7 @@ function buildTile(stone: number): Uint8ClampedArray {
           const h = hash2(gx, gy, 5);
           if (h > 0.94) f *= 1.3;
           else if (h < 0.05) f *= 0.72;
-          if (hash2(gx >> 1, gy >> 1, 6) > 0.95) tr += 16;
+          if (hash2(gx >> 1, gy >> 1, 6) > 0.97) tr += 9;
           break;
         }
         case 'limestone': {
@@ -376,9 +376,9 @@ export function paintRockCell(m: RockMap, c: number, data: Uint8ClampedArray, st
           r += (ore.speck[0] - r) * ore.tint * k;
           g += (ore.speck[1] - g) * ore.tint * k;
           b += (ore.speck[2] - b) * ore.tint * k;
-          const n = (vnoise(gx / 2.4, gy / 2.4, 41) * 0.65 + vnoise(gx / 7, gy / 7, 42) * 0.35) * (0.75 + 0.25 * k) + 0.25 * (k - 1);
+          const n = (vnoise(gx / 1.7, gy / 1.7, 41) * 0.65 + vnoise(gx / 7, gy / 7, 42) * 0.35) * (0.75 + 0.25 * k) + 0.25 * (k - 1);
           if (n > 0.62) {
-            const c2 = n > 0.69 && hash2(gx, gy, 43) > 0.35 ? ore.glint : ore.speck;
+            const c2 = n > 0.7 && hash2(gx, gy, 43) > 0.5 ? ore.glint : ore.speck;
             r = c2[0];
             g = c2[1];
             b = c2[2];
@@ -407,7 +407,7 @@ export function paintRockCell(m: RockMap, c: number, data: Uint8ClampedArray, st
           }
           // A soft bevel: the edge of the mass rises out of the darker interior.
           if (into < RIM * 2.5) {
-            const bevel = 1 + 0.12 * (1 - into / (RIM * 2.5)) * (lit >= 0 ? 1 : -0.5);
+            const bevel = 1 + 0.2 * (1 - into / (RIM * 2.5)) * (lit >= 0 ? 1 : -0.4);
             r *= bevel;
             g *= bevel;
             b *= bevel;
