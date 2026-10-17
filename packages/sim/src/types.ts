@@ -299,6 +299,8 @@ export interface GameMessage {
   tone: Tone;
   /** Optional cell to jump the camera to. */
   at?: number;
+  /** Said in direct answer to one of this faction's commands (a refusal or a result), not news. */
+  reply?: true;
 }
 
 export interface Condition {

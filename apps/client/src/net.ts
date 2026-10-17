@@ -98,7 +98,15 @@ function handle(msg: ServerMsg): void {
     }
     case 'delta':
       // A chime for letters that matter to us.
-      for (const m of msg.d.msgs) if ((m.faction === 0 || m.faction === store.me?.faction) && m.tone !== 'neutral') sound.play(m.tone);
+      for (const m of msg.d.msgs) {
+        if (m.faction !== 0 && m.faction !== store.me?.faction) continue;
+        if (m.tone !== 'neutral') sound.play(m.tone);
+        // Answers to our own commands (refusals, results) pop up where they can't be missed.
+        if (m.reply && m.faction) {
+          const w = store.mirror.w;
+          store.toast(m.text, m.tone, m.at !== undefined && w ? { x: m.at % w, y: Math.floor(m.at / w) } : undefined);
+        }
+      }
       if (msg.d.choices?.some((c) => c.faction === store.me?.faction && !store.mirror.choices.some((o) => o.id === c.id))) sound.play('neutral');
       store.mirror.applyDelta(msg.d);
       store.setServerTick(msg.d.tick);
@@ -115,10 +123,7 @@ function handle(msg: ServerMsg): void {
       return;
     case 'error':
       if (msg.fatal) store.set({ status: 'error', error: msg.msg });
-      else {
-        store.chat.push({ from: '', color: 0xe07a5a, text: msg.msg, at: Date.now() });
-        store.emit();
-      }
+      else store.toast(msg.msg, 'bad');
       return;
     case 'pong':
       store.set({ ping: Math.round(performance.now() - msg.at) });
@@ -141,3 +146,6 @@ export function forgetIdentity(name: string): void {
     // ignore
   }
 }
+
+// The socket lives in this module: hot-swapping it would leave commands going nowhere. Reload instead.
+if (import.meta.hot) import.meta.hot.accept(() => location.reload());

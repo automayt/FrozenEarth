@@ -117,7 +117,11 @@ export class World {
   applyCommands(): void {
     const q = this.queue;
     this.queue = [];
-    for (const { faction, cmd } of q) applyCommand(this, faction, cmd);
+    for (const { faction, cmd } of q) {
+      this.replyTo = faction;
+      applyCommand(this, faction, cmd);
+    }
+    this.replyTo = 0;
   }
 
   step(): void {
@@ -660,8 +664,13 @@ export class World {
 
   // ---------------------------------------------------------------- messages & deltas
 
+  /** The faction whose command is being applied right now, so its messages are marked as replies. Transient. */
+  private replyTo = 0;
+
   message(faction: number, text: string, tone: Tone = 'neutral', at?: number): void {
-    this.dirty.msgs.push({ tick: this.tick, faction, text, tone, at });
+    const msg: GameMessage = { tick: this.tick, faction, text, tone, at };
+    if (this.replyTo && faction === this.replyTo) msg.reply = true;
+    this.dirty.msgs.push(msg);
   }
 
   takeDelta(): Delta {

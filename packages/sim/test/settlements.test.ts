@@ -131,6 +131,8 @@ describe('settlements', () => {
     run(w, 2);
     expect(stock(w, s.id, 'steel')).toBe(steel);
     expect(w.dirty.msgs.at(-1)!.text).toMatch(/Send a colonist/);
+    // A refusal answers the command, so the client can show it right away rather than as news.
+    expect(w.dirty.msgs.at(-1)!.reply).toBe(true);
     addPawn(w, 40, 47, player);
     // 1 gold (10) for 10 steel (19): not enough.
     w.enqueue(player, { c: 'settlementTrade', settlement: s.id, give: [['gold', 1]], want });
@@ -142,6 +144,10 @@ describe('settlements', () => {
     expect(stock(w, s.id, 'steel')).toBe(steel - 10);
     expect(stock(w, s.id, 'gold')).toBeGreaterThanOrEqual(3);
     expect(s.settlement!.goodwill[player]).toBeGreaterThan(0);
+    expect(w.dirty.msgs.find((m) => m.text.startsWith('Trade done'))?.reply).toBe(true);
+    // News from the world in the same tick is not a reply.
+    w.message(player, 'Something happened.');
+    expect(w.dirty.msgs.at(-1)!.reply).toBeUndefined();
   });
 
   it('flee inward when the frost arrives, leaving their old home to anyone', () => {

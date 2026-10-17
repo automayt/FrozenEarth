@@ -20,6 +20,19 @@ export interface ChatLine {
   at: number;
 }
 
+export type ToastTone = 'good' | 'neutral' | 'bad';
+
+/** A short-lived notice: the answer to something the player just did. */
+export interface Toast {
+  id: number;
+  text: string;
+  tone: ToastTone;
+  /** Where clicking it jumps the camera. */
+  at?: { x: number; y: number };
+}
+
+const TOAST_MS = 6000;
+
 export type Status = 'join' | 'connecting' | 'playing' | 'error';
 export type Panel = 'none' | 'work' | 'colonists' | 'events' | 'trade';
 
@@ -50,6 +63,13 @@ class Store {
   sites: Site[] = [];
   /** Spot the player clicked while choosing where to settle. */
   settlePick: { x: number; y: number } | null = null;
+  /** Feedback for the player's own actions, newest last. */
+  toasts: Toast[] = [];
+  /** Keyboard and how-to overlay. */
+  help = false;
+  /** Partner the Trade panel opens on. */
+  tradeWith: number | null = null;
+  private nextToast = 1;
 
   private lastTick = 0;
   private lastTickAt = 0;
@@ -72,9 +92,28 @@ class Store {
     this.lastTickAt = performance.now();
   }
 
-  set(patch: Partial<Pick<Store, 'status' | 'error' | 'me' | 'players' | 'time' | 'tool' | 'selected' | 'squad' | 'selectedCell' | 'panel' | 'menu' | 'hoverCell' | 'focus' | 'ping' | 'sites' | 'settlePick'>>): void {
+  set(patch: Partial<Pick<Store, 'status' | 'error' | 'me' | 'players' | 'time' | 'tool' | 'selected' | 'squad' | 'selectedCell' | 'panel' | 'menu' | 'hoverCell' | 'focus' | 'ping' | 'sites' | 'settlePick' | 'help' | 'tradeWith'>>): void {
     Object.assign(this, patch);
     this.emit();
+  }
+
+  /** Show a toast for a few seconds. The same text again just refreshes it. */
+  toast(text: string, tone: ToastTone = 'neutral', at?: { x: number; y: number }): void {
+    const id = this.nextToast++;
+    this.toasts = [...this.toasts.filter((t) => t.text !== text), { id, text, tone, at }].slice(-4);
+    this.emit();
+    setTimeout(() => this.dismissToast(id), TOAST_MS + text.length * 30);
+  }
+
+  dismissToast(id: number): void {
+    if (!this.toasts.some((t) => t.id === id)) return;
+    this.toasts = this.toasts.filter((t) => t.id !== id);
+    this.emit();
+  }
+
+  /** Open the Trade panel on a partner. */
+  openTrade(faction: number): void {
+    this.set({ panel: 'trade', menu: null, tradeWith: faction });
   }
 
   /** Coalesce bursts of updates into one React render per frame. */
