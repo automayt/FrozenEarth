@@ -614,6 +614,17 @@ const OFFERS: Offer[] = [
   { give: ['tuque', 3], want: [['wood', 30], ['cloth', 25]] },
 ];
 
+HANDLERS.settlement_raid = (w) => {
+  // Somewhere a colony knows about, if there is one, so someone hears of it.
+  const towns = [...w.factions.values()].filter((f) => f.settlement?.state === 'home');
+  const known = towns.filter((f) => f.settlement!.met.length);
+  const pool = known.length ? known : towns;
+  if (!pool.length) return false;
+  const f = w.rng.pick(pool);
+  const people = [...w.kinds.pawn].filter((id) => w.get<Pawn>(id)!.faction === f.id).length;
+  return !!startRaid(w, f.id, 140 + people * 35, 'raid');
+};
+
 HANDLERS.settlement_plea = (w, faction) => {
   const options = settlementsThatCouldAsk(w, faction);
   return options.length > 0 && askForHelp(w, w.rng.pick(options), faction);

@@ -1,6 +1,7 @@
 import { ANIMALS, FISTS, WEAPON_KEYS, weaponOf, type WeaponDef } from '@fe/defs';
 import { effectsOf, injure } from './health';
 import { HOSTILE_AT, settlerAttacked } from './settlements';
+import { helpedDefend } from './raids';
 import type { Faction, Pawn } from './types';
 import { NEIGHBORS8, type World } from './world';
 
@@ -46,6 +47,11 @@ export function weaponFor(p: Pawn): WeaponDef {
     NATURAL.set(p.species, wd);
   }
   return wd;
+}
+
+/** Did this attacker just fail to find a way to that target? Then it picks someone else for a while. */
+export function gaveUpOn(w: World, p: Pawn, target: Pawn): boolean {
+  return !!p.giveUp && p.giveUp[0] === target.id && w.tick < p.giveUp[1];
 }
 
 /** Straight-line distance between two cells, in cells. */
@@ -182,7 +188,10 @@ export function strike(w: World, p: Pawn, t: Pawn): void {
   const ours = w.factions.get(p.faction)?.raid;
   if (ours && t.faction === ours.target) ours.dealt = (ours.dealt ?? 0) + dmg;
   const theirs = w.factions.get(t.faction)?.raid;
-  if (theirs) theirs.taken = (theirs.taken ?? 0) + dmg;
+  if (theirs) {
+    theirs.taken = (theirs.taken ?? 0) + dmg;
+    helpedDefend(w, t, p, dmg);
+  }
   injure(w, t, wd.injury, dmg, p);
 }
 

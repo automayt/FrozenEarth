@@ -7,9 +7,11 @@ import type { World } from './world';
 export const BREACH = { none: 0, walls: 1, rock: 2 } as const;
 export type Breach = (typeof BREACH)[keyof typeof BREACH];
 
-/** A player's wall, door or other blocking building that this faction may smash. */
+/** A wall, door or other blocking building that this faction may smash. */
 export function breakable(w: World, b: Building, faction: number): boolean {
-  return b.faction !== faction && !!w.factions.get(b.faction)?.isPlayer && !BUILDINGS[b.def]?.special;
+  if (b.faction === faction || BUILDINGS[b.def]?.special) return false;
+  // A player's, or the settlement this raid came for.
+  return !!w.factions.get(b.faction)?.isPlayer || w.factions.get(faction)?.raid?.target === b.faction;
 }
 
 /**

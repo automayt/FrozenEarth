@@ -137,6 +137,8 @@ export interface Pawn extends Base {
   possessed?: boolean;
   /** Held steering direction while possessed. */
   steer?: [dx: number, dy: number];
+  /** Someone this pawn couldn't find a way to attack, and until when it leaves them be. */
+  giveUp?: [target: EntityId, until: number];
 }
 
 export type PrisonerState = '' | 'held' | 'leaving';
@@ -233,6 +235,8 @@ export interface RaidState {
   fires?: number;
   /** Defenders standing when the current goal was set, to tell progress from stalemate. */
   foes?: number;
+  /** Raids on settlements: wounds each player colony dealt the raiders, to thank them after. */
+  helpers?: Record<number, number>;
 }
 
 /** assault: go for the colonists. loot: grab goods and go. burn: torch fields and outbuildings. siege: dig in out there and pick off anyone who shows. */

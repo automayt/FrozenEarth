@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { coverAgainst, startRaid, START_TICK, TICKS_PER_HOUR, type Faction, type Pawn, type World } from '../src';
+import { coverAgainst, foundSettlement, startRaid, START_TICK, TICKS_PER_HOUR, type Faction, type Pawn, type World } from '../src';
 import { addPawn, flatWorld, run } from './helpers';
 
 const pawns = (w: World, f: number) => [...w.kinds.pawn].map((id) => w.get<Pawn>(id)!).filter((p) => p.faction === f);
@@ -123,5 +123,69 @@ describe('raid goals', () => {
     run(w, 260);
     expect(rf.raid!.goal).toBe('assault');
     expect(w.dirty.msgs.some((m) => m.text.includes('storming in'))).toBe(true);
+  });
+});
+
+describe('towns holding out', () => {
+  function town(seed: number, residents = 5) {
+    const w = flatWorld(80, 80, seed);
+    w.tick = START_TICK + 8 * TICKS_PER_HOUR;
+    w.factions.set(2, { id: 2, name: 'Neighbours', color: 0x3a9ae0, home: { x: 10, y: 10 }, isPlayer: true });
+    const s = foundSettlement(w, { x: 40, y: 40 }, 45, residents);
+    s.settlement!.met.push(2);
+    run(w, 260); // rooms
+    return { w, s };
+  }
+
+  it('the gate opens for visitors but stays shut to raiders', () => {
+    const { w, s } = town(1);
+    const gate = w.map.idx(s.home.x, s.home.y + 3);
+    expect(w.passable(gate, 2)).toBe(true);
+    startRaid(w, s.id, 200, 'raid');
+    const rf = raidFaction(w)!;
+    expect(w.passable(gate, rf.id)).toBe(false);
+  });
+
+  it('guards man the firing slits when raiders come, and a garrisoned town holds out', () => {
+    let held = 0;
+    let manned = 0;
+    for (const seed of [1, 2, 3, 4]) {
+      const { w, s } = town(seed);
+      startRaid(w, s.id, 260, 'raid');
+      let sawPost = false;
+      for (let t = 0; t < 20_000; t += 250) {
+        run(w, 250);
+        // Someone standing right behind an embrasure.
+        for (const p of pawns(w, s.id)) {
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const b = w.map.buildingAt[w.map.idx(p.x + dx, p.y + dy)];
+            if (b && (w.get(b) as { def?: string })?.def === 'embrasure') sawPost = true;
+          }
+        }
+        const rf = raidFaction(w);
+        if (!rf || pawns(w, rf.id).every((p) => p.downed)) break;
+      }
+      if (sawPost) manned++;
+      if (s.settlement!.state === 'home' && pawns(w, s.id).filter((p) => !p.downed).length >= 2) held++;
+    }
+    expect(manned).toBeGreaterThanOrEqual(3);
+    expect(held).toBeGreaterThanOrEqual(3);
+  });
+
+  it('colonies that know the town hear of the attack, and those who help are thanked', () => {
+    const { w, s } = town(7, 3);
+    const raiders = startRaid(w, s.id, 220, 'raid')!;
+    expect(w.dirty.msgs.some((m) => m.faction === 2 && m.text.includes(`attacking ${s.name}`))).toBe(true);
+    // A rifleman of ours drafted between them and the town, picking raiders off as they come.
+    const hx = Math.round((raiders[0].x + 40) / 2);
+    const hy = Math.round((raiders[0].y + 40) / 2);
+    const helper = addPawn(w, hx, hy, 2);
+    helper.weapon = 'rifle';
+    helper.drafted = true;
+    const before = s.settlement!.goodwill[2] ?? s.settlement!.temper;
+    for (let t = 0; t < 24_000 && pawns(w, raiders[0].faction).length; t += 500) run(w, 500);
+    const rf = w.factions.get(raiders[0].faction)!;
+    const helped = (rf.raid?.helpers?.[2] ?? 0) > 0 || (s.settlement!.goodwill[2] ?? before) > before;
+    expect(helped).toBe(true);
   });
 });

@@ -26,6 +26,7 @@ import { DESIG } from './types';
 import { applyCommand } from './commands';
 import { tickPawn } from './pawns';
 import { rareTick } from './rare';
+import { hostile } from './combat';
 import { tickStoryteller } from './storyteller';
 import { newStoryState, type StoryState } from './schedule';
 import { fireTick } from './fire';
@@ -331,8 +332,7 @@ export class World {
       // Low cover is clambered over.
       if (d.cover && !d.blocksMovement && !d.door) extra += 6;
       if (d.door) {
-        // Settlements keep their gates open to visitors (and thieves); colonies lock theirs.
-        door = this.factions.get(b.faction)?.settlement ? 0 : b.faction;
+        door = b.faction;
         extra += 4;
       }
     }
@@ -364,7 +364,13 @@ export class World {
     const m = this.map;
     if (m.solid[i]) return false;
     const d = m.doorFaction[i];
-    return d === 0 || d === faction;
+    return d === 0 || d === faction || this.gateOpen(d, faction);
+  }
+
+  /** Settlements keep their gates open to visitors (and thieves), and shut to anyone hostile. Colonies lock theirs. */
+  private gateOpen(owner: number, faction: number): boolean {
+    const s = this.factions.get(owner)?.settlement;
+    return !!s && s.state !== 'fallen' && !hostile(this, owner, faction);
   }
 
   /** Ticks to step into cell i. */

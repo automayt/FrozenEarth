@@ -1,6 +1,6 @@
 import { ITEM_CATEGORIES, ITEMS, TERRAINS } from '@fe/defs';
 import { RARE_TICK, TICKS_PER_DAY } from './constants';
-import { cellDistance, hostile } from './combat';
+import { cellDistance, gaveUpOn, hostile, hostileInReach, lineOfSight, weaponFor } from './combat';
 import { frostDistance } from './frost';
 import { pawnName } from './names';
 import { maybeReachable } from './pathfinding';
@@ -8,7 +8,7 @@ import { findSleep } from './pawns';
 import { offerChoice, registerChoice } from './choices';
 import { storedCount, takeStored } from './eventHandlers';
 import type { Building, Faction, Item, Job, Pawn, SettlementRequest, SettlementState } from './types';
-import type { World } from './world';
+import { NEIGHBORS4, type World } from './world';
 
 /** Goodwill at or below this and the settlement's people fight a colony's colonists on sight. */
 export const HOSTILE_AT = -40;
@@ -132,7 +132,9 @@ function buildCompound(w: World, f: Faction, residents: number): void {
     for (let xx = x - HW; xx <= x + HW; xx++) {
       const edge = xx === x - HW || xx === x + HW || yy === y - HH || yy === y + HH;
       if (!edge) continue;
-      w.spawnBuilding(xx === x && yy === y + HH ? 'door' : wall, m.idx(xx, yy), f.id);
+      // A gate at the front with a firing slit either side of it, and one in each other wall.
+      const slit = (yy === y && (xx === x - HW || xx === x + HW)) || (xx === x && yy === y - HH) || (yy === y + HH && (xx === x - 1 || xx === x + 1));
+      w.spawnBuilding(xx === x && yy === y + HH ? 'door' : slit ? 'embrasure' : wall, m.idx(xx, yy), f.id);
     }
   }
   // Beds along the back wall, the fire in the middle, stores along the front.
@@ -172,10 +174,11 @@ function settlementName(w: World): string {
   return `${w.rng.pick(NAME_A)}${w.rng.pick(NAME_B)} ${w.factions.size}`;
 }
 
+/** Arms by temperament: mostly bows and rifles, for holding the walls, and a blade or two for the gate. */
 const WEAPONS_BY_TEMPER: [number, string[]][] = [
-  [HOSTILE_AT, ['rifle', 'rifle', 'bow', 'club', 'knife']],
-  [0, ['bow', 'club', 'knife', 'rifle']],
-  [100, ['bow', 'knife', 'club']],
+  [HOSTILE_AT, ['rifle', 'rifle', 'bow', 'club', 'rifle', 'knife']],
+  [0, ['bow', 'rifle', 'club', 'bow', 'knife']],
+  [100, ['bow', 'bow', 'knife', 'rifle', 'club']],
 ];
 
 /**
@@ -243,6 +246,8 @@ export function settlerThink(w: World, p: Pawn): Job {
   const here = w.cellOf(p);
   const home = m.idx(f.home.x, f.home.y);
   if (s.state === 'leaving') return { type: 'goto', stage: 0, dest: s.dest };
+  const defend = garrisonThink(w, p, f);
+  if (defend) return defend;
   // Intruders: hostile pawns on their land.
   let best: Pawn | null = null;
   let bestD = Infinity;
@@ -252,7 +257,7 @@ export function settlerThink(w: World, p: Pawn): Job {
     const c = w.cellOf(o);
     if (cellDistance(w, c, home) > s.radius + 4) continue;
     const d = cellDistance(w, here, c);
-    if (d < bestD && maybeReachable(w, here, c, true)) {
+    if (d < bestD && !gaveUpOn(w, p, o) && maybeReachable(w, here, c, true)) {
       best = o;
       bestD = d;
     }
@@ -274,17 +279,92 @@ export function settlerThink(w: World, p: Pawn): Job {
   return { type: 'hold', stage: 0, until: w.tick + 300 };
 }
 
+/** How far out a settlement watches for trouble. */
+const WATCH = 10;
+
+/** The nearest hostile on or near their land, if any. */
+function threatTo(w: World, f: Faction, range: number): Pawn | null {
+  const home = w.map.idx(f.home.x, f.home.y);
+  let best: Pawn | null = null;
+  let bestD = range;
+  for (const id of w.kinds.pawn) {
+    const o = w.get<Pawn>(id)!;
+    if (o.downed || o.prisoner || !hostile(w, f.id, o.faction)) continue;
+    const d = cellDistance(w, w.cellOf(o), home);
+    if (d <= bestD) {
+      bestD = d;
+      best = o;
+    }
+  }
+  return best;
+}
+
+/**
+ * Under threat, a settlement holds out: archers and riflemen man the firing slits facing the
+ * trouble, and fighters with blades hold the gate from inside. Null when there's no threat.
+ */
+function garrisonThink(w: World, p: Pawn, f: Faction): Job | null {
+  const s = f.settlement!;
+  const threat = threatTo(w, f, s.radius + WATCH);
+  if (!threat) return null;
+  const m = w.map;
+  const here = w.cellOf(p);
+  const there = w.cellOf(threat);
+  const wd = weaponFor(p);
+  const inReach = hostileInReach(w, p);
+  if (!wd.melee) {
+    const post = garrisonPost(w, p, f, there);
+    if (post >= 0 && post !== here) return { type: 'goto', stage: 0, dest: post };
+    if (inReach) return { type: 'attack', stage: 0, target: inReach.id, forced: false, chase: false, next: 0, until: w.tick + 300, spot: -1 };
+    if (post === here) return { type: 'hold', stage: 0, until: w.tick + 120 };
+    return null;
+  }
+  // Blades: stand just inside the gate and cut down whoever gets in. Don't step out to meet them.
+  const gate = m.idx(f.home.x, f.home.y + HH - 1);
+  const inside = m.roomAt[there] !== 0 && m.roomAt[there] === m.roomAt[gate];
+  if (inside || cellDistance(w, here, there) <= 1) return { type: 'attack', stage: 0, target: threat.id, forced: false, chase: inside, next: 0, until: w.tick + 200 };
+  if (here !== gate) return { type: 'goto', stage: 0, dest: gate };
+  return { type: 'hold', stage: 0, until: w.tick + 120 };
+}
+
+/** The free spot behind a firing slit closest to the threat. -1 if the compound has none. */
+function garrisonPost(w: World, p: Pawn, f: Faction, threat: number): number {
+  const m = w.map;
+  let best = -1;
+  let bestScore = Infinity;
+  for (const id of w.kinds.building) {
+    const b = w.get<Building>(id)!;
+    if (b.faction !== f.id || b.def !== 'embrasure') continue;
+    const slit = w.cellOf(b);
+    for (const [dx, dy] of NEIGHBORS4) {
+      if (!m.inBounds(b.x + dx, b.y + dy)) continue;
+      const c = m.idx(b.x + dx, b.y + dy);
+      if (!m.roomAt[c] || !w.passable(c, f.id)) continue;
+      // Someone else already has it.
+      let taken = false;
+      for (const oid of w.kinds.pawn) {
+        const o = w.get<Pawn>(oid)!;
+        if (o === p || o.faction !== f.id) continue;
+        if (w.cellOf(o) === c || (o.job?.type === 'goto' && o.job.dest === c)) taken = true;
+      }
+      // Best: a post that can actually see the trouble through its slit.
+      const sees = lineOfSight(w, c, threat);
+      const score = cellDistance(w, slit, threat) + (taken ? 40 : 0) + (sees ? 0 : 25);
+      if (score < bestScore) {
+        bestScore = score;
+        best = c;
+      }
+    }
+  }
+  return best;
+}
+
 /** For an idle settler: is anyone hostile on their land? */
 export function intruderNear(w: World, p: Pawn): boolean {
   const f = w.factions.get(p.faction);
   const s = f?.settlement;
   if (!f || !s || s.state !== 'home') return false;
-  const home = w.map.idx(f.home.x, f.home.y);
-  for (const id of w.kinds.pawn) {
-    const o = w.get<Pawn>(id)!;
-    if (!o.downed && !o.prisoner && hostile(w, p.faction, o.faction) && cellDistance(w, w.cellOf(o), home) <= s.radius + 4) return true;
-  }
-  return false;
+  return !!threatTo(w, f, s.radius + WATCH);
 }
 
 // ---------------------------------------------------------------- the settlement over time

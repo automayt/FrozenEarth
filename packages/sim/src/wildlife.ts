@@ -1,6 +1,6 @@
 import { ANIMALS, PREY, WEAPONS, type AnimalDef } from '@fe/defs';
 import { RARE_TICK, START_TICK, TICKS_PER_DAY } from './constants';
-import { cellDistance } from './combat';
+import { cellDistance, gaveUpOn } from './combat';
 import { maybeReachable } from './pathfinding';
 import { dangerZones } from './settlements';
 import type { Faction, Job, Pawn } from './types';
@@ -111,7 +111,8 @@ export function animalThink(w: World, p: Pawn): Job {
   const here = w.cellOf(p);
   if (p.aggro) {
     const a = w.get<Pawn>(p.aggro);
-    if (!a || a.kind !== 'pawn' || a.downed || cellDistance(w, here, w.cellOf(a)) > 25) p.aggro = 0;
+    // Forget whoever hurt it once they're down, far off, or out of reach behind walls.
+    if (!a || a.kind !== 'pawn' || a.downed || cellDistance(w, here, w.cellOf(a)) > 25 || gaveUpOn(w, p, a)) p.aggro = 0;
   }
   if (def.predator) return predatorThink(w, p, def);
   const attacker = p.aggro ? w.get<Pawn>(p.aggro) : undefined;
@@ -142,7 +143,9 @@ function predatorThink(w: World, p: Pawn, def: AnimalDef): Job {
   const attacker = p.aggro ? w.get<Pawn>(p.aggro) : undefined;
   if (attacker) return { type: 'attack', stage: 0, target: attacker.id, forced: true, chase: true, next: 0, until: w.tick + 500 };
   const winter = w.seasonIndex() === 3 || w.frostAt(here) > 0.3;
-  if (winter || p.needs.food < 0.5) {
+  // Just failed to find a way to its prey: roam for a while before trying again.
+  const balked = !!p.giveUp && w.tick < p.giveUp[1];
+  if ((winter || p.needs.food < 0.5) && !balked) {
     let best: Pawn | null = null;
     let bestScore = HUNT_RANGE;
     for (const id of w.kinds.pawn) {
@@ -153,7 +156,8 @@ function predatorThink(w: World, p: Pawn, def: AnimalDef): Job {
       if (!sp && !winter) continue;
       const c = w.cellOf(o);
       const score = cellDistance(w, here, c) * (sp ? 1 : 1.5);
-      if (score < bestScore && maybeReachable(w, here, c, true)) {
+      // Not someone safe behind a shut gate they've already failed to reach.
+      if (score < bestScore && !gaveUpOn(w, p, o) && !w.isUnreachable(p.faction, c) && maybeReachable(w, here, c, true)) {
         best = o;
         bestScore = score;
       }

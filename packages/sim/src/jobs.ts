@@ -177,6 +177,12 @@ function attack(w: World, p: Pawn, j: J<'attack'>): JobResult {
   if (!j.chase) return 'done';
   if (chase(w, p, there)) return 'continue';
   w.markUnreachable(p.faction, there);
+  // Remember who: a moving target looks like a new one cell by cell, and a failed search is costly.
+  p.giveUp = [t.id, w.tick + GIVE_UP_TICKS];
+  // Holed up behind walls this faction can't get through: the whole room is out of reach for now,
+  // not just the cell they happened to be standing in.
+  const room = w.map.roomAt[there] ? w.rooms.get(w.map.roomAt[there]) : undefined;
+  if (room) for (const c of room.cells) w.markUnreachable(p.faction, c);
   return 'fail';
 }
 
@@ -228,6 +234,9 @@ function flee(w: World, p: Pawn, j: J<'flee'>): JobResult {
 }
 
 /** Smash the wall or door in the way, or (sappers) dig through the rock. */
+/** How long an attacker leaves alone someone it couldn't find a way to. */
+const GIVE_UP_TICKS = 2500;
+
 /** How hard raiders without proper tools hit walls and doors, relative to sappers. */
 const IMPROVISED_BREACH = 0.3;
 

@@ -4,7 +4,8 @@ import { endJob } from './pawns';
 import { maybeReachable } from './pathfinding';
 import { pawnName } from './names';
 import { breachJob } from './siege';
-import { cellDistance, coverAgainst, hostileInReach } from './combat';
+import { shiftGoodwill } from './settlements';
+import { cellDistance, coverAgainst, gaveUpOn, hostileInReach } from './combat';
 import { fuelAt } from './fire';
 import type { Building, Faction, Item, Job, Pawn, RaidGoal, RaidState } from './types';
 import { rk, type World } from './world';
@@ -157,7 +158,7 @@ function sideName(w: World, c: number): string {
  */
 export function startRaid(w: World, target: number, points: number, kind: RaidKind): Pawn[] | null {
   const f = w.factions.get(target);
-  if (!f || !f.isPlayer || !pawnsOf(w, target).length) return null;
+  if (!f || !(f.isPlayer || f.settlement?.state === 'home') || !pawnsOf(w, target).length) return null;
   const m = w.map;
   const home = m.idx(f.home.x, f.home.y);
   const arrive = arrivalCell(w, home);
@@ -207,8 +208,43 @@ export function startRaid(w: World, target: number, points: number, kind: RaidKi
         : kind === 'sapper'
           ? `${rf.name} (${raiders.length}) have come from the ${sideName(w, arrive)} with picks and hammers. They will dig and smash their way in!`
           : `${rf.name} (${raiders.length}) have arrived from the ${sideName(w, arrive)} edge to attack you!`;
-  w.message(target, `${what} Draft your colonists (R) and right-click to fight.`, 'bad', arrive);
+  if (f.isPlayer) w.message(target, `${what} Draft your colonists (R) and right-click to fight.`, 'bad', arrive);
+  else raidNews(w, rf.raid!, `${rf.name} (${raiders.length}) are attacking ${f.name}! Help them hold out, and they'll remember it.`, 'bad', m.idx(f.home.x, f.home.y));
   return raiders;
+}
+
+/**
+ * Raid news goes to the colony being raided; when it's a settlement, to every colony that knows
+ * them (they might come and help).
+ */
+function raidNews(w: World, raid: RaidState, text: string, tone: 'good' | 'neutral' | 'bad', at?: number): void {
+  const f = w.factions.get(raid.target);
+  if (!f) return;
+  if (f.isPlayer) {
+    w.message(raid.target, text, tone, at);
+    return;
+  }
+  for (const p of f.settlement?.met ?? []) w.message(p, text, tone === 'good' ? 'neutral' : tone, at);
+}
+
+/** A colony's colonist hurt a raider who's attacking a settlement. */
+export function helpedDefend(w: World, raider: Pawn, helper: Pawn, dmg: number): void {
+  const raid = w.factions.get(raider.faction)?.raid;
+  if (!raid || !w.factions.get(raid.target)?.settlement || !w.factions.get(helper.faction)?.isPlayer) return;
+  raid.helpers ??= {};
+  raid.helpers[helper.faction] = (raid.helpers[helper.faction] ?? 0) + dmg;
+}
+
+/** The raid on a settlement is over: thank those who helped. */
+function thankHelpers(w: World, raid: RaidState): void {
+  const f = w.factions.get(raid.target);
+  if (!f?.settlement || !raid.helpers) return;
+  for (const [faction, dmg] of Object.entries(raid.helpers)) {
+    if (dmg < 0.1) continue;
+    shiftGoodwill(w, f, Number(faction), Math.min(30, Math.round(8 + dmg * 12)));
+    w.message(Number(faction), `${f.name} thanks you for helping drive off the raiders.`, 'good', w.map.idx(f.home.x, f.home.y));
+  }
+  raid.helpers = {};
 }
 
 function breakRaid(w: World, f: Faction, why: string): void {
@@ -216,7 +252,7 @@ function breakRaid(w: World, f: Faction, why: string): void {
   if (raid.fled) return;
   raid.fled = true;
   w.dirty.factions.add(f.id);
-  w.message(raid.target, why, 'good');
+  raidNews(w, raid, why, 'good');
   for (const p of pawnsOf(w, f.id)) if (!p.downed) endJob(w, p);
 }
 
@@ -237,7 +273,9 @@ export function raiderGone(w: World, faction: number, killed: boolean): void {
   if (!f?.raid) return;
   if (killed) f.raid.dead++;
   if (pawnsOf(w, faction).length === 0) {
-    w.message(f.raid.target, `${f.name} are gone. The raid is over.`, 'neutral');
+    const t = w.factions.get(f.raid.target);
+    raidNews(w, f.raid, t?.settlement ? `${f.name} are gone. ${t.name} has held out.` : `${f.name} are gone. The raid is over.`, 'neutral');
+    thankHelpers(w, f.raid);
     return;
   }
   checkBreak(w, faction);
@@ -323,12 +361,12 @@ function assaultThink(w: World, p: Pawn, raid: RaidState): Job {
   let anyTarget = false;
   for (const id of w.kinds.pawn) {
     const o = w.get<Pawn>(id)!;
-    if (o.downed || o.prisoner || !w.factions.get(o.faction)?.isPlayer) continue;
+    if (o.downed || o.prisoner || (o.faction !== raid.target && !w.factions.get(o.faction)?.isPlayer)) continue;
     const c = w.cellOf(o);
-    // Colonists of the target colony first; others only if they're in the way.
+    // The people they came for first; others only if they're in the way.
     const score = w.dist(here, c) + (o.faction === raid.target ? 0 : 25);
     if (o.faction === raid.target) anyTarget = true;
-    if (score >= bestScore || w.isUnreachable(p.faction, c) || !maybeReachable(w, here, c, true)) continue;
+    if (score >= bestScore || gaveUpOn(w, p, o) || w.isUnreachable(p.faction, c) || !maybeReachable(w, here, c, true)) continue;
     best = o;
     bestScore = score;
   }
@@ -455,7 +493,8 @@ function setGoal(w: World, f: Faction, goal: RaidGoal): void {
   raid.goalSince = w.tick;
   raid.foes = standing(w, raid.target);
   w.dirty.factions.add(f.id);
-  w.message(raid.target, GOAL_NEWS[goal](f.name), 'bad');
+  const t = w.factions.get(raid.target);
+  raidNews(w, raid, t?.settlement ? `${GOAL_NEWS[goal](f.name).replace(/your /g, `${t.name}'s `).replace(/ you\b/g, ` ${t.name}`)}` : GOAL_NEWS[goal](f.name), 'bad');
   // Everyone drops what they were doing and acts on the new plan.
   for (const p of pawnsOf(w, f.id)) if (!p.downed && p.job?.type !== 'flee') endJob(w, p);
 }
