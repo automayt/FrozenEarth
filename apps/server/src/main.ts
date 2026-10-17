@@ -20,7 +20,9 @@ const { values: args } = parseArgs({
   },
 });
 
-const savePath = worldPath(resolve(args.saves!), args.world!);
+// FE_WORLD wins over --world, so a second dev server can run a different world from the same scripts.
+const worldName = process.env.FE_WORLD || args.world!;
+const savePath = worldPath(resolve(args.saves!), worldName);
 const game = new GameServer({
   savePath,
   password: args.password || undefined,
@@ -36,7 +38,7 @@ wss.on('connection', (ws) => game.onConnect(ws));
 
 const port = Number(args.port);
 http.listen(port, () => {
-  console.log(`FrozenEarth server on http://localhost:${port}  (world "${args.world}"${args.password ? ', password protected' : ''})`);
+  console.log(`FrozenEarth server on http://localhost:${port}  (world "${worldName}"${args.password ? ', password protected' : ''})`);
   // Addresses other machines on the network can use.
   for (const addrs of Object.values(networkInterfaces())) {
     for (const a of addrs ?? []) if (a.family === 'IPv4' && !a.internal) console.log(`  on your network: http://${a.address}:${port}`);

@@ -604,8 +604,8 @@ export class GameRenderer {
     const x = c % m.w;
     const y = (c / m.w) | 0;
     const rock = m.rock[c];
-    if (this.ground && !rock) {
-      // The ground shader draws open ground; this bitmap only carries rock.
+    if (this.ground && (!rock || this.rockLayer)) {
+      // The ground shader draws open ground and the rock layer draws rock; this bitmap is only the fallback.
       for (let py = 0; py < PX; py++) data.fill(0, ((oy + py) * stride + ox) * 4, ((oy + py) * stride + ox + PX) * 4);
       return;
     }
