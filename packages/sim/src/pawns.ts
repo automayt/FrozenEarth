@@ -5,6 +5,7 @@ import { runJob } from './jobs';
 import { findWork } from './work';
 import { hostileInReach, isRaider } from './combat';
 import { fleeJob, raiderThink } from './raids';
+import { settlerThink } from './settlements';
 import type { Building, Item, Job, Pawn } from './types';
 import { NEIGHBORS8, rk, type World } from './world';
 
@@ -130,6 +131,11 @@ function think(w: World, p: Pawn): void {
   }
   if (isRaider(w, p.faction) || p.drafted) {
     p.job = p.drafted ? draftedThink(w, p) : raiderThink(w, p);
+    w.markDirty(p);
+    return;
+  }
+  if (w.factions.get(p.faction)?.settlement) {
+    p.job = settlerThink(w, p);
     w.markDirty(p);
     return;
   }
@@ -315,7 +321,7 @@ function findFood(w: World, p: Pawn): Job | null {
   return { type: 'eat', stage: 0, item: best.id, count: portion(best, p.needs.food), progress: 0 };
 }
 
-function findSleep(w: World, p: Pawn, rest: boolean): Job | null {
+export function findSleep(w: World, p: Pawn, rest: boolean): Job | null {
   let bed = p.bed ? w.get<Building>(p.bed) : undefined;
   if (!bed || bed.owner !== p.id) {
     bed = undefined;

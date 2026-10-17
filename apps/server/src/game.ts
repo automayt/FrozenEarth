@@ -3,6 +3,7 @@ import type { WebSocket } from 'ws';
 import {
   addPlayerFaction,
   createWorld,
+  placeSettlements,
   fireEvent,
   siteProblem,
   suggestSites,
@@ -79,12 +80,19 @@ export class GameServer {
       for (const p of file.players) this.players.set(p.id, { ...p, speed: 1, resumeSpeed: 1, ping: 0, ws: null, cmdTokens: CMD_RATE });
       this.nextPlayerId = file.nextPlayerId;
       this.log(`Loaded world from ${opts.savePath} (day ${this.world.day()}, ${this.players.size} players)`);
+      // Worlds from before settlements existed get some now.
+      if (![...this.world.factions.values()].some((f) => f.settlement)) {
+        const n = placeSettlements(this.world);
+        if (n) this.log(`Founded ${n} settlements in an older world`);
+      }
     } else {
       const size = opts.size ?? 200;
       this.world = createWorld({ seed: opts.seed, width: size, height: size });
       if (opts.frostStart !== undefined && Number.isFinite(opts.frostStart)) this.world.frost.startDay = Math.max(0, opts.frostStart);
       if (opts.frostPace !== undefined && Number.isFinite(opts.frostPace)) this.world.frost.pace = Math.max(0, opts.frostPace);
       this.log(`Generated new ${size}x${size} world, seed ${this.world.seed}`);
+      // On disk straight away, so a crash or dev-server restart doesn't roll a different world.
+      this.save();
     }
     this.lastDay = this.world.day();
   }
@@ -278,6 +286,8 @@ export class GameServer {
         this.log(`${p.name} settled at ${faction.home.x},${faction.home.y} (faction ${faction.id})`);
         this.send(p.ws!, { t: 'settled', faction: faction.id });
         this.broadcastPlayers();
+        // A new colony is worth keeping even if the server dies before the next autosave.
+        this.save();
         return;
       }
       case 'cmd':

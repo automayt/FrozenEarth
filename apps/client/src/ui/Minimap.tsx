@@ -1,11 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { ROCKS, TERRAINS } from '@fe/defs';
-import { frostLevel, frostRadius } from '@fe/sim';
+import { dispositionOf, frostLevel, frostRadius } from '@fe/sim';
+import { DISPOSITION_COLOR } from '../render/renderer';
 import { store } from '../store';
 
 const SIZE = 180;
 
-/** A small overview: terrain, the frost line, colonists, fires and the camera. Click to jump there. */
+/** A small overview: terrain, the frost line, settlements, colonists, fires and the camera. Click to jump there. */
 export function Minimap() {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -57,6 +58,28 @@ export function Minimap() {
       // Fires.
       ctx.fillStyle = '#ff6a20';
       for (const c of m.fireCells) ctx.fillRect((c % m.w) * sx - 1, Math.floor(c / m.w) * sy - 1, 3, 3);
+      // Settlements: a diamond coloured by how they feel about you; hollow once abandoned.
+      for (const f of m.factions.values()) {
+        const st = f.settlement;
+        if (!st) continue;
+        const d = store.me?.faction ? dispositionOf(st, store.me.faction) : 'wary';
+        const x = (f.home.x + 0.5) * sx;
+        const y = (f.home.y + 0.5) * sy;
+        ctx.beginPath();
+        ctx.moveTo(x, y - 5);
+        ctx.lineTo(x + 5, y);
+        ctx.lineTo(x, y + 5);
+        ctx.lineTo(x - 5, y);
+        ctx.closePath();
+        const col = st.state === 'fallen' ? '#8796a6' : `#${DISPOSITION_COLOR[d].toString(16).padStart(6, '0')}`;
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = st.state === 'home' ? '#000' : col;
+        if (st.state === 'home') {
+          ctx.fillStyle = col;
+          ctx.fill();
+        }
+        ctx.stroke();
+      }
       // Colonists, in their faction colour; yours drawn last and bigger.
       const mine = store.me?.faction;
       for (const pass of [0, 1]) {

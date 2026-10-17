@@ -21,3 +21,4 @@ export { FACTION_COLORS } from './names';
 export { describeJob } from './describe';
 export * from './time';
 export * from './frost';
+export { placeSettlements, foundSettlement, dispositionOf, goodwillOf, priceFactor, lineValue, traderAt, HOSTILE_AT, FRIENDLY_AT, TRADE_RANGE, type Disposition } from './settlements';

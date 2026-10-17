@@ -219,6 +219,25 @@ export interface Faction {
   isPlayer: boolean;
   /** Set on raider factions. Hostile to every player faction. */
   raid?: RaidState;
+  /** Set on NPC settlements. */
+  settlement?: SettlementState;
+}
+
+export interface SettlementState {
+  /** Starting goodwill toward any colony; set by the settlement's temperament. */
+  temper: number;
+  /** Goodwill toward each player faction, -100..100. Missing = temper. */
+  goodwill: Record<number, number>;
+  /** Cells from home its people consider theirs. */
+  radius: number;
+  /** 'leaving' while the frost drives them inward; 'fallen' once everyone is gone. */
+  state: 'home' | 'leaving' | 'fallen';
+  /** Where they're heading while leaving, else -1. */
+  dest: number;
+  /** While leaving: settle wherever they are by this tick. */
+  until: number;
+  /** Player factions whose colonists have come near (and had the letter). */
+  met: number[];
 }
 
 export type Tone = 'good' | 'neutral' | 'bad';
@@ -292,6 +311,7 @@ export type Command =
   | { c: 'removeBill'; bench: EntityId; bill: number }
   | { c: 'choose'; choice: number; option: string }
   | { c: 'offerTrade'; to: number; give: [string, number][]; want: [string, number][]; note?: string }
+  | { c: 'settlementTrade'; settlement: number; give: [string, number][]; want: [string, number][] }
   | { c: 'draft'; pawns: EntityId[]; on: boolean }
   | { c: 'move'; pawns: EntityId[]; x: number; y: number }
   | { c: 'attack'; pawns: EntityId[]; target: EntityId }

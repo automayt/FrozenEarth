@@ -5,17 +5,21 @@ import type { Building, Faction } from './types';
 import { Rng } from './rng';
 import { FROST_MAX, frostLevel } from './frost';
 import { World } from './world';
+import { placeSettlements } from './settlements';
 
 export interface WorldOptions {
   seed?: number;
   width?: number;
   height?: number;
+  /** Found NPC settlements (default true). */
+  settlements?: boolean;
 }
 
 export function createWorld(opts: WorldOptions = {}): World {
   const seed = opts.seed ?? (Math.random() * 0x7fffffff) | 0;
   const w = new World(seed, opts.width ?? 200, opts.height ?? 200);
   generateMap(w);
+  if (opts.settlements !== false) placeSettlements(w);
   return w;
 }
 
@@ -51,6 +55,8 @@ function spawnScore(w: World, cx: number, cy: number): number {
 
 /** Minimum distance between a new colony and existing ones, when a player picks the spot. */
 export const MIN_COLONY_GAP = 35;
+/** Minimum distance between a colony and an NPC settlement. */
+const SETTLEMENT_GAP = 28;
 
 /**
  * Why a colony can't be founded (or moved) at (x, y), or null if it can.
@@ -75,6 +81,7 @@ export function siteProblem(w: World, x: number, y: number, self = 0): string | 
   if (open / total < 0.6) return 'Not enough open, buildable ground here.';
   for (const f of w.factions.values()) {
     if (f.isPlayer && f.id !== self && Math.hypot(f.home.x - x, f.home.y - y) < MIN_COLONY_GAP) return `Too close to ${f.name}.`;
+    if (f.settlement && f.settlement.state !== 'fallen' && Math.hypot(f.home.x - x, f.home.y - y) < SETTLEMENT_GAP) return `Too close to ${f.name}.`;
   }
   return null;
 }
@@ -155,7 +162,8 @@ const STARTING_WEAPONS = ['rifle', 'bow', 'knife'];
 export function addPlayerFaction(w: World, name: string, colonists = 3, at?: { x: number; y: number }): Faction {
   const id = Math.max(0, ...w.factions.keys()) + 1;
   const home = at ? { x: at.x, y: at.y } : findSpawn(w);
-  const f: Faction = { id, name, color: FACTION_COLORS[(id - 1) % FACTION_COLORS.length], home, isPlayer: true };
+  const players = [...w.factions.values()].filter((x) => x.isPlayer).length;
+  const f: Faction = { id, name, color: FACTION_COLORS[players % FACTION_COLORS.length], home, isPlayer: true };
   w.factions.set(id, f);
   w.dirty.factions.add(id);
   const m = w.map;

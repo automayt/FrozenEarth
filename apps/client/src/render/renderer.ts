@@ -1,7 +1,7 @@
 import { Application, BitmapText, Container, Graphics, Sprite, Texture } from 'pixi.js';
 import { BUILDINGS, maxHp, PLANTS, ROCKS, TERRAINS, WEAPON_KEYS, weaponOf, type TerrainDef } from '@fe/defs';
 import { pawnPosition } from '@fe/protocol';
-import { DESIG, FROST_BAND, MIN_COLONY_GAP, SHOT_FIELDS, TICKS_PER_DAY, TICKS_PER_HOUR, bleedRate, calendar, frostLevel, frostRadius, hash2, outdoorTempAt, woundTotal, type Construct, type Entity, type Pawn } from '@fe/sim';
+import { DESIG, FROST_BAND, MIN_COLONY_GAP, SHOT_FIELDS, TICKS_PER_DAY, TICKS_PER_HOUR, bleedRate, calendar, dispositionOf, frostLevel, frostRadius, hash2, outdoorTempAt, woundTotal, type Construct, type Entity, type Pawn } from '@fe/sim';
 import { ease, Particles, Tweens, Weather, type Precip } from './fx';
 import { sound } from '../audio';
 import { store } from '../store';
@@ -13,6 +13,9 @@ export const TILE = 32;
 /** Cells per culling chunk. */
 const CHUNK = 16;
 /** Bitmap text is generated at 2x and drawn at half scale so it stays sharp when zoomed. */
+/** How a settlement feels about you, as a colour. */
+export const DISPOSITION_COLOR = { friendly: 0x7ad07a, wary: 0xf0b43c, hostile: 0xf07a5a } as const;
+
 const LABEL_STYLE = { fontFamily: 'IBM Plex Sans', fontSize: 22, fill: 0xffffff, stroke: { color: 0x000000, width: 5 } };
 /** Pixels per cell in the terrain and overlay canvases. */
 const PX = 8;
@@ -101,6 +104,7 @@ export class GameRenderer {
   private frostDrawn = -1;
   private frostRing = new Graphics();
   ui = new Graphics();
+  private settlementLabels = new Map<number, BitmapText>();
   private night = new Graphics();
   private views = new Map<number, EntityView>();
   private pawnIds = new Set<number>();
@@ -887,6 +891,7 @@ export class GameRenderer {
     const g = this.ui;
     g.clear();
     const m = store.mirror;
+    this.drawSettlements(g);
     if (store.me?.faction === 0) {
       this.drawSettleUi(g);
       return;
@@ -943,6 +948,41 @@ export class GameRenderer {
       g.rect((c % m.w) * TILE, ((c / m.w) | 0) * TILE, TILE, TILE).stroke({ width: 2 / this.world.scale.x, color: 0xffffff, alpha: 0.6 });
     }
     this.input.drawPreview(g);
+  }
+
+  /** NPC settlements: a name over each, and a ring around their land coloured by how they feel about you. */
+  private drawSettlements(g: Graphics): void {
+    const m = store.mirror;
+    const me = store.me?.faction ?? 0;
+    const sw = 1.5 / this.world.scale.x;
+    // Names stay readable when zoomed out.
+    const scale = Math.max(0.8, Math.min(3, 0.8 / this.world.scale.x));
+    const seen = new Set<number>();
+    for (const f of m.factions.values()) {
+      const s = f.settlement;
+      if (!s) continue;
+      seen.add(f.id);
+      let label = this.settlementLabels.get(f.id);
+      if (!label) {
+        label = new BitmapText({ text: '', style: LABEL_STYLE });
+        label.anchor.set(0.5, 1);
+        this.layers.ui.addChild(label);
+        this.settlementLabels.set(f.id, label);
+      }
+      const d = me ? dispositionOf(s, me) : 'wary';
+      const color = s.state === 'fallen' ? 0x8796a6 : DISPOSITION_COLOR[d];
+      const text = s.state === 'fallen' ? `${f.name} (ruins)` : s.state === 'leaving' ? `${f.name} (abandoned)` : f.name;
+      if (label.text !== text) label.text = text;
+      label.tint = color;
+      label.scale.set(scale);
+      label.position.set((f.home.x + 0.5) * TILE, (f.home.y - 4.3) * TILE);
+      if (s.state === 'home') g.circle((f.home.x + 0.5) * TILE, (f.home.y + 0.5) * TILE, s.radius * TILE).stroke({ width: sw, color, alpha: 0.4 });
+    }
+    for (const [id, label] of this.settlementLabels) {
+      if (seen.has(id)) continue;
+      label.destroy();
+      this.settlementLabels.delete(id);
+    }
   }
 
   /** While choosing a start: other colonies' exclusion zones, suggested sites, and the picked spot. */

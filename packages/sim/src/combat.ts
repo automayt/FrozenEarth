@@ -1,6 +1,7 @@
 import { WEAPON_KEYS, weaponOf, type WeaponDef } from '@fe/defs';
 import { effectsOf, injure } from './health';
-import type { Pawn } from './types';
+import { HOSTILE_AT, settlerAttacked } from './settlements';
+import type { Faction, Pawn } from './types';
 import { NEIGHBORS8, type World } from './world';
 
 /** Hit chance multiplier for a target crouched behind a wall or rock between it and the shooter. */
@@ -13,12 +14,23 @@ export function isRaider(w: World, faction: number): boolean {
   return !!w.factions.get(faction)?.raid;
 }
 
+/** A settlement that has turned against a player colony. */
+function settlementHates(s: Faction | undefined, player: Faction | undefined): boolean {
+  const st = s?.settlement;
+  return !!st && !!player?.isPlayer && (st.goodwill[player.id] ?? st.temper) <= HOSTILE_AT;
+}
+
 /**
- * Factions that fight on sight: raiders against everyone else. Two players are never hostile
- * here; their pawns only fight each other on an explicit attack order.
+ * Factions that fight on sight: raiders against everyone else, and settlements against colonies
+ * they've turned on. Two players are never hostile here; their pawns only fight each other on an
+ * explicit attack order.
  */
 export function hostile(w: World, a: number, b: number): boolean {
-  return a !== b && isRaider(w, a) !== isRaider(w, b);
+  if (a === b) return false;
+  const fa = w.factions.get(a);
+  const fb = w.factions.get(b);
+  if (fa?.raid || fb?.raid) return !!fa?.raid !== !!fb?.raid;
+  return settlementHates(fa, fb) || settlementHates(fb, fa);
 }
 
 /** Straight-line distance between two cells, in cells. */
@@ -96,6 +108,7 @@ export function strike(w: World, p: Pawn, t: Pawn): void {
   const wd = weaponOf(p.weapon);
   const hit = w.rng.chance(hitChance(w, p, t));
   w.dirty.shots.push(p.id, t.id, p.x, p.y, t.x, t.y, hit ? 1 : 0, Math.max(0, WEAPON_KEYS.indexOf(p.weapon)));
+  if (w.factions.get(t.faction)?.settlement) settlerAttacked(w, t, p, hit);
   if (hit) injure(w, t, wd.injury, wd.damage * w.rng.range(0.7, 1.3), p);
 }
 

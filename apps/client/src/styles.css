@@ -1067,3 +1067,13 @@ button.link {
 .checklist li.done .tick {
   color: var(--good);
 }
+
+.settlement-info p {
+  margin: 4px 0;
+}
+
+.settlement-info button.link {
+  margin-left: 8px;
+  font-weight: 400;
+  color: var(--ice);
+}

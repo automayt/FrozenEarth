@@ -1,0 +1,161 @@
+import { describe, expect, it } from 'vitest';
+import { BUILDINGS } from '@fe/defs';
+import {
+  createWorld,
+  deserializeWorld,
+  dispositionOf,
+  foundSettlement,
+  frostDistance,
+  hashWorld,
+  hostile,
+  killPawn,
+  serializeWorld,
+  siteProblem,
+  START_TICK,
+  TICKS_PER_DAY,
+  type Building,
+  type Faction,
+  type Item,
+  type Pawn,
+  type World,
+} from '../src';
+import { addPawn, flatWorld, run, runUntil } from './helpers';
+
+const residents = (w: World, f: number) => [...w.kinds.pawn].map((id) => w.get<Pawn>(id)!).filter((p) => p.faction === f);
+const buildings = (w: World, f: number) => [...w.kinds.building].map((id) => w.get<Building>(id)!).filter((b) => b.faction === f);
+const stock = (w: World, f: number, def: string) => {
+  let n = 0;
+  for (const id of w.kinds.item) {
+    const it = w.get<Item>(id)!;
+    const z = w.zoneAt(w.cellOf(it));
+    if (it.def === def && z?.faction === f) n += it.count;
+  }
+  return n;
+};
+
+/** A flat world with one player colony (faction 2) and a settlement of the given temper at (40, 40). */
+function withSettlement(temper: number): { w: World; s: Faction; player: number } {
+  const w = flatWorld(80, 80);
+  w.tick = START_TICK;
+  w.factions.set(2, { id: 2, name: 'Colony', color: 0xff0000, home: { x: 10, y: 10 }, isPlayer: true });
+  const s = foundSettlement(w, { x: 40, y: 40 }, temper, 4);
+  return { w, s, player: 2 };
+}
+
+describe('settlements', () => {
+  it('are founded toward the center with walls, beds, a fire, stores and armed residents', () => {
+    const w = createWorld({ seed: 21, width: 200, height: 200 });
+    const all = [...w.factions.values()].filter((f) => f.settlement);
+    expect(all.length).toBeGreaterThanOrEqual(2);
+    for (const f of all) {
+      expect(frostDistance(f.home.x, f.home.y, 200, 200)).toBeLessThan(0.75);
+      const defs = buildings(w, f.id).map((b) => b.def);
+      expect(defs).toContain('door');
+      expect(defs).toContain('campfire');
+      expect(defs.filter((d) => d === 'bed').length).toBe(residents(w, f.id).length);
+      expect(defs.filter((d) => BUILDINGS[d].wall).length).toBeGreaterThan(20);
+      expect(residents(w, f.id).every((p) => p.weapon)).toBe(true);
+      expect(stock(w, f.id, 'steel')).toBeGreaterThan(0);
+      // Nobody can found a colony on their doorstep.
+      expect(siteProblem(w, f.home.x + 5, f.home.y)).toMatch(/Too close|open/);
+    }
+    // Their people stay home and stay alive.
+    const before = all.map((f) => residents(w, f.id).length);
+    run(w, 2 * TICKS_PER_DAY);
+    all.forEach((f, k) => {
+      const people = residents(w, f.id);
+      expect(people.length).toBe(before[k]);
+      for (const p of people) expect(Math.hypot(p.x - f.home.x, p.y - f.home.y)).toBeLessThan(20);
+    });
+  });
+
+  it('hostile guards attack colonists who come close; friendly ones leave them be', () => {
+    for (const [temper, fights] of [
+      [-60, true],
+      [45, false],
+    ] as const) {
+      const { w, s, player } = withSettlement(temper);
+      const visitor = addPawn(w, 40, 50, player);
+      expect(hostile(w, s.id, player)).toBe(fights);
+      run(w, 600);
+      const attacking = residents(w, s.id).some((p) => p.job?.type === 'attack' && p.job.target === visitor.id);
+      expect(attacking || (fights && visitor.downed)).toBe(fights);
+    }
+  });
+
+  it('turn hostile when your colonists attack them', () => {
+    const { w, s, player } = withSettlement(0);
+    expect(dispositionOf(s.settlement!, player)).toBe('wary');
+    const shooter = addPawn(w, 40, 48, player);
+    shooter.weapon = 'rifle';
+    const target = residents(w, s.id)[0];
+    // Out in the open, in front of the gate.
+    target.x = 40;
+    target.y = 45;
+    target.path = null;
+    w.enqueue(player, { c: 'draft', pawns: [shooter.id], on: true });
+    run(w, 1);
+    w.enqueue(player, { c: 'attack', pawns: [shooter.id], target: target.id });
+    run(w, 900);
+    expect(dispositionOf(s.settlement!, player)).toBe('hostile');
+    expect(w.dirty.msgs.some((m) => m.text.includes('considers you enemies'))).toBe(true);
+  });
+
+  it('trade only with a colonist on hand, at their price, and like you more for it', () => {
+    const { w, s, player } = withSettlement(0);
+    const z = w.createZone(player, 'stockpile');
+    for (let x = 8; x < 14; x++) w.addZoneCell(z, w.map.idx(x, 12));
+    w.placeItemNear('gold', 30, w.map.idx(10, 12));
+    const steel = stock(w, s.id, 'steel');
+    const want: [string, number][] = [['steel', 10]];
+    // Nobody there yet.
+    w.enqueue(player, { c: 'settlementTrade', settlement: s.id, give: [['gold', 3]], want });
+    run(w, 2);
+    expect(stock(w, s.id, 'steel')).toBe(steel);
+    expect(w.dirty.msgs.at(-1)!.text).toMatch(/Send a colonist/);
+    addPawn(w, 40, 47, player);
+    // 1 gold (10) for 10 steel (19): not enough.
+    w.enqueue(player, { c: 'settlementTrade', settlement: s.id, give: [['gold', 1]], want });
+    run(w, 2);
+    expect(stock(w, s.id, 'steel')).toBe(steel);
+    // 3 gold (30) covers 19 x 1.5.
+    w.enqueue(player, { c: 'settlementTrade', settlement: s.id, give: [['gold', 3]], want });
+    run(w, 2);
+    expect(stock(w, s.id, 'steel')).toBe(steel - 10);
+    expect(stock(w, s.id, 'gold')).toBeGreaterThanOrEqual(3);
+    expect(s.settlement!.goodwill[player]).toBeGreaterThan(0);
+  });
+
+  it('flee inward when the frost arrives, leaving their old home to anyone', () => {
+    const w = createWorld({ seed: 21, width: 200, height: 200 });
+    const f = [...w.factions.values()].filter((x) => x.settlement).sort((a, b) => frostDistance(b.home.x, b.home.y, 200, 200) - frostDistance(a.home.x, a.home.y, 200, 200))[0];
+    const old = { ...f.home };
+    const oldBuildings = buildings(w, f.id).map((b) => b.id);
+    w.frost = { ...w.frost, startDay: 0, pace: 6 };
+    runUntil(w, () => f.settlement!.state !== 'home', 30 * TICKS_PER_DAY);
+    expect(f.settlement!.state).toBe('leaving');
+    for (const id of oldBuildings) expect(w.get<Building>(id)?.faction).toBe(0);
+    runUntil(w, () => f.settlement!.state !== 'leaving', 5 * TICKS_PER_DAY);
+    expect(f.settlement!.state).toBe('home');
+    expect(frostDistance(f.home.x, f.home.y, 200, 200)).toBeLessThan(frostDistance(old.x, old.y, 200, 200));
+    expect(buildings(w, f.id).some((b) => b.def === 'campfire')).toBe(true);
+  });
+
+  it('fall when their last resident dies, and their stores are free to take', () => {
+    const { w, s } = withSettlement(-60);
+    for (const p of residents(w, s.id)) killPawn(w, p, 'testing');
+    runUntil(w, () => s.settlement!.state === 'fallen', 2000);
+    expect(stock(w, s.id, 'steel')).toBe(0);
+    expect(buildings(w, s.id).length).toBe(0);
+  });
+
+  it('save, load and carry on identically', () => {
+    const w = createWorld({ seed: 9, width: 140, height: 140 });
+    run(w, 1000);
+    const b = deserializeWorld(serializeWorld(w));
+    expect(hashWorld(b)).toBe(hashWorld(w));
+    run(w, 3000);
+    run(b, 3000);
+    expect(hashWorld(b)).toBe(hashWorld(w));
+  });
+});

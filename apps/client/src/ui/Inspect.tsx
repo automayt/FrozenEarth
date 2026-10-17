@@ -1,5 +1,5 @@
 import { APPAREL, BUILDINGS, CONDITIONS, DOWNED_PAIN, ITEM_CATEGORIES, ITEMS, MAX_SKILL, maxHp, WEAPONS, PLANTS, RECIPES, ROCKS, SKILL_LABELS, SKILLS, SOWABLE_PLANTS, TERRAINS, TRAITS, weaponOf } from '@fe/defs';
-import { bleedRate, describeJob, outdoorTempAt, painOf, stageOf, TICKS_PER_HOUR, woundTotal, type Building, type Construct, type Entity, type Pawn, type Zone } from '@fe/sim';
+import { bleedRate, describeJob, dispositionOf, outdoorTempAt, painOf, stageOf, TICKS_PER_HOUR, woundTotal, type Building, type Construct, type Entity, type Pawn, type Zone } from '@fe/sim';
 import { helpers } from '../actions';
 import { command } from '../net';
 import { store, useStore } from '../store';
@@ -30,6 +30,7 @@ function factionTag(id: number) {
       <i style={{ background: hex(f.color) }} />
       {f.name}
       {id === store.me?.faction ? ' (you)' : ''}
+      {f.settlement && store.me?.faction ? <span className="muted"> · settlement, {f.settlement.state === 'fallen' ? 'abandoned' : dispositionOf(f.settlement, store.me.faction)}</span> : null}
     </span>
   );
 }
