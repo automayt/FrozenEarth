@@ -7,6 +7,7 @@ import { store, useStore } from '../store';
 import { helpers } from '../actions';
 import { hex } from './util';
 import { settlementDeal, traderNear as traderAt } from './trade';
+import { GoodwillMeter, GoodwillRules } from './SettlementCard';
 
 type Line = { item: string; count: number };
 
@@ -84,11 +85,21 @@ function sendEnvoy(f: Faction): void {
     store.toast('Nobody is free to go.', 'bad');
     return;
   }
-  const x = f.home.x;
-  const y = Math.min(store.mirror.h - 1, f.home.y + 6);
+  // To a friend's gate; to an enemy, only just within trading range, on the side you come from.
+  const hostile = !!f.settlement && dispositionOf(f.settlement, store.me?.faction ?? 0) === 'hostile';
+  const d = Math.hypot(who.x - f.home.x, who.y - f.home.y) || 1;
+  const reach = TRADE_RANGE - 1;
+  const x = hostile ? Math.round(f.home.x + ((who.x - f.home.x) / d) * reach) : f.home.x;
+  const y = hostile ? Math.round(f.home.y + ((who.y - f.home.y) / d) * reach) : Math.min(store.mirror.h - 1, f.home.y + 6);
   if (!who.drafted) command({ c: 'draft', pawns: [who.id], on: true });
   command({ c: 'move', pawns: [who.id], x, y });
-  store.toast(`${who.name.split(' ')[0]} is heading to ${f.name}. They stay drafted until you release them (R).`, 'neutral', { x, y });
+  store.toast(
+    hostile
+      ? `${who.name.split(' ')[0]} is heading for the edge of ${f.name}'s trading range. Their guards will attack: trade quickly and get out (R to undraft).`
+      : `${who.name.split(' ')[0]} is heading to ${f.name}. They stay drafted until you release them (R).`,
+    hostile ? 'bad' : 'neutral',
+    { x, y },
+  );
 }
 
 type Partner = { faction: number; name: string; color: number; settlement: boolean };
@@ -105,6 +116,8 @@ export function TradePanel() {
   const [give, setGive] = useState<Line[]>([]);
   const [want, setWant] = useState<Line[]>([]);
   const [note, setNote] = useState('');
+  /** "Send a colonist" to enemies asks twice. */
+  const [envoyArmed, setEnvoyArmed] = useState(0);
   // "Trade…" elsewhere in the HUD can point an open panel at someone new.
   useEffect(() => {
     if (s.tradeWith !== null && s.tradeWith !== to) {
@@ -180,6 +193,7 @@ export function TradePanel() {
             Show on map
           </button>
         </p>
+        <GoodwillMeter f={fac} />
         {mood === 'hostile' ? (
           <p className="bad small">
             They won't trade with you, and their guards attack your colonists on sight. A gift (give something, ask for nothing) might change their minds, if your envoy gets there{trader ? `: ${trader} is there now` : ''}.
@@ -192,9 +206,24 @@ export function TradePanel() {
         {!trader && st.state === 'home' && (
           <div className="envoy">
             <span className="muted small">A colonist must be within {TRADE_RANGE} cells of {fac.name} to trade or deliver.</span>
-            <button onClick={() => sendEnvoy(fac)} title="Draft the nearest colonist and walk them there">
-              Send a colonist
-            </button>
+            {mood === 'hostile' ? (
+              <button
+                className={envoyArmed > performance.now() ? 'danger' : ''}
+                onClick={() => {
+                  if (envoyArmed > performance.now()) {
+                    setEnvoyArmed(0);
+                    sendEnvoy(fac);
+                  } else setEnvoyArmed(performance.now() + 4000);
+                }}
+                title="Their guards attack your colonists on sight"
+              >
+                {envoyArmed > performance.now() ? 'Click again: guards will attack' : 'Send a colonist…'}
+              </button>
+            ) : (
+              <button onClick={() => sendEnvoy(fac)} title="Draft the nearest colonist and walk them there">
+                Send a colonist
+              </button>
+            )}
           </div>
         )}
         {(st.requests ?? [])
@@ -216,6 +245,7 @@ export function TradePanel() {
               </div>
             );
           })}
+        <GoodwillRules />
       </div>
     );
   }

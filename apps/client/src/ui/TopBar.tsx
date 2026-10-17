@@ -1,4 +1,4 @@
-import { calendar, outdoorTempAt, TICKS_PER_HOUR } from '@fe/sim';
+import { calendar, daysUntilFrost, frostRadius, outdoorTempAt, TICKS_PER_HOUR } from '@fe/sim';
 import { EVENTS } from '@fe/defs';
 import { myPlayer, setSpeed } from '../actions';
 import { store, useStore } from '../store';
@@ -19,6 +19,7 @@ export function TopBar() {
         <div className="date">{cal.label}</div>
         <div className={`temp ${temp < 0 ? 'cold' : temp > 30 ? 'hot' : ''}`}>{temp.toFixed(1)}°C outdoors</div>
       </div>
+      <FrostChip />
       <div className="conditions">
         {m.conditions.map((c, i) => (
           <span key={i} className={`chip ${EVENTS[c.key]?.tone ?? ''}`} title={`${EVENTS[c.key]?.description ?? ''} Ends in ${Math.max(0, Math.ceil((c.until - tick) / TICKS_PER_HOUR))}h.`}>
@@ -66,5 +67,44 @@ export function TopBar() {
         <span className="muted small">{s.ping} ms</span>
       </div>
     </div>
+  );
+}
+
+/** Days until the frost line reaches your colony: the clock the whole game runs on. Click to see the line nearest you. */
+function FrostChip() {
+  const s = store;
+  const m = s.mirror;
+  const f = s.me?.faction ? m.factions.get(s.me.faction) : undefined;
+  if (!f || !m.w) return null;
+  const tick = s.estTick();
+  const days = daysUntilFrost(f.home.x, f.home.y, m.w, m.h, tick, m.frost, 60);
+  const label = days === 0 ? 'Past the frost line' : days === Infinity ? 'Frost 60+ days off' : `Frost in ${days} day${days === 1 ? '' : 's'}`;
+  const short = days === 0 ? 'frozen' : days === Infinity ? '60+d' : `${days}d`;
+  const tone = days <= 3 ? 'bad' : days <= 8 ? 'warn' : '';
+  const show = () => {
+    // The point of the line on the way from the map centre out through your colony.
+    const half = Math.min(m.w, m.h) / 2;
+    const cx = m.w / 2;
+    const cy = m.h / 2;
+    const d = Math.hypot(f.home.x - cx, f.home.y - cy) || 1;
+    const r = Math.min(frostRadius(tick, m.frost) * half, Math.hypot(cx, cy));
+    const x = Math.max(0, Math.min(m.w - 1, Math.round(cx + ((f.home.x - cx) / d) * r)));
+    const y = Math.max(0, Math.min(m.h - 1, Math.round(cy + ((f.home.y - cy) / d) * r)));
+    s.set({ focus: { x, y } });
+  };
+  return (
+    <button
+      className={`frost-chip ${tone}`}
+      onClick={show}
+      aria-label={label}
+      title={
+        days === 0
+          ? 'Your colony is past the frost line: it will never be warm outside again. Heat your rooms and wear parkas, or move inward (Orders → Move colony). Click to see the line.'
+          : 'Permanent winter creeps in from the map edge toward the centre. When it gets close, dig in (heaters, parkas, food) or move your colony inward: Orders → Move colony, then Pack up the old site. Click to see the frost line nearest you.'
+      }
+    >
+      ❄ <span className="fc-long">{label}</span>
+      <span className="fc-short">{short}</span>
+    </button>
   );
 }

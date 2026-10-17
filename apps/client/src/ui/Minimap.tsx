@@ -62,7 +62,8 @@ export function Minimap() {
       for (const f of m.factions.values()) {
         const st = f.settlement;
         if (!st) continue;
-        const d = store.me?.faction ? dispositionOf(st, store.me.faction) : 'wary';
+        // Before settling, a town's temper is how it will greet you.
+        const d = dispositionOf(st, store.me?.faction ?? 0);
         const x = (f.home.x + 0.5) * sx;
         const y = (f.home.y + 0.5) * sy;
         ctx.beginPath();

@@ -16,6 +16,29 @@ export const HOSTILE_AT = -40;
 export const FRIENDLY_AT = 30;
 /** How close one of your colonists must be to trade. */
 export const TRADE_RANGE = 14;
+/**
+ * How much each thing a colony does moves a settlement's goodwill toward it. Exported so the
+ * client can show the stakes before an order rather than repeat the numbers.
+ */
+export const GOODWILL = {
+  /** One of their people catches your colonist stealing. */
+  caughtStealing: -45,
+  /** Your colonist shoots or swings at one of theirs and misses... */
+  attackMiss: -8,
+  /** ...or hurts them. */
+  attackHit: -25,
+  /** You agreed to bring something and never came. */
+  brokenPromise: -12,
+  /** You brought what they asked for. */
+  keptPromise: 15,
+  /** Any fair trade. */
+  fairTrade: 1,
+  /** Value given beyond a fair price per point of goodwill, up to giftMax a trade. */
+  giftValue: 12,
+  giftMax: 20,
+} as const;
+/** Their people attack hostile colonists this many cells beyond the ring of their land. */
+export const GUARD_REACH = 4;
 /** Compound footprint: walls from (x-HW, y-HH) to (x+HW, y+HH). */
 const HW = 4;
 const HH = 3;
@@ -56,7 +79,7 @@ export function shiftGoodwill(w: World, f: Faction, faction: number, by: number)
 /** Your colonist shot or swung at one of theirs: bad; actually hurting them: much worse. */
 export function settlerAttacked(w: World, victim: Pawn, attacker: Pawn, hit: boolean): void {
   const f = w.factions.get(victim.faction);
-  if (f?.settlement) shiftGoodwill(w, f, attacker.faction, hit ? -25 : -8);
+  if (f?.settlement) shiftGoodwill(w, f, attacker.faction, hit ? GOODWILL.attackHit : GOODWILL.attackMiss);
 }
 
 /** Land held by settlements hostile to this colony, as circles: places workers should stay out of. */
@@ -255,7 +278,7 @@ export function settlerThink(w: World, p: Pawn): Job {
     const o = w.get<Pawn>(id)!;
     if (o.downed || o.prisoner || !hostile(w, p.faction, o.faction)) continue;
     const c = w.cellOf(o);
-    if (cellDistance(w, c, home) > s.radius + 4) continue;
+    if (cellDistance(w, c, home) > s.radius + GUARD_REACH) continue;
     const d = cellDistance(w, here, c);
     if (d < bestD && !gaveUpOn(w, p, o) && maybeReachable(w, here, c, true)) {
       best = o;
@@ -280,7 +303,7 @@ export function settlerThink(w: World, p: Pawn): Job {
 }
 
 /** How far out a settlement watches for trouble. */
-const WATCH = 10;
+export const WATCH = 10;
 
 /** The nearest hostile on or near their land, if any. */
 function threatTo(w: World, f: Faction, range: number): Pawn | null {
@@ -506,9 +529,6 @@ function resettle(w: World, f: Faction, people: Pawn[]): void {
 
 export type TradeLine = [item: string, count: number];
 
-/** Goodwill per this much value given beyond a fair price, up to GIFT_MAX per trade. */
-const GIFT_VALUE = 12;
-const GIFT_MAX = 20;
 
 /** What they ask over the value of what you give: 1.5 for strangers, 1.0 for close friends. */
 export function priceFactor(s: SettlementState, faction: number): number {
@@ -569,7 +589,7 @@ export function settlementTrade(w: World, faction: number, settlement: number, g
   }
   // Fair trades warm relations a little; generous ones (and gifts) a lot more.
   const surplus = lineValue(g) - lineValue(wa) * factor;
-  shiftGoodwill(w, f, faction, (wa.length ? 1 : 0) + Math.min(GIFT_MAX, Math.floor(surplus / GIFT_VALUE)));
+  shiftGoodwill(w, f, faction, (wa.length ? GOODWILL.fairTrade : 0) + Math.min(GOODWILL.giftMax, Math.floor(surplus / GOODWILL.giftValue)));
   if (wa.length) w.message(faction, `Trade done with ${f.name}. ${trader.name} has the goods.`, 'good', w.cellOf(trader));
   else w.message(faction, `${f.name} accepts your gift.`, 'good', w.cellOf(trader));
 }
@@ -578,8 +598,6 @@ export function settlementTrade(w: World, faction: number, settlement: number, g
 
 /** Days to deliver once accepted. */
 const REQUEST_DAYS = 4;
-const REQUEST_GOODWILL = 15;
-const BROKEN_PROMISE = -12;
 
 const NEEDS: { item: string; lo: number; hi: number; why: string }[] = [
   { item: 'wood', lo: 40, hi: 90, why: 'to shore up their walls before the cold comes' },
@@ -683,7 +701,7 @@ registerChoice('settlement_request', (w, c, option, d) => {
     item: String(d.item),
     count: Number(d.count),
     reward: d.reward as SettlementRequest['reward'],
-    goodwill: REQUEST_GOODWILL,
+    goodwill: GOODWILL.keptPromise,
     until: w.tick + REQUEST_DAYS * TICKS_PER_DAY,
     why: String(d.why),
   };
@@ -702,7 +720,7 @@ function expireRequests(w: World, f: Faction): void {
       continue;
     }
     w.message(r.faction, `You promised ${f.name} ${requestText(r.item, r.count)} and never came. They won't forget it.`, 'bad', w.map.idx(f.home.x, f.home.y));
-    shiftGoodwill(w, f, r.faction, BROKEN_PROMISE);
+    shiftGoodwill(w, f, r.faction, GOODWILL.brokenPromise);
   }
   if (keep.length !== s.requests.length) {
     s.requests = keep;
@@ -764,10 +782,8 @@ export function deliverRequest(w: World, faction: number, settlement: number, re
 
 // ---------------------------------------------------------------- theft
 
-const CAUGHT = -45;
-
 /** One of their people caught a colony's colonist stealing from them. */
 export function caughtStealing(w: World, owner: number, thiefFaction: number): void {
   const f = w.factions.get(owner);
-  if (f?.settlement) shiftGoodwill(w, f, thiefFaction, CAUGHT);
+  if (f?.settlement) shiftGoodwill(w, f, thiefFaction, GOODWILL.caughtStealing);
 }

@@ -4,6 +4,8 @@ import { helpers } from '../actions';
 import { command } from '../net';
 import { store, useStore } from '../store';
 import { hex, pct } from './util';
+import { SettlementCard } from './SettlementCard';
+import { stealRisk } from './risk';
 
 export function Inspect() {
   const s = useStore();
@@ -22,7 +24,7 @@ export function Inspect() {
   );
 }
 
-function factionTag(id: number) {
+function factionTag(id: number, brief = false) {
   const f = store.mirror.factions.get(id);
   if (!f) return null;
   return (
@@ -30,7 +32,7 @@ function factionTag(id: number) {
       <i style={{ background: hex(f.color) }} />
       {f.name}
       {id === store.me?.faction ? ' (you)' : ''}
-      {f.settlement && store.me?.faction ? <span className="muted"> · settlement, {f.settlement.state === 'fallen' ? 'abandoned' : `${dispositionOf(f.settlement, store.me.faction)} (goodwill ${goodwillOf(f.settlement, store.me.faction)})`}</span> : null}
+      {f.settlement && store.me?.faction && !brief ? <span className="muted"> · settlement, {f.settlement.state === 'fallen' ? 'abandoned' : `${dispositionOf(f.settlement, store.me.faction)} (goodwill ${goodwillOf(f.settlement, store.me.faction)})`}</span> : null}
     </span>
   );
 }
@@ -90,9 +92,27 @@ function StealItem({ id, x, y }: { id: number; x: number; y: number }) {
   const owner = z ? m.factions.get(z.faction) : undefined;
   if (!me || !z || z.kind !== 'stockpile' || z.faction === me || !owner || !(owner.isPlayer || (owner.settlement && owner.settlement.state !== 'fallen'))) return null;
   const who = helpers(x, y)[0];
+  const lines = stealRisk(owner, x, y, who, true);
+  // After dark, only what differs from stealing now.
+  const dark = stealRisk(owner, x, y, who, false).filter((l) => !lines.some((n) => n.text === l.text));
   return (
+    <>
+    <div className="risk">
+      <b className="small">Not yours: taking it is theft</b>
+      <span className="muted small">Steal now:</span>
+      {lines.map((l, i) => (
+        <span key={i} className={`small ${l.tone}`}>
+          {l.text}
+        </span>
+      ))}
+      <span className="muted small">After dark:</span>
+      {dark.map((l, i) => (
+        <span key={`d${i}`} className={`small ${l.tone}`}>
+          {l.text}
+        </span>
+      ))}
+    </div>
     <div className="combat-row">
-      <span className="muted small">Not yours. Anyone awake who sees a theft raises the alarm{owner.settlement ? ' and the town thinks less of you' : ''}.</span>
       <button disabled={!who} onClick={() => who && command({ c: 'steal', pawn: who.id, item: id })} title={who ? `Send ${who.name} to carry it off now` : 'No colonist free to go'}>
         {who ? `Steal (${who.name.split(' ')[0]})` : 'Steal'}
       </button>
@@ -100,6 +120,7 @@ function StealItem({ id, x, y }: { id: number; x: number; y: number }) {
         After dark
       </button>
     </div>
+    </>
   );
 }
 
@@ -174,13 +195,8 @@ function PawnInfo({ p }: { p: Pawn }) {
     <>
       <div className={`kind ${raider ? 'bad' : ''}`}>{kind}</div>
       <h3>{p.name}</h3>
-      {factionTag(p.faction)}
-      {settler && store.me?.faction ? (
-        <div className="combat-row">
-          <span className="muted small">Trade with them when one of your colonists is near their town.</span>
-          <button onClick={() => store.openTrade(p.faction)}>Trade…</button>
-        </div>
-      ) : null}
+      {factionTag(p.faction, settler)}
+      {settler && store.me?.faction && fac ? <SettlementCard f={fac} /> : null}
       <div className="combat-row">
         <span className="muted small">{weaponOf(p.weapon).label}</span>
         {p.downed && <span className="chip bad">Downed</span>}
@@ -340,20 +356,17 @@ function BuildingInfo({ b }: { b: Building }) {
   const d = BUILDINGS[b.def];
   const mine = b.faction === store.me?.faction;
   const owner = b.owner ? store.mirror.get<Pawn>(b.owner) : undefined;
+  const fac = store.mirror.factions.get(b.faction);
+  const town = !mine && fac?.settlement && fac.settlement.state !== 'fallen' ? fac : undefined;
   return (
     <>
       <h3>{d.label}</h3>
-      {factionTag(b.faction)}
-      {!mine && store.mirror.factions.get(b.faction)?.settlement?.state === 'home' && store.me?.faction ? (
-        <div className="combat-row">
-          <span className="muted small">Part of a settlement.</span>
-          <button onClick={() => store.openTrade(b.faction)}>Trade…</button>
-        </div>
-      ) : null}
+      {factionTag(b.faction, !!town)}
       {b.hp < maxHp(b.def) && <Bar label="Condition" v={b.hp / maxHp(b.def)} warn={0.35} />}
       {d.bed && <p className="muted">{owner ? `Owned by ${owner.name}` : 'Unclaimed'}</p>}
       {d.heat ? <p className="muted">{d.heat > 0 ? 'Heats' : 'Cools'} an enclosed room toward {d.targetTemp}°C</p> : null}
       {d.recipes && mine && <Bills b={b} />}
+      {town && store.me?.faction ? <SettlementCard f={town} /> : null}
     </>
   );
 }

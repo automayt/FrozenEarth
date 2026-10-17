@@ -17,6 +17,7 @@ import { TradePanel } from './TradePanel';
 import { ControlBar } from './ControlBar';
 import { Toasts } from './Toasts';
 import { Help } from './Help';
+import { OrderPreview } from './OrderPreview';
 
 export function App() {
   const s = useStore();
@@ -28,6 +29,7 @@ export function App() {
         <div className="hud">
           <TopBar />
           <Feed />
+          <Minimap />
           <SettlePanel />
           <Toasts />
           <Help />
@@ -46,6 +48,7 @@ export function App() {
           {s.panel === 'events' && <EventsPanel />}
           {s.panel === 'trade' && <TradePanel />}
           <Architect />
+          <OrderPreview />
           <Toasts />
           <Help />
         </div>

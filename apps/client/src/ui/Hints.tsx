@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { daysUntilFrost, type Faction, type Pawn } from '@fe/sim';
+import { daysUntilFrost, dispositionOf, type Faction, type Pawn } from '@fe/sim';
+import { weaponOf } from '@fe/defs';
 import { store, useStore } from '../store';
 import { toggleDraft } from '../actions';
 
@@ -54,6 +55,28 @@ function current(): Hint[] {
       action: mine.some((p) => p.drafted) ? undefined : { label: 'Draft', run: toggleDraft },
     });
   }
+  const tool = store.tool;
+  if (tool.kind === 'designate' && tool.what === 'steal') {
+    out.push({
+      key: 'steal-tool',
+      title: 'Stealing',
+      text: "Drag over goods in someone else's stockpile. Haulers sneak in after dark and carry them to your own stockpile. Hover goods first: the card by the cursor says who can see that spot and what getting caught would cost.",
+    });
+  }
+  if (tool.kind === 'moveHome') {
+    out.push({
+      key: 'move-tool',
+      title: 'Moving your colony',
+      text: 'Hover the map: the card by the cursor says how many days each spot stays free of frost, compared with where you are now. Click to set the new home, then use Orders → Pack up on the old site so haulers carry everything over.',
+    });
+  }
+  if (tool.kind === 'hunt' && !mine.some((p) => !p.downed && p.weapon && !weaponOf(p.weapon).melee)) {
+    out.push({
+      key: 'hunt-tool',
+      title: 'Hunting needs a bow or rifle',
+      text: 'Animals you mark stay marked, but nobody hunts them until someone carries a ranged weapon. Build a Workbench (Production) and add a bow bill, or pick up a weapon you find.',
+    });
+  }
   const steering = mine.find((p) => p.possessed);
   if (steering) {
     out.push({
@@ -81,6 +104,14 @@ function current(): Hint[] {
       });
     }
   }
+  if (m.tick > 0) {
+    out.push({
+      key: 'welcome',
+      title: 'Welcome to your colony',
+      text: 'Pan with WASD or a right-drag, zoom with the wheel, click a colonist to see what they can do. The checklist below walks you through the first days. Winter is creeping in from the map edge: the ❄ chip at the top counts the days until it reaches you. Press ? for every control.',
+      action: { label: 'Show controls', run: () => store.set({ help: true }) },
+    });
+  }
   const asked = [...m.factions.values()].find((s) => s.settlement?.requests?.some((r) => r.faction === me));
   if (asked) {
     out.push({
@@ -97,21 +128,23 @@ function current(): Hint[] {
       text: 'Pick one of its options. If time runs out, the last option is chosen for you.',
     });
   }
-  const met: Faction | undefined = [...m.factions.values()].find((s) => s.settlement && s.settlement.state !== 'fallen' && s.settlement.met.includes(me));
+  const towns: Faction[] = [...m.factions.values()].filter((s) => s.settlement && s.settlement.state !== 'fallen' && s.settlement.met.includes(me));
+  const enemy = towns.find((t) => dispositionOf(t.settlement!, me) === 'hostile');
+  if (enemy) {
+    out.push({
+      key: 'settlement-hostile',
+      title: `${enemy.name} is hostile`,
+      text: 'Their guards attack your colonists who come near their land (the red ring), and their walls have firing slits. Keep your people away, or try to win them back with a gift, delivered by someone who can run. Click one of their buildings to see their goodwill.',
+      action: { label: 'Show them', run: () => store.set({ focus: { ...enemy.home } }) },
+    });
+  }
+  const met = towns.find((t) => dispositionOf(t.settlement!, me) !== 'hostile');
   if (met) {
     out.push({
       key: 'settlement',
       title: `You've met ${met.name}`,
-      text: 'Settlements trade when one of your colonists is near them (Trade panel, T). Gifts raise their goodwill; the ring around the town shows their mood. Their stockpiles can be stolen from too (Orders → Steal), but getting caught makes enemies.',
+      text: 'Click any of their buildings or people to see their goodwill, prices and what they want. They trade when one of your colonists is near (Trade, T); gifts raise goodwill. You can also steal from their stockpile, but getting caught costs 45 goodwill and can turn them hostile.',
       action: { label: 'Open Trade', run: () => store.openTrade(met.id) },
-    });
-  }
-  if (m.tick > 0) {
-    out.push({
-      key: 'welcome',
-      title: 'Welcome to your colony',
-      text: 'Pan with WASD or a right-drag, zoom with the wheel, click a colonist to see what they can do. The checklist below walks you through the first days. Press ? for every control.',
-      action: { label: 'Show controls', run: () => store.set({ help: true }) },
     });
   }
   return out;

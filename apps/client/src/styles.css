@@ -374,10 +374,16 @@ button.primary:hover {
   font-size: 11px;
 }
 
+/* What the active tool or a drafted squad does, on its own row above the bar so the bar never wraps. */
 .tool-hint {
-  margin-left: 8px;
+  padding: 4px 10px;
   color: var(--amber);
   font-size: 12px;
+  max-width: calc(100vw - 16px);
+}
+
+.hud:has(> .inspect) .tool-hint {
+  max-width: calc(100vw - 340px);
 }
 
 /* ------------------------------------------------------------------ inspect */
@@ -651,10 +657,6 @@ td.name {
 }
 
 @media (max-width: 720px) {
-  .feed {
-    display: none;
-  }
-
   .inspect {
     width: calc(100vw - 16px);
     bottom: 110px;
@@ -1753,5 +1755,284 @@ button.primary:disabled {
 @media (max-width: 1100px) {
   .architect .hotkey {
     display: none;
+  }
+}
+
+/* ------------------------------------------------------------------ order preview, risk, settlements */
+
+.order-preview {
+  position: fixed;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 9px;
+  font-size: 12px;
+  border-left: 3px solid var(--ice);
+  pointer-events: none;
+}
+
+.order-preview.bad {
+  border-left-color: var(--bad);
+}
+
+.order-preview b {
+  font-weight: 600;
+}
+
+.op-line {
+  color: var(--text);
+  opacity: 0.85;
+}
+
+.op-line.good {
+  color: var(--good);
+  opacity: 1;
+}
+
+.op-line.bad {
+  color: #ffab94;
+  opacity: 1;
+}
+
+.frost-chip {
+  padding: 2px 9px;
+  border-radius: 99px;
+  font-size: 12px;
+  border-color: rgba(138, 200, 255, 0.45);
+  color: var(--ice);
+  white-space: nowrap;
+}
+
+.frost-chip .fc-short {
+  display: none;
+}
+
+@media (max-width: 1100px) {
+  .frost-chip .fc-long {
+    display: none;
+  }
+
+  .frost-chip .fc-short {
+    display: inline;
+  }
+}
+
+.frost-chip.warn {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+.frost-chip.bad {
+  border-color: var(--bad);
+  color: var(--bad);
+  background: rgba(240, 122, 90, 0.12);
+}
+
+.risk {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 6px 0 2px;
+  padding: 6px 8px;
+  border: 1px solid rgba(240, 122, 90, 0.35);
+  border-radius: var(--radius);
+  background: rgba(240, 122, 90, 0.05);
+}
+
+.risk .bad {
+  color: #ffab94;
+}
+
+.risk .muted {
+  margin-top: 3px;
+}
+
+button.danger {
+  border-color: var(--bad);
+  color: #ffd0c4;
+  background: rgba(240, 122, 90, 0.18);
+}
+
+.settlement-card {
+  margin: 6px 0 2px;
+}
+
+.settlement-card p {
+  margin: 4px 0;
+}
+
+.sc-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip.mood {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.sc-row {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: 6px;
+  margin: 3px 0;
+  align-items: baseline;
+}
+
+.sc-want {
+  display: block;
+}
+
+.sc-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.sc-actions .link,
+.gw-rules summary {
+  color: var(--ice);
+}
+
+.goodwill {
+  margin: 8px 0 4px;
+}
+
+.gw-track {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(240, 180, 60, 0.22);
+}
+
+.gw-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.gw-zone.hostile {
+  background: rgba(240, 122, 90, 0.4);
+  border-radius: 4px 0 0 4px;
+}
+
+.gw-zone.friendly {
+  background: rgba(122, 208, 122, 0.4);
+  border-radius: 0 4px 4px 0;
+}
+
+.gw-mark {
+  position: absolute;
+  top: -3px;
+  width: 5px;
+  height: 14px;
+  border-radius: 2px;
+  transform: translateX(-50%);
+  box-shadow: 0 0 0 1.5px #0b0f14;
+}
+
+.gw-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2px;
+  font-size: 10.5px;
+}
+
+.gw-rules {
+  margin: 4px 0;
+  font-size: 12px;
+}
+
+.gw-rules summary {
+  cursor: pointer;
+}
+
+.gw-rules ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+}
+
+.help-status {
+  margin: 2px 0 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--ice);
+  border-radius: var(--radius);
+  background: var(--ice-dim);
+  font-size: 12px;
+}
+
+.help-status.running {
+  border-color: var(--amber);
+  background: rgba(240, 180, 60, 0.1);
+}
+
+.help-status .link {
+  color: var(--ice);
+}
+
+/* A centred panel opened while something is inspected moves left of the inspect panel instead of under it. */
+.hud:has(> .inspect) .trade-panel,
+.hud:has(> .inspect) .work-panel,
+.hud:has(> .inspect) .colonists-panel {
+  left: calc((100vw - 316px) / 2);
+  max-width: calc(100vw - 332px);
+}
+
+@media (max-width: 860px) {
+  .hud:has(> .inspect) .trade-panel,
+  .hud:has(> .inspect) .work-panel,
+  .hud:has(> .inspect) .colonists-panel {
+    left: calc((100vw - 286px) / 2);
+    max-width: calc(100vw - 302px);
+  }
+}
+
+@media (max-width: 720px) {
+  .hud:has(> .inspect) .trade-panel,
+  .hud:has(> .inspect) .work-panel,
+  .hud:has(> .inspect) .colonists-panel {
+    left: 50%;
+    max-width: calc(100vw - 16px);
+  }
+}
+
+/* Placed last so it wins over the short-window rules above. */
+@media (max-width: 720px) {
+  /* Narrow windows: no room for the letters column, but tips and decisions still matter. Keep
+     just those, in a compact stack under the top bar. Replies still arrive as toasts. */
+  .feed {
+    /* The top bar wraps to two rows this narrow. */
+    top: 112px;
+    bottom: auto;
+    width: min(260px, calc(100vw - 290px));
+    min-width: 200px;
+    max-height: calc(100vh - 180px);
+  }
+
+  .feed .chat,
+  .feed .checklist,
+  .feed .letter-row,
+  .feed .letter-tools,
+  .feed .letter-log {
+    display: none;
+  }
+}
+
+/* The architect bar is about 1020px wide with its hotkey chips: below ~1340px it would reach under the inspect panel. */
+@media (max-width: 1340px) {
+  .inspect {
+    bottom: 56px;
+    max-height: calc(100vh - 56px - 70px);
+  }
+}
+
+/* A tool hint adds a row above the bar: lift the chat clear of it in short windows. */
+@media (max-height: 760px) {
+  .hud:has(.tool-hint) .feed {
+    bottom: 96px;
   }
 }
