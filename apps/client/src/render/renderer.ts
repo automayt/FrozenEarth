@@ -378,7 +378,8 @@ export class GameRenderer {
       const b = Math.sin(now / 700 + e.id) * 0.04;
       sx = 1 + b;
       sy = 1 - b;
-      if (e.asleep && !e.downed && now >= (v.nextZ ?? 0)) {
+      // No "z" over a sleeper you can't see: it would give away who's in a dark room.
+      if (e.asleep && !e.downed && v.root.visible && now >= (v.nextZ ?? 0)) {
         this.particles.zed(x + 6, y - TILE * 0.4);
         v.nextZ = now + 1300 + Math.random() * 500;
       }

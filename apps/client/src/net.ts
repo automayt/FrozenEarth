@@ -78,6 +78,7 @@ function handle(msg: ServerMsg): void {
       store.mirror.applySnapshot(msg.snap);
       store.setServerTick(msg.snap.tick);
       store.set({ status: 'playing', error: '', me: { playerId: msg.playerId, faction: msg.faction }, sites: msg.sites ?? [] });
+      if (document.hidden) send({ t: 'away', away: true });
       if (!store.focus) {
         const f = store.mirror.factions.get(msg.faction);
         const first = msg.sites?.[0];
@@ -130,6 +131,9 @@ function handle(msg: ServerMsg): void {
       return;
   }
 }
+
+// A background tab tells the server, so its speed vote stops holding other players back.
+if (typeof document !== 'undefined') document.addEventListener('visibilitychange', () => send({ t: 'away', away: document.hidden }));
 
 export function send(msg: ClientMsg): void {
   if (ws?.readyState === WebSocket.OPEN) ws.send(encode(msg));

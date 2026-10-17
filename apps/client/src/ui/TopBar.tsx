@@ -50,6 +50,10 @@ export function TopBar() {
   const temp = outdoorTempAt(tick, m.coldOffset, m.conditions);
   const me = myPlayer();
   const vote = me?.speed ?? 1;
+  // Running slower than you asked: someone else's vote is holding the game back.
+  const held = !s.time.paused && vote > s.time.speed;
+  const slow = held ? s.players.filter((p) => p.connected && p.id !== me?.id && p.speed === s.time.speed) : [];
+  const heldBy = (slow.some((p) => !p.away) ? slow.filter((p) => !p.away) : slow).map((p) => p.name);
   const bar = useWrapOffset();
   return (
     <div className="topbar panel" ref={bar}>
@@ -69,13 +73,18 @@ export function TopBar() {
       </div>
       <div className="speed">
         {[0, 1, 2, 3].map((v) => (
-          <button key={v} className={vote === v ? 'on' : ''} onClick={() => setSpeed(v)} title={v === 0 ? 'Request pause (Space)' : `Speed ${v} (${v})`}>
+          <button
+            key={v}
+            className={vote === v ? 'on' : held && v === s.time.speed ? 'held' : ''}
+            onClick={() => setSpeed(v)}
+            title={v === 0 ? 'Request pause (Space)' : held && v === s.time.speed ? `Running at ${v}×: ${heldBy.join(', ')} asked for it` : `Speed ${v} (${v})`}
+          >
             {v === 0 ? '❚❚' : '▶'.repeat(v)}
           </button>
         ))}
         <div className="speed-state" title={`${s.time.paused ? 'Paused' : `${s.time.speed}×`} ${s.time.reason}`.trim()}>
           {s.time.paused ? <b>Paused</b> : <b>{s.time.speed}×</b>}
-          <span className="muted"> {s.time.reason}</span>
+          {held ? <span className="held-by"> held by {heldBy.join(', ')}</span> : <span className="muted"> {s.time.reason}</span>}
           {me && s.players.filter((p) => p.connected).length > 1 && <span className="muted"> · {me.pauseBudget}s pause left</span>}
         </div>
       </div>
@@ -83,7 +92,11 @@ export function TopBar() {
         {s.players
           .filter((p) => p.connected || p.id === s.me?.playerId)
           .map((p) => (
-            <span key={p.id} className="player" title={`${p.name}${p.admin ? ' (host)' : ''} · votes ${p.speed === 0 ? 'pause' : p.speed + '×'}`}>
+            <span
+              key={p.id}
+              className={`player ${p.away ? 'away' : ''}`}
+              title={`${p.name}${p.admin ? ' (host)' : ''} · votes ${p.speed === 0 ? 'pause' : p.speed + '×'}${p.away ? ' · away (tab in the background), so their speed vote is ignored' : ''}`}
+            >
               <i style={{ background: hex(p.color) }} />
               {p.name}
               <small>{p.speed === 0 ? '❚❚' : `${p.speed}×`}</small>

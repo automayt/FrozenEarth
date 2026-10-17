@@ -44,6 +44,8 @@ interface Player extends StoredPlayer {
   ping: number;
   ws: WebSocket | null;
   cmdTokens: number;
+  /** Their tab is in the background. */
+  away?: boolean;
 }
 
 export interface GameOptions {
@@ -231,8 +233,10 @@ export class GameServer {
     if (online.length === 0) return { speed: 0, paused: true, reason: 'No players online' };
     const pausers = online.filter((p) => p.speed === 0);
     if (pausers.length > 0) return { speed: 0, paused: true, reason: `Paused by ${pausers.map((p) => p.name).join(', ')}` };
-    const speed = Math.min(...online.map((p) => p.speed));
-    const slowest = online.filter((p) => p.speed === speed).map((p) => p.name);
+    // A tab left in the background doesn't hold everyone at its speed (pauses still count: they are deliberate and budgeted).
+    const voters = online.some((p) => !p.away) ? online.filter((p) => !p.away) : online;
+    const speed = Math.min(...voters.map((p) => p.speed));
+    const slowest = voters.filter((p) => p.speed === speed).map((p) => p.name);
     return { speed, paused: false, reason: online.length > 1 && speed < MAX_SPEED ? `Speed ${speed} set by ${slowest.join(', ')}` : '' };
   }
 
@@ -310,6 +314,7 @@ export class GameServer {
     }
     p.ws = ws;
     p.speed = 1;
+    p.away = false;
     this.send(ws, {
       t: 'welcome',
       playerId: p.id,
@@ -364,6 +369,13 @@ export class GameServer {
         }
         if (s !== 0) p.resumeSpeed = s;
         p.speed = s;
+        this.broadcastPlayers();
+        return;
+      }
+      case 'away': {
+        const away = msg.away === true;
+        if (away === !!p.away) return;
+        p.away = away;
         this.broadcastPlayers();
         return;
       }
@@ -433,6 +445,7 @@ export class GameServer {
       pauseBudget: Math.round(p.pauseBudget),
       ping: p.ping,
       admin: p.admin,
+      away: !!p.ws && !!p.away,
     }));
   }
 

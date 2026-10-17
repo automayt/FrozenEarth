@@ -74,6 +74,28 @@ describe('game server', () => {
     for (const c of changes) expect(deltaIsEmpty({ ...emptyDelta(), ...c }), Object.keys(c)[0]).toBe(false);
   });
 
+  it('a tab left in the background does not hold everyone at its speed', () => {
+    const g = new GameServer({ savePath: worldPath(dir, 'away'), seed: 4, size: 80, log: () => {} });
+    const ann = new FakeSocket();
+    const bob = new FakeSocket();
+    g.onConnect(ann as unknown as WebSocket);
+    ann.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Ann' });
+    g.onConnect(bob as unknown as WebSocket);
+    bob.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Bob' });
+    ann.say({ t: 'speed', speed: 3 });
+    expect(g.computeTime().speed).toBe(1);
+    bob.say({ t: 'away', away: true });
+    expect(g.computeTime().speed).toBe(3);
+    expect(g.playerInfo().find((p) => p.name === 'Bob')?.away).toBe(true);
+    // A pause still counts: it is deliberate and budgeted.
+    bob.say({ t: 'speed', speed: 0 });
+    expect(g.computeTime().paused).toBe(true);
+    bob.say({ t: 'speed', speed: 1 });
+    bob.say({ t: 'away', away: false });
+    expect(g.computeTime().speed).toBe(1);
+    g.stop();
+  });
+
   it('while paused, answering a letter still takes it off every screen', () => {
     const g = new GameServer({ savePath: worldPath(dir, 'letters'), seed: 4, size: 80, log: () => {} });
     const ws = new FakeSocket();

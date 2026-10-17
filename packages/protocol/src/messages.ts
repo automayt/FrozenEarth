@@ -1,7 +1,7 @@
 import type { Command, Delta, Snapshot } from '@fe/sim';
 
 /** Bump when the wire format changes incompatibly. */
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 
 export interface PlayerInfo {
   id: number;
@@ -15,6 +15,8 @@ export interface PlayerInfo {
   pauseBudget: number;
   ping: number;
   admin: boolean;
+  /** Tab in the background: their speed vote doesn't hold anyone back. */
+  away?: boolean;
 }
 
 export interface TimeState {
@@ -36,6 +38,8 @@ export type ClientMsg =
   | { t: 'cmd'; cmd: Command }
   | { t: 'speed'; speed: number }
   | { t: 'chat'; text: string }
+  /** The tab went to the background (or came back). */
+  | { t: 'away'; away: boolean }
   | { t: 'ping'; at: number }
   | { t: 'admin'; action: 'save' | 'kick' | 'event'; target?: number; key?: string }
   /** Found the colony. Without coordinates the server picks a good spot. */
