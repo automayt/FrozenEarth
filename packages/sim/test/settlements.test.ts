@@ -219,6 +219,28 @@ describe('settlements', () => {
     expect(w.dirty.msgs.some((m) => m.text.includes('never came'))).toBe(true);
   });
 
+  it("a settler who joins you gives up their bed, and clients are told it's free", () => {
+    const { w, s, player } = withSettlement(45);
+    s.settlement!.met.push(player);
+    const beds = buildings(w, s.id).filter((b) => BUILDINGS[b.def].bed);
+    residents(w, s.id).forEach((p, k) => {
+      p.bed = beds[k].id;
+      beds[k].owner = p.id;
+    });
+    s.settlement!.requests = [{ id: 99, faction: player, item: 'wood', count: 10, reward: 'recruit', goodwill: 15, until: w.tick + TICKS_PER_DAY, why: 'test' }];
+    const z = w.createZone(player, 'stockpile');
+    for (let x = 4; x < 20; x++) w.addZoneCell(z, w.map.idx(x, 12));
+    w.placeItemNear('wood', 10, w.map.idx(10, 12));
+    addPawn(w, 40, 47, player);
+    w.takeDelta();
+    w.enqueue(player, { c: 'deliverRequest', settlement: s.id, request: 99 });
+    w.applyCommands();
+    expect(residents(w, player).length).toBe(2);
+    const freed = beds.find((b) => b.owner === 0)!;
+    expect(freed).toBeDefined();
+    expect(w.takeDelta().ents.find((e) => e.id === freed.id)).toMatchObject({ owner: 0 });
+  });
+
   describe('theft', () => {
     /** A colony with a stockpile and a thief, next to a wary settlement, at the given hour. */
     function heist(hour: number) {

@@ -2,9 +2,9 @@ import { BUILDINGS, CONDITIONS, ITEMS } from '@fe/defs';
 import { calendar, daysUntilFrost, DAYS_PER_SEASON, requestText, stageOf, TICKS_PER_DAY, type Building, type Item, type Pawn } from '@fe/sim';
 import { store, useStore } from '../store';
 
-type Severity = 'critical' | 'warning' | 'info';
+export type Severity = 'critical' | 'warning' | 'info';
 
-interface Alert {
+export interface Alert {
   key: string;
   severity: Severity;
   title: string;
@@ -16,7 +16,7 @@ interface Alert {
 const ORDER: Record<Severity, number> = { critical: 0, warning: 1, info: 2 };
 
 /** Everything worth nagging about, derived from the client's copy of the world. */
-function computeAlerts(): Alert[] {
+export function computeAlerts(): Alert[] {
   const m = store.mirror;
   const me = store.me?.faction;
   if (!me) return [];

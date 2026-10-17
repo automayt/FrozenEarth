@@ -128,7 +128,11 @@ export function applyCommand(w: World, faction: number, cmd: Command): void {
       if (!p?.possessed) return;
       const dx = Math.sign(Number(cmd.dx) || 0);
       const dy = Math.sign(Number(cmd.dy) || 0);
-      p.steer = dx || dy ? [dx, dy] : undefined;
+      const steer: [number, number] | undefined = dx || dy ? [dx, dy] : undefined;
+      if (steer?.[0] === p.steer?.[0] && steer?.[1] === p.steer?.[1]) return;
+      p.steer = steer;
+      // Clients see the held direction too (it's on the pawn), so send it.
+      w.markDirty(p);
       return;
     }
     case 'sneak': {
