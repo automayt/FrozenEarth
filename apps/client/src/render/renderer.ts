@@ -136,6 +136,8 @@ export class GameRenderer {
   private frostRing = new Graphics();
   ui = new Graphics();
   private settlementLabels = new Map<number, BitmapText>();
+  private settlementGfx = new Graphics();
+  private settlementKey = '';
   private night = new Graphics();
   private views = new Map<number, EntityView>();
   /** Shared geometry for the small shapes on entity views (see shape()). */
@@ -173,7 +175,7 @@ export class GameRenderer {
       this.world.addChild(l);
     }
     this.layers.pawns.sortableChildren = true;
-    this.layers.ui.addChild(this.marks.view, this.ui);
+    this.layers.ui.addChild(this.settlementGfx, this.marks.view, this.ui);
     this.layers.fx.addChild(this.fireGfx, this.particles.view, this.shotGfx);
     this.layers.frost.addChild(this.frostRing);
     this.input = new Input(this, this.app.canvas);
@@ -504,14 +506,20 @@ export class GameRenderer {
   }
 
   /** Trees and crops sway gently in the wind; storms push harder. Visible chunks only. */
+  private swayParity = 0;
+
   private swayPlants(now: number): void {
     const windy = store.mirror.conditions.some((c) => c.key === 'thunderstorm' || c.key === 'blizzard' || c.key === 'cold_wind') ? 2.6 : 1;
     const t = now / 1000;
+    // The sway is slow, so each plant moves every other frame: half the transform updates, same look.
+    const parity = this.swayParity ^= 1;
     for (const layer of [this.layers.plants, this.layers.floorThings]) {
       const tree = layer === this.layers.plants;
       for (const chunk of layer.children) {
         if (!chunk.visible) continue;
-        for (const root of chunk.children) {
+        const kids = chunk.children;
+        for (let i = parity; i < kids.length; i += 2) {
+          const root = kids[i];
           if (root.label !== 'plant') continue;
           const s = root.children[0];
           if (s) s.rotation = Math.sin(t * (tree ? 1.3 : 2.1) + root.x * 0.031 + root.y * 0.047) * (tree ? 0.03 : 0.07) * windy;
@@ -519,7 +527,6 @@ export class GameRenderer {
       }
     }
   }
-
 
   private setupMap(): void {
     const m = store.mirror;
@@ -1104,7 +1111,7 @@ export class GameRenderer {
     g.clear();
     this.drawCover(performance.now());
     const m = store.mirror;
-    this.drawSettlements(g);
+    this.drawSettlements();
     const steering = this.controlled();
     if (steering) this.drawWatchers(g, steering);
     if (store.me?.faction === 0) {
@@ -1166,10 +1173,20 @@ export class GameRenderer {
   }
 
   /** NPC settlements: a name over each, and a ring around their land coloured by how they feel about you. */
-  private drawSettlements(g: Graphics): void {
+  private drawSettlements(): void {
     const m = store.mirror;
     const me = store.me?.faction ?? 0;
     const sw = 1.5 / this.world.scale.x;
+    // The rings are big circles: re-tessellating them every frame cost ~0.5 ms, so they live in their
+    // own Graphics, redrawn only when the zoom or a town's state or mood changes.
+    let key = sw.toFixed(4);
+    for (const f of m.factions.values()) if (f.settlement) key += `|${f.id}:${f.settlement.state}:${f.settlement.radius}:${dispositionOf(f.settlement, me)}`;
+    const redraw = key !== this.settlementKey;
+    const g = this.settlementGfx;
+    if (redraw) {
+      this.settlementKey = key;
+      g.clear();
+    }
     // Names stay a steady 15 to 20px on screen whatever the zoom.
     const z = this.world.scale.x;
     const scale = Math.max(15, Math.min(20, LABEL_STYLE.fontSize * 0.8 * z)) / (LABEL_STYLE.fontSize * z);
@@ -1193,7 +1210,7 @@ export class GameRenderer {
       label.tint = color;
       label.scale.set(scale);
       label.position.set((f.home.x + 0.5) * TILE, (f.home.y - 4.3) * TILE);
-      if (s.state === 'home') {
+      if (redraw && s.state === 'home') {
         // A dark under-stroke keeps the coloured ring visible over pale sand, snow and ice.
         const cx = (f.home.x + 0.5) * TILE;
         const cy = (f.home.y + 0.5) * TILE;
@@ -1419,7 +1436,10 @@ export class GameRenderer {
       }
     }
     q.length = 0;
-    this.shots = this.shots.filter((s) => now - s.born < SHOT_FLY_MS + SHOT_FADE_MS).slice(-300);
+    // Drop finished shots in place (oldest first), keeping at most 300.
+    let drop = Math.max(0, this.shots.length - 300);
+    while (drop < this.shots.length && now - this.shots[drop].born >= SHOT_FLY_MS + SHOT_FADE_MS) drop++;
+    if (drop) this.shots.splice(0, drop);
     const g = this.shotGfx;
     g.clear();
     for (const s of this.shots) {
