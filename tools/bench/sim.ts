@@ -1,16 +1,17 @@
 /**
  * Sim + network benchmark: a busy 8-colony world, measuring tick cost and delta bandwidth.
  *
- *   npm run bench -- --days 6 --colonies 8
+ *   npm run bench -- --days 6 --colonies 8 [--bare]
  */
 import { parseArgs } from 'node:util';
 import { addPlayerFaction, createWorld, resolveChoice, snapshot, TICKS_PER_DAY, type World } from '@fe/sim';
 import { encode } from '@fe/protocol';
 
-const { values: args } = parseArgs({ options: { days: { type: 'string', default: '6' }, colonies: { type: 'string', default: '8' }, size: { type: 'string', default: '250' }, seed: { type: 'string', default: '5' } } });
+const { values: args } = parseArgs({ options: { days: { type: 'string', default: '6' }, colonies: { type: 'string', default: '8' }, size: { type: 'string', default: '250' }, seed: { type: 'string', default: '5' }, bare: { type: 'boolean', default: false } } });
 
 function setup(): World {
-  const w = createWorld({ seed: Number(args.seed), width: Number(args.size), height: Number(args.size) });
+  // --bare: no settlements or wildlife, for comparing with older numbers.
+  const w = createWorld({ seed: Number(args.seed), width: Number(args.size), height: Number(args.size), settlements: !args.bare, wildlife: !args.bare });
   for (let i = 0; i < Number(args.colonies); i++) {
     const f = addPlayerFaction(w, `C${i}`, 5);
     const { x, y } = f.home;
