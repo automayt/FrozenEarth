@@ -264,7 +264,7 @@ export function TradePanel() {
           return (
             <button key={p.faction} role="tab" aria-selected={p.faction === target.faction} className={p.faction === target.faction ? 'on' : ''} onClick={() => pick(p)} title={pst ? `Settlement (${mood})${there ? `, ${there} is there` : ''}` : 'Player colony'}>
               <i style={{ background: hex(mood ? DISPOSITION_COLOR[mood] : p.color) }} /> {p.name}
-              {pst && <small className="muted"> {there ? '· colonist there' : 'settlement'}</small>}
+              {pst && <small className="muted"> {there ? '· colonist there' : pst.met.includes(me) ? 'settlement' : 'not met yet'}</small>}
             </button>
           );
         })}

@@ -80,10 +80,11 @@ function preview(x: number, y: number): Preview | null {
     if (t.downed && f?.raid) return { title: `Capture ${t.name.split(' ')[0]}`, tone: 'neutral', lines: [{ text: 'Carried to a free bed and held prisoner', tone: 'neutral' }] };
     if (t.species) {
       const def = ANIMALS[t.species];
-      return { title: `Attack the ${def?.label.toLowerCase() ?? 'animal'}`, tone: def?.predator ? 'bad' : 'neutral', lines: def?.predator ? [{ text: 'Predator: it fights back', tone: 'bad' }] : [] };
+      return def?.predator ? { title: `Attack the ${def.label.toLowerCase()}`, tone: 'bad', lines: [{ text: 'Predator: it fights back', tone: 'bad' }] } : null;
     }
     const peaceful = !f?.raid && !t.prisoner && (!!f?.isPlayer || (!!st && st.state !== 'fallen' && dispositionOf(st, me) !== 'hostile'));
-    if (!peaceful) return { title: `Attack ${t.name.split(' ')[0]}`, tone: 'neutral', lines: [] };
+    // Enemies are fair game: nothing to warn about.
+    if (!peaceful) return null;
     const lines: RiskLine[] = [];
     if (st) {
       const miss = goodwillShift(f, me, GOODWILL.attackMiss);

@@ -2012,8 +2012,6 @@ button.danger {
   /* Narrow windows: no room for the letters column, but tips and decisions still matter. Keep
      just those, in a compact stack under the top bar. Replies still arrive as toasts. */
   .feed {
-    /* The top bar wraps to two rows this narrow. */
-    top: 112px;
     bottom: auto;
     width: min(260px, calc(100vw - 290px));
     min-width: 200px;
@@ -2077,7 +2075,6 @@ button.danger {
 @media (max-width: 720px) {
   .control-bar {
     left: 8px;
-    top: 112px;
   }
 
   .hud:has(> .inspect) .control-bar {
@@ -2085,6 +2082,39 @@ button.danger {
   }
 
   .hud:has(> .control-bar) .feed {
-    top: 176px;
+    top: 130px;
   }
+}
+
+/* Below 1100px the top bar has to stay on one row (the tips sit right under it), even while
+   paused or with a condition showing: trim the speed reason, the ping and the volume slider. */
+@media (max-width: 1100px) {
+  .speed-state {
+    max-width: 96px;
+  }
+
+  .topbar .ping {
+    display: none;
+  }
+
+  .sound input[type='range'] {
+    width: 52px;
+  }
+}
+
+/* Set by the top bar when it wraps onto a second row: whatever hangs under it moves down too. */
+.feed,
+.minimap,
+.alerts,
+.control-bar {
+  margin-top: var(--topbar-extra, 0px);
+}
+
+/* Centred panels sit above the tool hint row too. */
+.hud:has(.tool-hint) .work-panel,
+.hud:has(.tool-hint) .colonists-panel,
+.hud:has(.tool-hint) .events-panel,
+.hud:has(.tool-hint) .trade-panel {
+  bottom: 100px;
+  max-height: calc(100vh - 170px);
 }

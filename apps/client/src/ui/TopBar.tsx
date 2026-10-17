@@ -1,9 +1,46 @@
+import { useEffect, useRef } from 'react';
 import { calendar, daysUntilFrost, frostRadius, outdoorTempAt, TICKS_PER_HOUR } from '@fe/sim';
 import { EVENTS } from '@fe/defs';
 import { myPlayer, setSpeed } from '../actions';
 import { store, useStore } from '../store';
 import { hex } from './util';
 import { SoundControl } from './SoundControl';
+
+/**
+ * When the top bar wraps onto a second row (narrow window, a long pause reason, a weather chip),
+ * everything hung under it moves down by the extra height instead of hiding beneath it.
+ */
+function useWrapOffset() {
+  const ref = useRef<HTMLDivElement>(null);
+  const last = useRef('');
+  const measure = () => {
+    const el = ref.current;
+    if (!el) return;
+    // One row is as tall as the clock's two lines plus the bar's padding and border.
+    const cs = getComputedStyle(el);
+    const frame = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+    const one = ((el.querySelector('.clock') as HTMLElement | null)?.offsetHeight ?? 36) + frame;
+    const extra = el.offsetHeight - one;
+    const v = `${extra > 8 ? Math.round(extra) : 0}px`;
+    if (v === last.current) return;
+    last.current = v;
+    document.documentElement.style.setProperty('--topbar-extra', v);
+  };
+  // After every render (the pause reason or a weather chip can change the width) and on resize.
+  useEffect(measure);
+  useEffect(() => {
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    if (ref.current) ro?.observe(ref.current);
+    window.addEventListener('resize', measure);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener('resize', measure);
+      document.documentElement.style.removeProperty('--topbar-extra');
+      last.current = '';
+    };
+  }, []);
+  return ref;
+}
 
 export function TopBar() {
   const s = useStore();
@@ -13,8 +50,9 @@ export function TopBar() {
   const temp = outdoorTempAt(tick, m.coldOffset, m.conditions);
   const me = myPlayer();
   const vote = me?.speed ?? 1;
+  const bar = useWrapOffset();
   return (
-    <div className="topbar panel">
+    <div className="topbar panel" ref={bar}>
       <div className="clock">
         <div className="date">{cal.label}</div>
         <div className="temp-row">
@@ -35,7 +73,7 @@ export function TopBar() {
             {v === 0 ? '❚❚' : '▶'.repeat(v)}
           </button>
         ))}
-        <div className="speed-state">
+        <div className="speed-state" title={`${s.time.paused ? 'Paused' : `${s.time.speed}×`} ${s.time.reason}`.trim()}>
           {s.time.paused ? <b>Paused</b> : <b>{s.time.speed}×</b>}
           <span className="muted"> {s.time.reason}</span>
           {me && s.players.filter((p) => p.connected).length > 1 && <span className="muted"> · {me.pauseBudget}s pause left</span>}
@@ -66,7 +104,7 @@ export function TopBar() {
         <button className="help-btn" onClick={() => store.set({ help: !s.help })} title="Controls and how-tos (?)" aria-label="Help">
           ?
         </button>
-        <span className="muted small">{s.ping} ms</span>
+        <span className="muted small ping">{s.ping} ms</span>
       </div>
     </div>
   );
