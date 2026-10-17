@@ -723,6 +723,13 @@ function voidRequests(w: World, f: Faction): void {
   const s = f.settlement!;
   for (const r of s.requests ?? []) w.message(r.faction, `${f.name} is gone. Your promise to bring them ${requestText(r.item, r.count)} no longer stands.`, 'neutral');
   s.requests = [];
+  // Their letters asking for help go too: agreeing would do nothing.
+  for (const c of [...w.choices.values()]) {
+    if (c.event !== 'settlement_request' || Number(w.choiceData.get(c.id)?.settlement) !== f.id) continue;
+    w.choices.delete(c.id);
+    w.choiceData.delete(c.id);
+    w.dirty.choices = true;
+  }
 }
 
 /** Hand over what a settlement asked for, in person, and collect the reward. */

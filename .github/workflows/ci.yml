@@ -26,6 +26,9 @@ jobs:
         run: npm run lint
       - name: Unit, property and replication tests
         run: npm test
+      - name: Soak (a few days of everything at once; fails on unbounded growth or tick-cost drift)
+        run: npm run soak -- --ticks 120000 --every 30000
+        timeout-minutes: 3
       - name: End-to-end smoke (real server, headless clients)
         run: npm run smoke
         timeout-minutes: 3

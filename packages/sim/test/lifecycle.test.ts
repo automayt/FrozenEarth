@@ -162,6 +162,10 @@ describe('promises to settlements', () => {
   it('lapse without blame when the settlement falls', () => {
     const { w, s } = promised();
     const g = s.settlement!.goodwill[2];
+    // A second letter asking for help is still waiting when they fall.
+    w.factions.set(4, { id: 4, name: 'Other', color: 0xff00, home: { x: 120, y: 120 }, isPlayer: true });
+    s.settlement!.met.push(4);
+    expect(askForHelp(w, s, 4)).toBe(true);
     for (const id of [...w.kinds.pawn]) {
       const p = w.get<Pawn>(id)!;
       if (p.faction === s.id) killPawn(w, p, 'testing');
@@ -169,6 +173,8 @@ describe('promises to settlements', () => {
     runUntil(w, () => s.settlement!.state === 'fallen', 2000);
     expect(s.settlement!.requests).toEqual([]);
     expect(w.dirty.msgs.some((m) => m.faction === 2 && m.text.includes('no longer stands'))).toBe(true);
+    expect([...w.choices.values()].filter((c) => c.event === 'settlement_request')).toEqual([]);
+    expect(w.choiceData.size).toBe(w.choices.size);
     run(w, 5 * TICKS_PER_DAY / 10);
     expect(s.settlement!.goodwill[2]).toBe(g);
     expect(w.dirty.msgs.some((m) => m.text.includes('never came'))).toBe(false);
