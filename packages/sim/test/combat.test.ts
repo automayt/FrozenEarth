@@ -126,6 +126,35 @@ describe('line of sight and cover', () => {
     w2.spawnBuilding('stone_wall', w2.map.idx(16, 10), 1);
     expect(inCover(w2, w2.cellOf(a2), w2.cellOf(b2))).toBe(false);
   });
+
+  it('cover comes in grades: embrasures and walls best, then sandbags, then trees', () => {
+    const chanceBehind = (def: string | null, tree = false) => {
+      const w = duelWorld();
+      const a = armed(w, 5, 10, 1, 'rifle');
+      const b = armed(w, 15, 10, 2, '');
+      if (def) w.spawnBuilding(def, w.map.idx(14, 10), 1);
+      if (tree) w.spawnPlant('oak', w.map.idx(14, 10), 1);
+      // Shooting through an embrasure needs the line clear; the others are low or beside the line.
+      return lineOfSight(w, w.cellOf(a), w.cellOf(b)) || def === 'sandbags' ? hitChance(w, a, b) : -1;
+    };
+    const open = chanceBehind(null);
+    const tree = chanceBehind(null, true);
+    const bags = chanceBehind('sandbags');
+    const slit = chanceBehind('embrasure');
+    expect(tree).toBeLessThan(open);
+    expect(bags).toBeLessThan(tree);
+    expect(slit).toBeGreaterThan(0);
+    expect(slit).toBeLessThan(bags);
+  });
+
+  it('an embrasure can be shot through but not walked through, and still closes a room', () => {
+    const w = duelWorld();
+    const c = w.map.idx(10, 5);
+    w.spawnBuilding('embrasure', c, 1);
+    expect(lineOfSight(w, w.map.idx(5, 5), w.map.idx(15, 5))).toBe(true);
+    expect(w.map.solid[c]).toBe(1);
+    expect(w.map.wall[c]).toBe(1);
+  });
 });
 
 describe('wounds', () => {

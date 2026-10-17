@@ -1,4 +1,4 @@
-import { BUILDINGS, DEFAULT_PRIORITY, ITEMS, maxHp, PLANTS, RANDOM_TRAITS, SKILLS, START_PRIORITY, TERRAINS, WEATHER, WORK_TYPES, type SkillKey, type WorkType } from '@fe/defs';
+import { BUILDINGS, DEFAULT_PRIORITY, ITEMS, maxHp, PLANTS, RANDOM_TRAITS, SKILLS, START_PRIORITY, TERRAINS, TREE_COVER, WALL_COVER, WEATHER, WORK_TYPES, type SkillKey, type WorkType } from '@fe/defs';
 import * as C from './constants';
 import { GameMap } from './map';
 import { Rng } from './rng';
@@ -319,11 +319,17 @@ export class World {
     let wall = m.rock[i] > 0;
     let door = 0;
     let extra = 0;
+    let cover = m.rock[i] > 0 ? WALL_COVER : 0;
+    let seeThru = 0;
     const b = m.buildingAt[i] ? this.get<Building>(m.buildingAt[i]) : undefined;
     if (b) {
       const d = BUILDINGS[b.def];
       if (d.blocksMovement) solid = true;
       if (d.wall) wall = true;
+      cover = d.cover ?? (d.wall ? WALL_COVER : 0);
+      if (d.seeThrough) seeThru = 1;
+      // Low cover is clambered over.
+      if (d.cover && !d.blocksMovement && !d.door) extra += 6;
       if (d.door) {
         // Settlements keep their gates open to visitors (and thieves); colonies lock theirs.
         door = this.factions.get(b.faction)?.settlement ? 0 : b.faction;
@@ -331,7 +337,10 @@ export class World {
       }
     }
     const p = m.plantAt[i] ? this.get<Plant>(m.plantAt[i]) : undefined;
-    if (p) extra += PLANTS[p.def].moveCostAdd;
+    if (p) {
+      extra += PLANTS[p.def].moveCostAdd;
+      if (PLANTS[p.def].tree && p.growth > 0.4) cover = Math.max(cover, TREE_COVER);
+    }
     const s = solid ? 1 : 0;
     if (m.solid[i] !== s) {
       m.solid[i] = s;
@@ -345,6 +354,8 @@ export class World {
     }
     m.doorFaction[i] = door;
     m.extraCost[i] = extra;
+    m.cover[i] = Math.round(cover * 100);
+    m.seeThru[i] = seeThru;
   }
 
   // ---------------------------------------------------------------- cells

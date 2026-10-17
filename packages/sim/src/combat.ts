@@ -4,8 +4,6 @@ import { HOSTILE_AT, settlerAttacked } from './settlements';
 import type { Faction, Pawn } from './types';
 import { NEIGHBORS8, type World } from './world';
 
-/** Hit chance multiplier for a target crouched behind a wall or rock between it and the shooter. */
-export const COVER_MULT = 0.5;
 /** Ticks spent aiming after coming into reach, before the first attack. */
 const WARMUP_MELEE = 20;
 const WARMUP_RANGED = 45;
@@ -71,7 +69,7 @@ export function lineOfSight(w: World, from: number, to: number): boolean {
   for (;;) {
     if (x === x1 && y === y1) return true;
     const c = m.idx(x, y);
-    if (c !== from && m.wall[c]) return false;
+    if (c !== from && m.wall[c] && !m.seeThru[c]) return false;
     const e2 = 2 * err;
     if (e2 >= dy) {
       err += dy;
@@ -84,20 +82,30 @@ export function lineOfSight(w: World, from: number, to: number): boolean {
   }
 }
 
-/** True when a wall or rock right next to the target sits on the shooter's side of it. */
-export function inCover(w: World, shooter: number, target: number): boolean {
-  if (w.dist(shooter, target) <= 1) return false;
+/**
+ * Share of shots stopped by the best cover right next to the target on the shooter's side:
+ * walls and rock 0.75, embrasures 0.8, sandbags 0.55, doors 0.5, trees 0.25. None at point blank.
+ */
+export function coverAgainst(w: World, shooter: number, target: number): number {
+  if (w.dist(shooter, target) <= 1) return 0;
   const m = w.map;
   const tx = m.cx(target);
   const ty = m.cy(target);
   const vx = m.cx(shooter) - tx;
   const vy = m.cy(shooter) - ty;
+  let best = 0;
   for (const [dx, dy] of NEIGHBORS8) {
-    if (!m.inBounds(tx + dx, ty + dy) || !m.wall[m.idx(tx + dx, ty + dy)]) continue;
-    // Only cover that faces the shooter: the wall's offset points roughly toward them.
-    if (dx * vx + dy * vy > 0) return true;
+    if (!m.inBounds(tx + dx, ty + dy)) continue;
+    const c = m.cover[m.idx(tx + dx, ty + dy)];
+    // Only cover that faces the shooter: its offset points roughly toward them.
+    if (c > best && dx * vx + dy * vy > 0) best = c;
   }
-  return false;
+  return best / 100;
+}
+
+/** True when anything right next to the target on the shooter's side gives cover. */
+export function inCover(w: World, shooter: number, target: number): boolean {
+  return coverAgainst(w, shooter, target) > 0;
 }
 
 /** Can this weapon hit the target cell from here right now? */
@@ -114,7 +122,7 @@ export function hitChance(w: World, p: Pawn, t: Pawn): number {
   let c = wd.accuracy * (0.6 + 0.4 * Math.min(1, effectsOf(w, p).work));
   if (!wd.melee) {
     c *= 1 - (0.5 * cellDistance(w, from, to)) / wd.range;
-    if (inCover(w, from, to)) c *= COVER_MULT;
+    c *= 1 - coverAgainst(w, from, to);
   }
   if (t.downed) c *= 1.5;
   return Math.max(0.05, Math.min(0.95, c));

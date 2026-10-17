@@ -27,6 +27,10 @@ export class GameMap {
   extraCost: Uint8Array;
   /** 1 where a wall, door or rock encloses rooms. */
   wall: Uint8Array;
+  /** 1 where a wall can be seen and shot through (embrasures). */
+  seeThru: Uint8Array;
+  /** Cover this cell gives someone right behind it, in percent of shots stopped. */
+  cover: Uint8Array;
   /** Connected components of passable cells, ignoring door ownership. -1 = solid. */
   comp: Int32Array;
   compDirty = true;
@@ -54,6 +58,8 @@ export class GameMap {
     this.doorFaction = new Uint8Array(this.n);
     this.extraCost = new Uint8Array(this.n);
     this.wall = new Uint8Array(this.n);
+    this.seeThru = new Uint8Array(this.n);
+    this.cover = new Uint8Array(this.n);
     this.comp = new Int32Array(this.n);
   }
 
