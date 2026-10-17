@@ -1,7 +1,7 @@
 import { Application, BitmapText, Container, Graphics, GraphicsContext, Sprite, TextStyle, Texture } from 'pixi.js';
 import { ANIMALS, BUILDINGS, maxHp, PLANTS, ROCKS, TERRAINS, WEAPON_KEYS, weaponOf, type TerrainDef } from '@fe/defs';
 import { pawnPosition } from '@fe/protocol';
-import { DESIG, FROST_BAND, MIN_COLONY_GAP, SHOT_FIELDS, TICKS_PER_DAY, TICKS_PER_HOUR, bleedRate, calendar, dispositionOf, NOISE, stealthMult, frostLevel, frostRadius, hash2, outdoorTempAt, woundTotal, type Construct, type Entity, type Pawn } from '@fe/sim';
+import { DESIG, FROST_BAND, MIN_COLONY_GAP, SHOT_FIELDS, TICKS_PER_DAY, TICKS_PER_HOUR, bleedRate, calendar, dispositionOf, hostile, NOISE, stealthMult, frostLevel, frostRadius, hash2, outdoorTempAt, weaponFor, woundTotal, type Construct, type Entity, type Pawn, type World } from '@fe/sim';
 import { ease, Particles, Tweens, Weather, type Precip } from './fx';
 import { sound } from '../audio';
 import { fog } from './fog';
@@ -9,6 +9,8 @@ import { store } from '../store';
 import { TextureBank } from './textures';
 import { ChunkedBitmap, MapBitmap } from './bitmap';
 import { FOG_RES, paintFog, paintOverlayCell, PX } from './paint';
+import { coverColor, coverFrom, type CoverHit } from './cover';
+import { Marks } from './marks';
 import { Input } from './input';
 
 /** World units per cell. */
@@ -44,11 +46,18 @@ interface ShotFx {
   hit: boolean;
   weapon: string;
   born: number;
+  /** For a miss: the cover cell that stopped it (-1 if it just flew wide), and how far wide it flew. */
+  stop: number;
+  wideX: number;
+  wideY: number;
 }
 
 /** Projectile flight time and how long the tracer lingers after, in ms. */
 const SHOT_FLY_MS = 140;
 const SHOT_FADE_MS = 260;
+const MUZZLE_MS = 70;
+/** Nearest threats each colonist's cover is shown against. */
+const COVER_THREATS = 3;
 
 interface EntityView {
   root: Container;
@@ -164,7 +173,7 @@ export class GameRenderer {
       this.world.addChild(l);
     }
     this.layers.pawns.sortableChildren = true;
-    this.layers.ui.addChild(this.ui);
+    this.layers.ui.addChild(this.marks.view, this.ui);
     this.layers.fx.addChild(this.fireGfx, this.particles.view, this.shotGfx);
     this.layers.frost.addChild(this.frostRing);
     this.input = new Input(this, this.app.canvas);
@@ -1093,6 +1102,7 @@ export class GameRenderer {
   private drawUi(): void {
     const g = this.ui;
     g.clear();
+    this.drawCover(performance.now());
     const m = store.mirror;
     this.drawSettlements(g);
     const steering = this.controlled();
@@ -1219,6 +1229,136 @@ export class GameRenderer {
     }
   }
 
+  /**
+   * Where a ranged shot ends: on the target if it hit; on the near face of the cover that stopped
+   * it; or wide of the target and on past it. Follows the drawn pawns while they're around.
+   */
+  private shotEnd(s: ShotFx): { x: number; y: number } {
+    const a = this.views.get(s.shooter)?.root;
+    const b = this.views.get(s.target)?.root;
+    const ax = a ? a.x : (s.sx + 0.5) * TILE;
+    const ay = a ? a.y - TILE * 0.15 : (s.sy + 0.5) * TILE;
+    const bx = b ? b.x : (s.tx + 0.5) * TILE;
+    const by = b ? b.y - TILE * 0.15 : (s.ty + 0.5) * TILE;
+    if (s.hit) return { x: bx, y: by };
+    if (s.stop >= 0) {
+      const w = store.mirror.w;
+      const cx = ((s.stop % w) + 0.5) * TILE;
+      const cy = (((s.stop / w) | 0) + 0.5) * TILE;
+      const len = Math.hypot(ax - cx, ay - cy) || 1;
+      return { x: cx + ((ax - cx) / len) * TILE * 0.3, y: cy + ((ay - cy) / len) * TILE * 0.3 - TILE * 0.1 };
+    }
+    return { x: bx + s.wideX + (bx - ax) * 0.25, y: by + s.wideY + (by - ay) * 0.25 };
+  }
+
+  private coverHit: CoverHit = { cover: 0, cell: -1 };
+  private coverThreats: Pawn[] = [];
+  /** Cover worked out a few times a second: who (a pawn, or -1 for the cell under the cursor) against whom. */
+  private coverMarks: { from: number; threat: number; cover: number; cell: number }[] = [];
+  private coverAt = 0;
+  private coverHover: number | null = -1;
+  private coverSquad: number[] | null = null;
+  private marks = new Marks(TILE * 0.6, TILE);
+
+  /**
+   * Who is in cover, and from what. For your drafted or steered colonists with armed enemies in
+   * sight: an arc on the colonist toward each of the nearest few that can shoot them, green or
+   * yellow or amber by how much cover they have from that side (red when exposed), and an outline
+   * on the cell giving the cover. With drafted colonists selected, the cell under the cursor gets
+   * the same preview, for picking a spot to move them to. The cover itself is worked out a few
+   * times a second; each frame only places pooled sprites at the drawn positions.
+   */
+  private drawCover(now: number): void {
+    const hc = store.hoverCell;
+    if (now - this.coverAt > 200 || hc !== this.coverHover || store.squad !== this.coverSquad) {
+      this.coverAt = now;
+      this.coverHover = hc;
+      this.coverSquad = store.squad;
+      this.findCover();
+    }
+    const mk = this.marks;
+    mk.begin();
+    const m = store.mirror;
+    for (const k of this.coverMarks) {
+      const fv = k.from >= 0 ? this.views.get(k.from)?.root : undefined;
+      if (k.from >= 0 && !fv) continue;
+      const px = fv ? fv.x : ((hc! % m.w) + 0.5) * TILE;
+      const py = fv ? fv.y : (((hc! / m.w) | 0) + 0.5) * TILE;
+      const t = m.get<Pawn>(k.threat);
+      const tv = this.views.get(k.threat)?.root;
+      if (!t) continue;
+      const color = coverColor(k.cover);
+      const alpha = k.from >= 0 ? 1 : 0.75;
+      mk.arc(px, py, Math.atan2((tv ? tv.y : (t.y + 0.5) * TILE) - py, (tv ? tv.x : (t.x + 0.5) * TILE) - px), color, alpha);
+      if (k.cell >= 0) mk.box((k.cell % m.w) * TILE, ((k.cell / m.w) | 0) * TILE, color, alpha);
+    }
+    if (hc !== null && this.coverMarks.some((k) => k.from < 0)) mk.box((hc % m.w) * TILE, ((hc / m.w) | 0) * TILE, 0xffffff, 0.5);
+    mk.end();
+  }
+
+  private findCover(): void {
+    this.coverMarks.length = 0;
+    const m = store.mirror;
+    const me = store.me?.faction;
+    if (!me) return;
+    const steering = this.controlled();
+    let any = !!steering;
+    for (const id of this.pawnIds) {
+      if (any) break;
+      const e = m.entities.get(id);
+      any = !!e && e.kind === 'pawn' && e.faction === me && !!e.drafted && !e.downed;
+    }
+    if (!any) return;
+    const threats = this.coverThreats;
+    threats.length = 0;
+    const factions = { factions: m.factions } as unknown as World;
+    for (const id of this.pawnIds) {
+      const e = m.entities.get(id);
+      if (!e || e.kind !== 'pawn' || e.faction === me || e.downed || e.prisoner || e.asleep) continue;
+      if (!hostile(factions, me, e.faction) || weaponFor(e).melee || !fog.shows(e)) continue;
+      threats.push(e);
+    }
+    if (!threats.length) return;
+    for (const id of this.pawnIds) {
+      const e = m.entities.get(id);
+      if (!e || e.kind !== 'pawn' || e.faction !== me || e.downed || e.species || !(e.drafted || e === steering)) continue;
+      this.coverFor(e.id, e.x, e.y);
+    }
+    // Preview under the cursor while drafted colonists are selected.
+    const hc = store.hoverCell;
+    if (hc === null || store.tool.kind !== 'select' || m.rock[hc] || m.entities.get(m.buildingAt[hc])?.kind === 'building') return;
+    const squad = store.squad.some((id) => {
+      const p = m.get<Pawn>(id);
+      return !!p && p.faction === me && !!p.drafted;
+    });
+    if (squad) this.coverFor(-1, hc % m.w, (hc / m.w) | 0);
+  }
+
+  /** Cover at one spot against the nearest threats that have it in range and in sight. */
+  private coverFor(from: number, x: number, y: number): void {
+    const m = store.mirror;
+    const near: Pawn[] = [];
+    const nd: number[] = [];
+    for (const t of this.coverThreats) {
+      const d = Math.hypot(t.x - x, t.y - y);
+      if (d > weaponFor(t).range + 1 || d < 1.5) continue;
+      if (near.length === COVER_THREATS && d >= nd[COVER_THREATS - 1]) continue;
+      if (!fog.lineClear(t.x, t.y, x, y)) continue;
+      let i = near.length === COVER_THREATS ? COVER_THREATS - 1 : near.length;
+      while (i > 0 && nd[i - 1] > d) {
+        near[i] = near[i - 1];
+        nd[i] = nd[i - 1];
+        i--;
+      }
+      near[i] = t;
+      nd[i] = d;
+    }
+    for (const t of near) {
+      const hit = coverFrom(m, t.y * m.w + t.x, y * m.w + x, this.coverHit);
+      this.coverMarks.push({ from, threat: t.id, cover: hit.cover, cell: hit.cell });
+    }
+  }
+
   /** Mark where a right-click order went. */
   flashOrder(x: number, y: number, attack: boolean): void {
     this.orderMark = { x, y, attack, born: performance.now() };
@@ -1233,12 +1373,33 @@ export class GameRenderer {
     const stale = now - this.lastShotDrain > 500;
     this.lastShotDrain = now;
     for (let k = stale ? q.length : 0; k + SHOT_FIELDS <= q.length; k += SHOT_FIELDS) {
-      const shot = { shooter: q[k], target: q[k + 1], sx: q[k + 2], sy: q[k + 3], tx: q[k + 4], ty: q[k + 5], hit: q[k + 6] === 1, weapon: WEAPON_KEYS[q[k + 7]] ?? '', born: now };
+      const shot: ShotFx = { shooter: q[k], target: q[k + 1], sx: q[k + 2], sy: q[k + 3], tx: q[k + 4], ty: q[k + 5], hit: q[k + 6] === 1, weapon: WEAPON_KEYS[q[k + 7]] ?? '', born: now, stop: -1, wideX: 0, wideY: 0 };
+      const ranged = !weaponOf(shot.weapon).melee;
+      if (!shot.hit && ranged) {
+        // A miss at someone in cover reads as the cover taking the shot; otherwise it flies wide and past.
+        const hitCover = coverFrom(m, shot.sy * m.w + shot.sx, shot.ty * m.w + shot.tx, this.coverHit);
+        if (hitCover.cover > 0 && hash2(shot.shooter, Math.floor(now), 13) < 0.8) shot.stop = hitCover.cell;
+        shot.wideX = (hash2(shot.shooter, Math.floor(now), 5) - 0.5) * TILE * 1.6;
+        shot.wideY = (hash2(shot.target, Math.floor(now), 9) - 0.5) * TILE * 1.6;
+      }
       this.shots.push(shot);
       if (!stale) {
         const sv = this.views.get(shot.shooter)?.root;
         const wdef = weaponOf(shot.weapon);
         sound.play(wdef.melee ? 'melee' : shot.weapon === 'bow' ? 'bow' : 'rifle', sv?.x ?? (shot.sx + 0.5) * TILE, sv?.y ?? (shot.sy + 0.5) * TILE);
+      }
+      if (!shot.hit && ranged && !stale) {
+        this.tweens.add(SHOT_FLY_MS, () => {}, () => {
+          const end = this.shotEnd(shot);
+          if (shot.stop >= 0) {
+            // Chips off the cover and a spark.
+            this.particles.burst(end.x, end.y, { count: 5, color: [0xd8d0c0, 0x8a8580, 0xa89880], speed: 70, size: 1.4, life: 380, gravity: 140, chips: true });
+            this.particles.burst(end.x, end.y, { count: 3, color: [0xffe8a0, 0xffc060], speed: 90, size: 0.9, life: 160, drag: 4 });
+          } else {
+            // A puff of dust where it lands.
+            this.particles.burst(end.x, end.y, { count: 3, color: 0xb8b0a0, speed: 18, size: 2.4, grow: 5, life: 420, lift: 8, alpha: 0.45 });
+          }
+        });
       }
       if (shot.hit && !stale) {
         const melee = weaponOf(shot.weapon).melee;
@@ -1262,13 +1423,9 @@ export class GameRenderer {
       const b = this.views.get(s.target)?.root;
       const ax = a ? a.x : (s.sx + 0.5) * TILE;
       const ay = a ? a.y - TILE * 0.15 : (s.sy + 0.5) * TILE;
-      let bx = b ? b.x : (s.tx + 0.5) * TILE;
-      let by = b ? b.y - TILE * 0.15 : (s.ty + 0.5) * TILE;
-      if (!s.hit) {
-        // Misses fly wide and past the target.
-        bx += (hash2(s.shooter, Math.floor(s.born), 5) - 0.5) * TILE * 1.6 + (bx - ax) * 0.25;
-        by += (hash2(s.target, Math.floor(s.born), 9) - 0.5) * TILE * 1.6 + (by - ay) * 0.25;
-      }
+      const end = wd.melee ? { x: b ? b.x : (s.tx + 0.5) * TILE, y: b ? b.y - TILE * 0.15 : (s.ty + 0.5) * TILE } : this.shotEnd(s);
+      const bx = end.x;
+      const by = end.y;
       const age = now - s.born;
       if (wd.melee) {
         // A swing: a short arc in front of the attacker, red if it landed.
@@ -1281,9 +1438,16 @@ export class GameRenderer {
       const hx = ax + (bx - ax) * t;
       const hy = ay + (by - ay) * t;
       const fade = age < SHOT_FLY_MS ? 1 : 1 - (age - SHOT_FLY_MS) / SHOT_FADE_MS;
+      if (age < MUZZLE_MS && s.weapon !== 'bow') {
+        // Muzzle flash just in front of the shooter.
+        const k = 1 - age / MUZZLE_MS;
+        const len = Math.hypot(bx - ax, by - ay) || 1;
+        g.circle(ax + ((bx - ax) / len) * 9, ay + ((by - ay) / len) * 9, 1.5 + 3 * k).fill({ color: 0xfff0c0, alpha: 0.9 * k });
+      }
       g.moveTo(ax, ay).lineTo(hx, hy).stroke({ width: s.weapon === 'rifle' ? 1.5 : 1, color: wd.color, alpha: 0.55 * fade });
       if (t < 1) g.circle(hx, hy, s.weapon === 'rifle' ? 2.2 : 1.8).fill({ color: wd.color, alpha: 1 });
       else if (s.hit) g.circle(bx, by, 5 * fade + 1).fill({ color: 0xff3020, alpha: 0.7 * fade });
+      else if (s.stop >= 0) g.circle(bx, by, 3 * fade + 1).fill({ color: 0xffe0a0, alpha: 0.6 * fade });
     }
   }
 
