@@ -406,8 +406,11 @@ export function theftTick(w: World, p: Pawn, j: { stolen?: number; stolenAt?: nu
   if (verdict === 'clear') {
     noticeTheft(w, victim, p.carrying.def, p.carrying.count, j.stolenAt ?? w.cellOf(p));
     j.stolen = undefined;
+    // Clients show "stolen goods" from the job, so tell them it's over.
+    w.markDirty(p);
   } else if (verdict === 'caught') {
     j.stolen = undefined;
+    w.markDirty(p);
     if (w.factions.get(victim)?.isPlayer) {
       w.placeItemNear(p.carrying.def, p.carrying.count, w.cellOf(p), p.carrying.rot);
       p.carrying = null;

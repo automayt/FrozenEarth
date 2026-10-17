@@ -102,6 +102,43 @@ describe('stealing from another colony', () => {
   });
 });
 
+describe('what clients are told about thieves', () => {
+  it('once a thief is clear, the pawn is resent so clients stop showing stolen goods', () => {
+    const { w, thief } = neighbours(23);
+    const gold = [...w.kinds.item].map((id) => w.get<Item>(id)!).find((i) => i.def === 'gold')!;
+    w.enqueue(2, { c: 'steal', pawn: thief.id, item: gold.id });
+    const stolen = () => (thief.job?.type === 'haul' ? thief.job.stolen : undefined);
+    runUntil(w, () => !!stolen(), 3000);
+    // Each tick, see what a delta would carry; the tick the thief gets clear must include them.
+    for (let i = 0; i < 3000 && stolen(); i++) {
+      w.takeDelta();
+      w.step();
+    }
+    expect(thief.carrying?.def).toBe('gold');
+    expect(stolen()).toBeUndefined();
+    expect(w.takeDelta().ents.map((e) => e.id)).toContain(thief.id);
+  });
+
+  it('a change of steering direction is sent, a repeat is not', () => {
+    const { w, thief } = neighbours(12);
+    w.enqueue(2, { c: 'possess', pawn: thief.id, on: true });
+    run(w, 2);
+    w.takeDelta();
+    w.enqueue(2, { c: 'steer', pawn: thief.id, dx: 0, dy: 0 });
+    w.applyCommands();
+    expect(w.takeDelta().ents.length).toBe(0);
+    w.enqueue(2, { c: 'steer', pawn: thief.id, dx: -1, dy: 1 });
+    w.applyCommands();
+    expect(w.takeDelta().ents.find((e) => e.id === thief.id)).toMatchObject({ steer: [-1, 1] });
+    w.enqueue(2, { c: 'steer', pawn: thief.id, dx: -5, dy: 3 });
+    w.applyCommands();
+    expect(w.takeDelta().ents.length).toBe(0);
+    w.enqueue(2, { c: 'steer', pawn: thief.id, dx: 0, dy: 0 });
+    w.applyCommands();
+    expect(w.takeDelta().ents.find((e) => e.id === thief.id)).toMatchObject({ steer: undefined });
+  });
+});
+
 describe('sight and stealth', () => {
   it('people see far by day, only a little way at night, unless the spot is lit', () => {
     const { w } = neighbours(12);

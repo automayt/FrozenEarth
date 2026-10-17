@@ -14,6 +14,7 @@ import {
   MAX_SPEED,
   TICKS_PER_SECOND,
   type Command,
+  type Delta,
   type World,
 } from '@fe/sim';
 import { EVENTS } from '@fe/defs';
@@ -51,6 +52,25 @@ export interface GameOptions {
   frostStart?: number;
   frostPace?: number;
   log?: (msg: string) => void;
+}
+
+/** True when a delta carries nothing, so a paused server can skip sending it. Taking it clears the changes, so this must see every field. */
+export function deltaIsEmpty(d: Delta): boolean {
+  return (
+    !d.ents.length &&
+    !d.removed.length &&
+    !d.cells.length &&
+    !d.zones.length &&
+    !d.removedZones.length &&
+    !d.factions.length &&
+    !d.msgs.length &&
+    !d.rooms &&
+    !d.roomTemps &&
+    !d.conditions &&
+    !d.choices &&
+    d.coldOffset === undefined &&
+    !d.shots
+  );
 }
 
 export class GameServer {
@@ -146,8 +166,7 @@ export class GameServer {
     if (now - this.lastBroadcast >= BROADCAST_MS) {
       this.lastBroadcast = now;
       const d = this.world.takeDelta();
-      const empty = !d.ents.length && !d.removed.length && !d.cells.length && !d.zones.length && !d.removedZones.length && !d.factions.length && !d.msgs.length && !d.rooms && !d.roomTemps && !d.conditions && !d.shots;
-      if (!empty || timeChanged || !time.paused) this.broadcast({ t: 'delta', d, time });
+      if (!deltaIsEmpty(d) || timeChanged || !time.paused) this.broadcast({ t: 'delta', d, time });
     }
     if (timeChanged || now - this.lastPlayers >= PLAYERS_MS) {
       this.lastPlayers = now;

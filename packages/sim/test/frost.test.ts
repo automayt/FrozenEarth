@@ -13,7 +13,9 @@ import {
   START_TICK,
   suggestSites,
   TICKS_PER_DAY,
+  TICKS_PER_HOUR,
 } from '../src';
+import { tickStoryteller } from '../src/storyteller';
 import { T } from '@fe/defs';
 import { flatWorld, run } from './helpers';
 
@@ -75,10 +77,17 @@ describe('frost line', () => {
       texts.push(t);
       orig(f, t, tone, at);
     };
-    run(w, 40 * TICKS_PER_DAY);
-    expect(texts.some((t) => t.includes('frost line has begun to move'))).toBe(true);
-    expect(texts.some((t) => t.includes('will reach your colony'))).toBe(true);
-    expect(texts.some((t) => t.includes('has reached your colony'))).toBe(true);
+    // Only the storyteller sends these, and they depend on nothing but the clock and the colony's
+    // home, so skip through 40 days hour by hour instead of simulating every tick of them.
+    const end = w.tick + 40 * TICKS_PER_DAY;
+    for (; w.tick < end; w.tick += TICKS_PER_HOUR) tickStoryteller(w);
+    const at = (s: string) => texts.findIndex((t) => t.includes(s));
+    expect(at('frost line has begun to move')).toBeGreaterThanOrEqual(0);
+    expect(at('will reach your colony')).toBeGreaterThan(at('frost line has begun to move'));
+    expect(at('has reached your colony')).toBeGreaterThan(at('will reach your colony'));
+    // Each warning once.
+    for (const s of ['begun to move', 'will reach your colony', 'has reached your colony']) expect(texts.filter((t) => t.includes(s))).toHaveLength(1);
+    expect(texts[at('will reach your colony')]).toMatch(/in about [1-3] days?\./);
   });
 
   it('frost settings survive save and load', () => {

@@ -1,36 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { addPlayerFaction, createWorld, snapshot, type Entity, type World } from '@fe/sim';
+import { addPlayerFaction, createWorld, snapshot, type World } from '@fe/sim';
 import { decode, encode, Mirror, type ServerMsg } from '../src';
+import { visibleEntity as normalize } from '../../../tools/bots/src/visible';
 
 const rect = (x0: number, y0: number, x1: number, y1: number) => ({ x0, y0, x1, y1 });
-
-/** Strip fields that are intentionally sent at coarse granularity. */
-function normalize(e: Entity): unknown {
-  const c = structuredClone(e) as unknown as Record<string, unknown>;
-  if (e.kind === 'pawn') {
-    if (e.path) {
-      delete c.x;
-      delete c.y;
-      const path = { ...(c.path as object) } as Record<string, unknown>;
-      delete path.idx;
-      c.path = path;
-    }
-    if (c.job) {
-      const job = { ...(c.job as object) } as Record<string, unknown>;
-      delete job.progress;
-      c.job = job;
-    }
-    // Needs and conditions are resent when they move a visible step, not every tick.
-    c.needs = Object.fromEntries(Object.entries(e.needs).map(([k, v]) => [k, Math.round(v * 50)]));
-    c.conditions = e.conditions.map((x) => ({ ...x, severity: Math.round(x.severity * 20), immunity: Math.round(x.immunity * 20) }));
-    // XP accrues every work tick; only level-ups are sent.
-    c.skills = Object.fromEntries(Object.entries(e.skills).map(([k, v]) => [k, v.level]));
-  }
-  if (e.kind === 'construct') delete c.progress;
-  if (e.kind === 'plant') c.growth = Math.floor(e.growth * 20);
-  if (e.kind === 'item') c.rot = Math.floor(e.rot * 10);
-  return c;
-}
 
 function busyWorld(): World {
   const w = createWorld({ seed: 3, width: 100, height: 100 });

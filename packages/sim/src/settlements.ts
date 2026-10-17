@@ -743,7 +743,10 @@ export function deliverRequest(w: World, faction: number, settlement: number, re
     if (joiner) {
       if (joiner.bed) {
         const bed = w.get<Building>(joiner.bed);
-        if (bed && bed.kind === 'building') bed.owner = 0;
+        if (bed && bed.kind === 'building') {
+          bed.owner = 0;
+          w.markDirty(bed);
+        }
       }
       joiner.faction = faction;
       joiner.job = null;

@@ -9,6 +9,8 @@ import {
   dispositionOf,
   foundSettlement,
   frostDistance,
+  frostLevel,
+  frostRadius,
   hashWorld,
   hostile,
   killPawn,
@@ -156,7 +158,13 @@ describe('settlements', () => {
     const old = { ...f.home };
     const oldBuildings = buildings(w, f.id).map((b) => b.id);
     w.frost = { ...w.frost, startDay: 0, pace: 6 };
-    runUntil(w, () => f.settlement!.state !== 'home', 30 * TICKS_PER_DAY);
+    // Skip the quiet days (nothing happens there until the frost is close), stopping a day short.
+    const home = w.map.idx(f.home.x, f.home.y);
+    const bite = (tick: number) => frostLevel(f.home.x, f.home.y, 200, 200, frostRadius(tick, w.frost));
+    expect(w.frostAt(home)).toBe(0);
+    while (bite(w.tick + TICKS_PER_DAY) <= 0.25) w.tick += TICKS_PER_HOUR;
+    expect(w.tick - START_TICK).toBeLessThan(30 * TICKS_PER_DAY);
+    runUntil(w, () => f.settlement!.state !== 'home', 2 * TICKS_PER_DAY);
     expect(f.settlement!.state).toBe('leaving');
     for (const id of oldBuildings) expect(w.get<Building>(id)?.faction).toBe(0);
     runUntil(w, () => f.settlement!.state !== 'leaving', 5 * TICKS_PER_DAY);
@@ -223,6 +231,28 @@ describe('settlements', () => {
     expect(s.settlement!.requests!.length).toBe(0);
     expect(s.settlement!.goodwill[player]).toBeLessThan(g);
     expect(w.dirty.msgs.some((m) => m.text.includes('never came'))).toBe(true);
+  });
+
+  it("a settler who joins you gives up their bed, and clients are told it's free", () => {
+    const { w, s, player } = withSettlement(45);
+    s.settlement!.met.push(player);
+    const beds = buildings(w, s.id).filter((b) => BUILDINGS[b.def].bed);
+    residents(w, s.id).forEach((p, k) => {
+      p.bed = beds[k].id;
+      beds[k].owner = p.id;
+    });
+    s.settlement!.requests = [{ id: 99, faction: player, item: 'wood', count: 10, reward: 'recruit', goodwill: 15, until: w.tick + TICKS_PER_DAY, why: 'test' }];
+    const z = w.createZone(player, 'stockpile');
+    for (let x = 4; x < 20; x++) w.addZoneCell(z, w.map.idx(x, 12));
+    w.placeItemNear('wood', 10, w.map.idx(10, 12));
+    addPawn(w, 40, 47, player);
+    w.takeDelta();
+    w.enqueue(player, { c: 'deliverRequest', settlement: s.id, request: 99 });
+    w.applyCommands();
+    expect(residents(w, player).length).toBe(2);
+    const freed = beds.find((b) => b.owner === 0)!;
+    expect(freed).toBeDefined();
+    expect(w.takeDelta().ents.find((e) => e.id === freed.id)).toMatchObject({ owner: 0 });
   });
 
   describe('theft', () => {

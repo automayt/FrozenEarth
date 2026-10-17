@@ -20,6 +20,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "bots": "tsx tools/bots/src/main.ts",
+    "smoke": "tsx tools/bots/src/smoke.ts",
     "docs:events": "tsx tools/docs/events-doc.ts",
     "bench": "tsx tools/bench/sim.ts"
   },
