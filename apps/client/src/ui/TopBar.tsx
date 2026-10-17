@@ -1,7 +1,7 @@
 import { calendar, outdoorTempAt, TICKS_PER_HOUR } from '@fe/sim';
 import { EVENTS } from '@fe/defs';
 import { myPlayer, setSpeed } from '../actions';
-import { useStore } from '../store';
+import { store, useStore } from '../store';
 import { hex } from './util';
 import { SoundControl } from './SoundControl';
 
@@ -60,6 +60,9 @@ export function TopBar() {
           </span>
         )}
         <SoundControl />
+        <button className="help-btn" onClick={() => store.set({ help: !s.help })} title="Controls and how-tos (?)" aria-label="Help">
+          ?
+        </button>
         <span className="muted small">{s.ping} ms</span>
       </div>
     </div>

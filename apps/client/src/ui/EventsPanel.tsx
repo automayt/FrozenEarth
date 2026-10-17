@@ -1,6 +1,6 @@
 import { EVENTS, type EventCategory, type Rarity } from '@fe/defs';
 import { send } from '../net';
-import { useStore } from '../store';
+import { store, useStore } from '../store';
 
 const CATEGORIES: EventCategory[] = ['weather', 'health', 'mood', 'fortune', 'disaster', 'visitors', 'threat', 'mystery'];
 const RARITY_ORDER: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'unique'];
@@ -14,6 +14,9 @@ export function EventsPanel() {
       .sort((a, b) => RARITY_ORDER.indexOf(a.rarity) - RARITY_ORDER.indexOf(b.rarity) || a.label.localeCompare(b.label));
   return (
     <div className="panel events-panel">
+      <button className="close" onClick={() => store.set({ panel: 'none' })} aria-label="Close (Esc)" title="Close (Esc)">
+        ×
+      </button>
       <h3>Trigger an event</h3>
       <p className="muted small">Host tool for testing. Colony events target your own colony. Map events hit everyone.</p>
       <div className="event-grid">

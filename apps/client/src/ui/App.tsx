@@ -15,6 +15,8 @@ import { Minimap } from './Minimap';
 import { SettlePanel } from './SettlePanel';
 import { TradePanel } from './TradePanel';
 import { ControlBar } from './ControlBar';
+import { Toasts } from './Toasts';
+import { Help } from './Help';
 
 export function App() {
   const s = useStore();
@@ -27,6 +29,8 @@ export function App() {
           <TopBar />
           <Feed />
           <SettlePanel />
+          <Toasts />
+          <Help />
         </div>
       ) : playing ? (
         <div className="hud">
@@ -42,6 +46,8 @@ export function App() {
           {s.panel === 'events' && <EventsPanel />}
           {s.panel === 'trade' && <TradePanel />}
           <Architect />
+          <Toasts />
+          <Help />
         </div>
       ) : (
         <JoinScreen />

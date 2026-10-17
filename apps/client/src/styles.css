@@ -1105,3 +1105,469 @@ button.link {
   pointer-events: auto;
   border-color: var(--amber);
 }
+
+/* ================================================================== UX: feedback, help, discoverability */
+
+/* Keyboard focus that you can actually see, without rings on mouse clicks. */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--ice);
+  outline-offset: 1px;
+}
+
+kbd,
+.hotkey {
+  display: inline-block;
+  min-width: 1.2em;
+  padding: 0 4px;
+  margin-left: 4px;
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  font: 10px/1.5 'IBM Plex Mono', monospace;
+  color: var(--muted);
+  text-align: center;
+  vertical-align: 1px;
+}
+
+.panel > .close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 0 7px;
+  border: none;
+  font-size: 15px;
+  color: var(--muted);
+}
+
+.work-panel,
+.colonists-panel,
+.events-panel,
+.trade-panel {
+  padding-right: 30px;
+}
+
+.help-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 50%;
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------------ toasts */
+
+.toasts {
+  position: absolute;
+  top: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: min(520px, calc(100vw - 16px));
+  pointer-events: none;
+  z-index: 5;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  max-width: 100%;
+  background: var(--panel-solid);
+  border: 1px solid var(--line-strong);
+  border-left: 3px solid var(--muted);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+  animation: toast-in 0.18s ease-out;
+}
+
+.toast.good {
+  border-left-color: var(--good);
+}
+
+.toast.bad {
+  border-left-color: var(--amber);
+}
+
+.toast-text {
+  padding: 6px 4px 6px 10px;
+  font-size: 13px;
+  text-align: left;
+  background: none;
+  border: none;
+}
+
+button.toast-text:hover {
+  text-decoration: underline;
+  background: none;
+}
+
+.toast-close {
+  border: none;
+  background: none;
+  color: var(--muted);
+  padding: 5px 8px;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+/* ------------------------------------------------------------------ help overlay */
+
+.help-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(4, 8, 12, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  z-index: 10;
+}
+
+.help {
+  position: relative;
+  width: min(880px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+.help:focus {
+  outline: none;
+}
+
+.help-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 28px;
+}
+
+.help section p {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+
+.help .keys td {
+  padding: 2px 8px 2px 0;
+  vertical-align: top;
+}
+
+.help .keys kbd {
+  margin-left: 0;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .help-cols {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ------------------------------------------------------------------ tips */
+
+.hint {
+  padding: 8px 10px;
+  font-size: 12px;
+  border-color: var(--ice);
+  border-left: 3px solid var(--ice);
+}
+
+.hint-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.hint-head .link {
+  font-weight: 400;
+  font-size: 11px;
+}
+
+.hint p {
+  margin: 4px 0 6px;
+}
+
+.hint-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* ------------------------------------------------------------------ letters */
+
+.letter-row {
+  display: flex;
+  align-items: flex-start;
+  padding: 0;
+}
+
+.letter-body {
+  flex: 1;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 5px 4px 5px 8px;
+  font-size: 12px;
+}
+
+.letter-body:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.letter-body .jump {
+  display: inline;
+  color: var(--ice);
+}
+
+.letter-close {
+  border: none;
+  background: none;
+  color: var(--muted);
+  padding: 4px 7px;
+}
+
+.letter-tools {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  pointer-events: auto;
+  font-size: 11px;
+}
+
+.letter-tools .link {
+  font-weight: 400;
+}
+
+.letter-log {
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.log-line {
+  text-align: left;
+  border: none;
+  background: none;
+  padding: 3px 6px;
+  font-size: 11px;
+  border-left: 2px solid var(--line);
+  border-radius: 0;
+}
+
+.log-line:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.log-line.good {
+  border-left-color: var(--good);
+}
+
+.log-line.bad {
+  border-left-color: var(--bad);
+}
+
+.log-line small {
+  color: var(--muted);
+}
+
+.choice-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.choice-head .link {
+  color: var(--ice);
+  font-weight: 400;
+}
+
+.letter.choice > small {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+}
+
+/* ------------------------------------------------------------------ alerts */
+
+.alert-row {
+  display: flex;
+  align-items: stretch;
+  padding: 0;
+}
+
+.alert-body {
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 4px 9px;
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  color: inherit;
+}
+
+.alert-detail {
+  display: none;
+  max-width: 230px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Critical alerts always say what to do; the rest on hover or keyboard focus. */
+.alert.critical .alert-detail,
+.alert-row:hover .alert-detail,
+.alert-row:focus-within .alert-detail {
+  display: block;
+}
+
+.alert.critical .alert-detail {
+  color: #ffd0c4;
+  opacity: 0.85;
+}
+
+.alert-close {
+  border: none;
+  background: none;
+  border-radius: 0;
+  color: var(--muted);
+  padding: 0 6px;
+  opacity: 0.6;
+}
+
+.alert-row:hover .alert-close,
+.alert-close:focus-visible {
+  opacity: 1;
+}
+
+/* ------------------------------------------------------------------ inspect */
+
+.inspect .kind {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.inspect .kind.bad {
+  color: var(--bad);
+}
+
+/* ------------------------------------------------------------------ trade */
+
+.trade-panel {
+  width: min(700px, calc(100vw - 16px));
+  max-height: calc(100vh - 160px);
+  overflow-y: auto;
+}
+
+.trade-line {
+  grid-template-columns: minmax(0, 1fr) 54px auto auto 30px;
+  align-items: center;
+}
+
+.trade-line select {
+  min-width: 0;
+}
+
+.trade-line input.over {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+
+.trade-line button {
+  padding: 3px 6px;
+}
+
+.line-value {
+  color: var(--muted);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  text-align: right;
+}
+
+.trade-balance {
+  display: flex;
+  gap: 14px;
+  font-size: 12px;
+  padding: 5px 8px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.trade-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.envoy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.request-why {
+  display: block;
+}
+
+/* ------------------------------------------------------------------ colonists */
+
+.colonists-panel tr.selected {
+  background: var(--ice-dim);
+}
+
+.colonists-panel td.warn {
+  color: var(--amber);
+}
+
+.colonists-panel td button {
+  padding: 1px 8px;
+}
+
+.colonists-panel td.name .link {
+  font-weight: 500;
+}
+
+/* ------------------------------------------------------------------ direct control */
+
+.control-bar kbd {
+  margin-left: 2px;
+}
+
+.control-bar .keys-inline {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.control-bar .seen {
+  font-weight: 600;
+}
+
+.tool-hint .link {
+  margin-left: 8px;
+  color: var(--ice);
+  font-weight: 400;
+}
+
+.toast.neutral {
+  border-left-color: var(--ice);
+}

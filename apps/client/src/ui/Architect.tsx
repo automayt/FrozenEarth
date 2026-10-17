@@ -23,6 +23,23 @@ const ZONES: { label: string; tool: Tool; hint: string }[] = [
   { label: 'Remove zone', tool: { kind: 'unzone' }, hint: 'Erase your zones' },
 ];
 
+/** What each building is for, shown under its name in the build menu. */
+const BUILD_HINTS: Record<string, string> = {
+  wood_wall: 'Encloses rooms. Drag a rectangle: only the outline is built.',
+  stone_wall: 'Tougher than wood. Drag a rectangle for the outline.',
+  door: 'The way into a room. Counts as wall for keeping heat in, and keeps strangers out.',
+  sandbags: 'Low cover: colonists crouched behind it are much harder to hit. Can be seen and stepped over.',
+  embrasure: 'A wall with a firing slit: shoot and see through it, nobody walks through.',
+  bed: 'One per colonist. Prisoners need one too.',
+  campfire: 'Cook simple meals (add a bill) and warm yourselves outdoors.',
+  stove: 'Cooks meals, four at a time if you like.',
+  crafting_spot: 'Free. Stone blocks, cloth and clubs.',
+  workbench: 'Tools and weapons: knives, bows for hunting, rifles.',
+  tailor_bench: 'Clothes, including parkas for winter.',
+  heater: 'Heats an enclosed room. Winter nights kill.',
+  cooler: 'Cools an enclosed room in a heat wave.',
+};
+
 function costText(cost: Record<string, number>): string {
   const parts = Object.entries(cost).map(([k, n]) => `${n} ${ITEMS[k]?.label.toLowerCase() ?? k}`);
   return parts.length ? parts.join(', ') : 'free';
@@ -49,14 +66,19 @@ export function Architect() {
   const open = s.menu as Cat | null;
   const setOpen = (menu: Cat | null) => store.set({ menu, panel: 'none' });
   const pick = (tool: Tool) => store.set({ tool, selected: null });
-  const cats: { key: Cat; label: string }[] = [{ key: 'orders', label: 'Orders' }, { key: 'zones', label: 'Zones' }, ...BUILD_CATEGORIES];
+  const cats: { key: Cat; label: string; hotkey?: string }[] = [
+    { key: 'orders', label: 'Orders', hotkey: 'O' },
+    { key: 'zones', label: 'Zones', hotkey: 'Z' },
+    ...BUILD_CATEGORIES.map((c) => ({ ...c, hotkey: c.key === 'structure' ? 'B' : undefined })),
+  ];
+  const toolLabel = s.tool.kind === 'select' ? '' : [...ORDERS, ...ZONES].find((it) => sameTool(it.tool, s.tool))?.label ?? (s.tool.kind === 'build' ? BUILDINGS[s.tool.def]?.label : '');
   let items: { label: string; tool: Tool; hint: string }[] = [];
   if (open === 'orders') items = ORDERS;
   else if (open === 'zones') items = ZONES;
   else if (open)
     items = Object.values(BUILDINGS)
       .filter((b) => b.category === open)
-      .map((b) => ({ label: b.label, tool: { kind: 'build', def: b.key }, hint: `Costs ${costText(b.cost)}` }));
+      .map((b) => ({ label: b.label, tool: { kind: 'build', def: b.key }, hint: `${BUILD_HINTS[b.key] ? BUILD_HINTS[b.key] + ' ' : ''}Costs ${costText(b.cost)}.` }));
 
   return (
     <div className="architect">
@@ -72,20 +94,21 @@ export function Architect() {
       )}
       <div className="panel bar">
         {cats.map((c) => (
-          <button key={c.key} className={open === c.key ? 'on' : ''} onClick={() => setOpen(open === c.key ? null : c.key)}>
+          <button key={c.key} className={open === c.key ? 'on' : ''} onClick={() => setOpen(open === c.key ? null : c.key)} aria-expanded={open === c.key} title={c.hotkey ? `${c.label} (${c.hotkey})` : c.label}>
             {c.label}
+            {c.hotkey && <small className="hotkey">{c.hotkey}</small>}
           </button>
         ))}
         <span className="sep" />
         <DraftButton />
         <button className={s.panel === 'work' ? 'on' : ''} onClick={() => store.set({ panel: s.panel === 'work' ? 'none' : 'work', menu: null })}>
-          Work
+          Work <small className="hotkey">P</small>
         </button>
         <button className={s.panel === 'colonists' ? 'on' : ''} onClick={() => store.set({ panel: s.panel === 'colonists' ? 'none' : 'colonists', menu: null })}>
-          Colonists
+          Colonists <small className="hotkey">L</small>
         </button>
         <button className={s.panel === 'trade' ? 'on' : ''} onClick={() => store.set({ panel: s.panel === 'trade' ? 'none' : 'trade', menu: null })}>
-          Trade
+          Trade <small className="hotkey">T</small>
         </button>
         {myPlayer()?.admin && (
           <button className={s.panel === 'events' ? 'on' : ''} onClick={() => store.set({ panel: s.panel === 'events' ? 'none' : 'events', menu: null })} title="Host tool: trigger events">
@@ -93,10 +116,15 @@ export function Architect() {
           </button>
         )}
         {s.tool.kind !== 'select' && (
-          <span className="tool-hint">{s.tool.kind === 'moveHome' ? 'Click the new home site · right-click or Esc to cancel' : 'Drag to apply · right-click or Esc to stop'}</span>
+          <span className="tool-hint" role="status">
+            <b>{toolLabel}</b> · {s.tool.kind === 'moveHome' ? 'click the new home site' : s.tool.kind === 'build' ? 'drag to place' : s.tool.kind === 'hunt' ? 'drag over animals' : 'drag over an area'} · right-click or Esc to stop
+            <button className="link" onClick={() => store.set({ tool: { kind: 'select' } })}>
+              Done
+            </button>
+          </span>
         )}
         {s.tool.kind === 'select' && mySquad().some((p) => p.drafted) && (
-          <span className="tool-hint">Right-click: move · right-click someone else's pawn: attack</span>
+          <span className="tool-hint">Right-click: move · on someone: attack · on goods: steal or pick up · R: back to work</span>
         )}
       </div>
     </div>

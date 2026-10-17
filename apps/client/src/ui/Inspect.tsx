@@ -13,7 +13,7 @@ export function Inspect() {
   if (!e && cell === null) return null;
   return (
     <div className="panel inspect">
-      <button className="close" onClick={() => store.set({ selected: null, selectedCell: null })}>
+      <button className="close" onClick={() => store.set({ selected: null, selectedCell: null, squad: [] })} aria-label="Close (Esc)" title="Close (Esc)">
         ×
       </button>
       {e ? <EntityInfo e={e} /> : null}
@@ -63,6 +63,7 @@ function EntityInfo({ e }: { e: Entity }) {
             {d.label} ×{e.count}
           </h3>
           {WEAPONS[e.def] && <WeaponItem id={e.id} def={e.def} x={e.x} y={e.y} />}
+          <StealItem id={e.id} x={e.x} y={e.y} />
           {d.spoilDays ? <p className="muted">Freshness {pct(1 - e.rot)} · spoils in about {Math.max(0, (1 - e.rot) * d.spoilDays).toFixed(1)} days at room temperature</p> : null}
         </>
       );
@@ -79,6 +80,27 @@ function EntityInfo({ e }: { e: Entity }) {
       );
     }
   }
+}
+
+/** Goods in someone else's stores: send a colonist to take them, now or after dark. */
+function StealItem({ id, x, y }: { id: number; x: number; y: number }) {
+  const m = store.mirror;
+  const me = store.me?.faction;
+  const z = m.zones.get(m.zoneAt[m.idx(x, y)]);
+  const owner = z ? m.factions.get(z.faction) : undefined;
+  if (!me || !z || z.kind !== 'stockpile' || z.faction === me || !owner || !(owner.isPlayer || (owner.settlement && owner.settlement.state !== 'fallen'))) return null;
+  const who = helpers(x, y)[0];
+  return (
+    <div className="combat-row">
+      <span className="muted small">Not yours. Anyone awake who sees a theft raises the alarm{owner.settlement ? ' and the town thinks less of you' : ''}.</span>
+      <button disabled={!who} onClick={() => who && command({ c: 'steal', pawn: who.id, item: id })} title={who ? `Send ${who.name} to carry it off now` : 'No colonist free to go'}>
+        {who ? `Steal (${who.name.split(' ')[0]})` : 'Steal'}
+      </button>
+      <button onClick={() => command({ c: 'designate', kind: 'steal', x0: x, y0: y, x1: x, y1: y })} title="Mark it: haulers sneak in after dark">
+        After dark
+      </button>
+    </div>
+  );
 }
 
 /** Stats of a loose weapon, and who should pick it up. */
@@ -107,12 +129,19 @@ function WeaponItem({ id, def, x, y }: { id: number; def: string; x: number; y: 
   );
 }
 
+/** Whether any colonist can hunt: hunting needs a ranged weapon. */
+function hasHunter(): boolean {
+  for (const e of store.mirror.entities.values()) if (e.kind === 'pawn' && e.faction === store.me?.faction && !e.prisoner && !e.downed && e.weapon && !weaponOf(e.weapon).melee) return true;
+  return false;
+}
+
 function AnimalInfo({ p }: { p: Pawn }) {
   const def = ANIMALS[p.species!];
   const me = store.me?.faction ?? 0;
   const marked = p.hunted === me;
   return (
     <>
+      <div className="kind">{def?.predator ? 'Wild animal · predator' : 'Wild animal'}</div>
       <h3>{def?.label ?? p.name}</h3>
       <p className="muted small">{def?.predator ? 'Predator. Hunts when hungry, and people once winter comes.' : def?.defends ? 'Turns on anyone who attacks it.' : 'Skittish: bolts when people come close.'}</p>
       <div className="combat-row">
@@ -124,6 +153,7 @@ function AnimalInfo({ p }: { p: Pawn }) {
           </button>
         ) : null}
       </div>
+      {me && marked && !hasHunter() && <p className="bad small">None of your colonists has a bow or rifle, so nobody can hunt it yet.</p>}
       {def && (
         <p className="small">
           A kill gives about {def.meat} meat{def.hide ? ` and ${def.hide} cloth from the hide` : ''}.
@@ -136,11 +166,21 @@ function AnimalInfo({ p }: { p: Pawn }) {
 function PawnInfo({ p }: { p: Pawn }) {
   const lookup = (id: number) => store.mirror.get(id);
   const mine = p.faction === store.me?.faction;
-  const raider = !!store.mirror.factions.get(p.faction)?.raid;
+  const fac = store.mirror.factions.get(p.faction);
+  const raider = !!fac?.raid;
+  const settler = !!fac?.settlement && fac.settlement.state !== 'fallen';
+  const kind = mine ? (p.prisoner ? 'Prisoner' : 'Your colonist') : raider ? 'Raider' : settler ? 'Settler' : fac?.isPlayer ? "Another player's colonist" : 'Stranger';
   return (
     <>
+      <div className={`kind ${raider ? 'bad' : ''}`}>{kind}</div>
       <h3>{p.name}</h3>
       {factionTag(p.faction)}
+      {settler && store.me?.faction ? (
+        <div className="combat-row">
+          <span className="muted small">Trade with them when one of your colonists is near their town.</span>
+          <button onClick={() => store.openTrade(p.faction)}>Trade…</button>
+        </div>
+      ) : null}
       <div className="combat-row">
         <span className="muted small">{weaponOf(p.weapon).label}</span>
         {p.downed && <span className="chip bad">Downed</span>}
@@ -174,9 +214,13 @@ function PawnInfo({ p }: { p: Pawn }) {
       </div>
       {mine && p.prisoner === 'held' && <p className="muted small">Held prisoner. Content prisoners may come round to joining the colony.</p>}
       <p className="job">{describeJob(p.job, lookup)}</p>
-      <Bar label="Food" v={p.needs.food} />
-      <Bar label="Rest" v={p.needs.rest} />
-      <Bar label="Mood" v={p.needs.mood} warn={0.3} />
+      {mine && (
+        <>
+          <Bar label="Food" v={p.needs.food} />
+          <Bar label="Rest" v={p.needs.rest} />
+          <Bar label="Mood" v={p.needs.mood} warn={0.3} />
+        </>
+      )}
       {p.carrying && (
         <p className="muted">
           Carrying {p.carrying.count} {ITEMS[p.carrying.def]?.label.toLowerCase()}
@@ -187,8 +231,9 @@ function PawnInfo({ p }: { p: Pawn }) {
           Wearing {p.apparel.map((a) => APPAREL[a]?.label.toLowerCase() ?? a).join(', ')}
         </p>
       )}
-      <div className="skills">
-        {SKILLS.map((k) => (
+      {mine && (
+        <div className="skills">
+          {SKILLS.map((k) => (
           <div key={k} className="skill" title={`${SKILL_LABELS[k]} level ${p.skills?.[k]?.level ?? 0} of ${MAX_SKILL}`}>
             <span>{SKILL_LABELS[k]}</span>
             <div className="meter">
@@ -196,8 +241,9 @@ function PawnInfo({ p }: { p: Pawn }) {
             </div>
             <small>{p.skills?.[k]?.level ?? 0}</small>
           </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
       {p.traits.length > 0 && (
         <div className="traits">
           {p.traits.map((t) => (
@@ -298,6 +344,12 @@ function BuildingInfo({ b }: { b: Building }) {
     <>
       <h3>{d.label}</h3>
       {factionTag(b.faction)}
+      {!mine && store.mirror.factions.get(b.faction)?.settlement?.state === 'home' && store.me?.faction ? (
+        <div className="combat-row">
+          <span className="muted small">Part of a settlement.</span>
+          <button onClick={() => store.openTrade(b.faction)}>Trade…</button>
+        </div>
+      ) : null}
       {b.hp < maxHp(b.def) && <Bar label="Condition" v={b.hp / maxHp(b.def)} warn={0.35} />}
       {d.bed && <p className="muted">{owner ? `Owned by ${owner.name}` : 'Unclaimed'}</p>}
       {d.heat ? <p className="muted">{d.heat > 0 ? 'Heats' : 'Cools'} an enclosed room toward {d.targetTemp}°C</p> : null}

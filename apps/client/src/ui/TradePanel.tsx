@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ITEMS } from '@fe/defs';
-import { dispositionOf, goodwillOf, lineValue, priceFactor, requestText, TICKS_PER_DAY, TRADE_RANGE, type Item } from '@fe/sim';
+import { dispositionOf, goodwillOf, lineValue, priceFactor, requestText, TICKS_PER_DAY, TRADE_RANGE, type Faction, type Item, type Pawn } from '@fe/sim';
 import { DISPOSITION_COLOR } from '../render/renderer';
 import { command } from '../net';
 import { store, useStore } from '../store';
+import { helpers } from '../actions';
 import { hex } from './util';
 
 type Line = { item: string; count: number };
@@ -20,27 +21,51 @@ function stockOf(faction: number): Map<string, number> {
   return out;
 }
 
-function LineEditor({ title, lines, setLines, stock, empty }: { title: string; lines: Line[]; setLines: (l: Line[]) => void; stock: Map<string, number>; empty: string }) {
+const worth = (v: number) => (v >= 10 ? Math.round(v).toString() : v.toFixed(1));
+
+function LineEditor({ title, lines, setLines, stock, empty, factor }: { title: string; lines: Line[]; setLines: (l: Line[]) => void; stock: Map<string, number>; empty: string; factor: number }) {
   const options = [...stock.entries()].sort((a, b) => ITEMS[a[0]].label.localeCompare(ITEMS[b[0]].label));
+  const set = (i: number, patch: Partial<Line>) => setLines(lines.map((x, k) => (k === i ? { ...x, ...patch } : x)));
+  // Offer the next item not already on the list.
+  const fresh = options.find(([d]) => !lines.some((l) => l.item === d)) ?? options[0];
   return (
     <div className="trade-side">
       <h4>{title}</h4>
-      {lines.map((l, i) => (
-        <div key={i} className="trade-line">
-          <select value={l.item} onChange={(e) => setLines(lines.map((x, k) => (k === i ? { ...x, item: e.target.value } : x)))}>
-            {options.map(([d, n]) => (
-              <option key={d} value={d}>
-                {ITEMS[d].label} ({n})
-              </option>
-            ))}
-          </select>
-          <input type="number" min={1} max={999} value={l.count} onChange={(e) => setLines(lines.map((x, k) => (k === i ? { ...x, count: Number(e.target.value) } : x)))} />
-          <button onClick={() => setLines(lines.filter((_, k) => k !== i))} title="Remove">
-            ×
-          </button>
-        </div>
-      ))}
-      {lines.length < 4 && options.length > 0 && <button onClick={() => setLines([...lines, { item: options[0][0], count: 10 }])}>+ Add item</button>}
+      {lines.map((l, i) => {
+        const have = stock.get(l.item) ?? 0;
+        const over = l.count > have;
+        return (
+          <div key={i} className="trade-line">
+            <select value={l.item} aria-label="Item" onChange={(e) => set(i, { item: e.target.value, count: Math.min(l.count, stock.get(e.target.value) ?? 1) })}>
+              {options.map(([d, n]) => (
+                <option key={d} value={d}>
+                  {ITEMS[d].label} ({n})
+                </option>
+              ))}
+            </select>
+            <input
+              type="number"
+              min={1}
+              max={have}
+              value={l.count}
+              aria-label="Count"
+              className={over ? 'over' : ''}
+              title={over ? `Only ${have} in stock` : undefined}
+              onChange={(e) => set(i, { count: Math.max(1, Math.min(999, Math.round(Number(e.target.value) || 1))) })}
+            />
+            <button onClick={() => set(i, { count: Math.max(1, have) })} title={`All ${have}`} disabled={l.count === have}>
+              Max
+            </button>
+            <button onClick={() => setLines(lines.filter((_, k) => k !== i))} title="Remove" aria-label="Remove line">
+              ×
+            </button>
+            <small className="line-value" title="Market value of this line">
+              {worth((ITEMS[l.item]?.marketValue ?? 0) * l.count * factor)}
+            </small>
+          </div>
+        );
+      })}
+      {lines.length < 4 && fresh && <button onClick={() => setLines([...lines, { item: fresh[0], count: Math.min(10, fresh[1]) }])}>+ Add item</button>}
       {options.length === 0 && <p className="muted small">{empty}</p>}
     </div>
   );
@@ -55,6 +80,20 @@ function traderNear(faction: number, home: { x: number; y: number }): string | n
   return null;
 }
 
+/** Draft the nearest free colonist and walk them to just outside the settlement's walls. */
+function sendEnvoy(f: Faction): void {
+  const who: Pawn | undefined = helpers(f.home.x, f.home.y).find((p) => !p.possessed);
+  if (!who) {
+    store.toast('Nobody is free to go.', 'bad');
+    return;
+  }
+  const x = f.home.x;
+  const y = Math.min(store.mirror.h - 1, f.home.y + 6);
+  if (!who.drafted) command({ c: 'draft', pawns: [who.id], on: true });
+  command({ c: 'move', pawns: [who.id], x, y });
+  store.toast(`${who.name.split(' ')[0]} is heading to ${f.name}. They stay drafted until you release them (R).`, 'neutral', { x, y });
+}
+
 type Partner = { faction: number; name: string; color: number; settlement: boolean };
 
 export function TradePanel() {
@@ -65,15 +104,28 @@ export function TradePanel() {
     .filter((f) => f.settlement && f.settlement.state !== 'fallen')
     .map((f) => ({ faction: f.id, name: f.name, color: f.color, settlement: true }));
   const partners = [...colonies, ...settlements];
-  const [to, setTo] = useState<number>(partners[0]?.faction ?? 0);
+  const [to, setTo] = useState<number>(s.tradeWith ?? partners[0]?.faction ?? 0);
   const [give, setGive] = useState<Line[]>([]);
   const [want, setWant] = useState<Line[]>([]);
   const [note, setNote] = useState('');
+  // "Trade…" elsewhere in the HUD can point an open panel at someone new.
+  useEffect(() => {
+    if (s.tradeWith !== null && s.tradeWith !== to) {
+      setTo(s.tradeWith);
+      setWant([]);
+    }
+  }, [s.tradeWith]);
+  const close = (
+    <button className="close" onClick={() => store.set({ panel: 'none' })} aria-label="Close trade (Esc)" title="Close (Esc)">
+      ×
+    </button>
+  );
   if (!partners.length) {
     return (
       <div className="panel trade-panel">
+        {close}
         <h3>Trade</h3>
-        <p className="muted">Nobody to trade with yet.</p>
+        <p className="muted">Nobody to trade with yet. Settlements show up on the map as walled towns; other players' colonies appear here once they join.</p>
       </div>
     );
   }
@@ -81,9 +133,15 @@ export function TradePanel() {
   const fac = s.mirror.factions.get(target.faction);
   const st = fac?.settlement;
   const lines = (l: Line[]): [string, number][] => l.map((x) => [x.item, x.count]);
+  const myStock = stockOf(me);
+  const theirStock = stockOf(target.faction);
+  const short = give.some((l) => l.count > (myStock.get(l.item) ?? 0)) || want.some((l) => l.count > (theirStock.get(l.item) ?? 0));
   const send = () => {
     if (st) command({ c: 'settlementTrade', settlement: target.faction, give: lines(give), want: lines(want) });
-    else command({ c: 'offerTrade', to: target.faction, give: lines(give), want: lines(want), note });
+    else {
+      command({ c: 'offerTrade', to: target.faction, give: lines(give), want: lines(want), note });
+      store.toast(`Offer sent to ${target.name}. It expires in 8 in-game hours.`, 'neutral');
+    }
     setGive([]);
     setWant([]);
     setNote('');
@@ -91,21 +149,30 @@ export function TradePanel() {
   const pick = (p: Partner) => {
     setTo(p.faction);
     setWant([]);
+    store.tradeWith = p.faction;
   };
   let settlementInfo: React.ReactNode = null;
   let blocked = false;
+  let why = '';
+  const factor = st ? priceFactor(st, me) : 1;
   if (st && fac) {
     const mood = dispositionOf(st, me);
-    const factor = priceFactor(st, me);
     const trader = traderNear(me, fac.home);
     const giveV = lineValue(lines(give));
     const wantV = lineValue(lines(want)) * factor;
-    blocked = (mood === 'hostile' && want.length > 0) || st.state !== 'home' || !trader || giveV + 1e-9 < wantV;
+    if (st.state !== 'home') why = "They're on the move.";
+    else if (!trader) why = 'Nobody of yours is there.';
+    else if (mood === 'hostile' && want.length > 0) why = "Enemies only take gifts: remove what you're asking for.";
+    else if (giveV + 1e-9 < wantV) why = `Offer ${worth(wantV - giveV)} more worth, or ask for less.`;
+    blocked = !!why;
     settlementInfo = (
       <div className="settlement-info">
         <p>
           <b style={{ color: hex(DISPOSITION_COLOR[mood]) }}>{mood[0].toUpperCase() + mood.slice(1)}</b>
-          <span className="muted"> · goodwill {goodwillOf(st, me)} · prices ×{factor.toFixed(2)}</span>
+          <span className="muted" title="Goodwill runs from -100 to 100. Fair trades, gifts and help raise it; theft and attacks lower it.">
+            {' '}
+            · goodwill {goodwillOf(st, me)} · their prices ×{factor.toFixed(2)}
+          </span>
           <button className="link" onClick={() => store.set({ focus: { x: fac.home.x, y: fac.home.y } })}>
             Show on map
           </button>
@@ -117,46 +184,54 @@ export function TradePanel() {
         ) : st.state !== 'home' ? (
           <p className="muted small">They're on the move, fleeing the frost.</p>
         ) : trader ? (
-          <p className="small">{trader} is there to make the trade. Your goods leave your stockpiles; theirs are left with {trader}.</p>
-        ) : (
-          <p className="muted small">Send a colonist within {TRADE_RANGE} cells of {fac.name} to trade.</p>
+          <p className="small good">{trader} is there to make the trade. Your goods leave your stockpiles; theirs are left with {trader}.</p>
+        ) : null}
+        {!trader && st.state === 'home' && (
+          <div className="envoy">
+            <span className="muted small">A colonist must be within {TRADE_RANGE} cells of {fac.name} to trade or deliver.</span>
+            <button onClick={() => sendEnvoy(fac)} title="Draft the nearest colonist and walk them there">
+              Send a colonist
+            </button>
+          </div>
         )}
         {(st.requests ?? [])
           .filter((r) => r.faction === me)
           .map((r) => {
-            const have = r.item.startsWith('cat:') ? [...stockOf(me).entries()].filter(([d]) => ITEMS[d].category === r.item.slice(4)).reduce((a, [, n]) => a + n, 0) : (stockOf(me).get(r.item) ?? 0);
+            const have = r.item.startsWith('cat:') ? [...myStock.entries()].filter(([d]) => ITEMS[d].category === r.item.slice(4)).reduce((a, [, n]) => a + n, 0) : (myStock.get(r.item) ?? 0);
             const days = Math.max(0, (r.until - s.estTick()) / TICKS_PER_DAY);
             const reward = r.reward === 'recruit' ? 'a new colonist' : requestText(r.reward[0], r.reward[1]);
+            const missing = !trader ? 'Send a colonist there first.' : have < r.count ? `You need ${r.count - have} more in your stockpiles.` : st.state !== 'home' ? "They're on the move." : '';
             return (
               <div key={r.id} className="request">
                 <span>
-                  They need <b>{requestText(r.item, r.count)}</b> (you have {have}) · {days >= 1 ? `${Math.ceil(days)}d` : `${Math.max(1, Math.round(days * 24))}h`} left · reward: {reward}
+                  They need <b>{requestText(r.item, r.count)}</b> <span className={have >= r.count ? 'good' : 'bad'}>(you have {have})</span> · {days >= 1 ? `${Math.ceil(days)}d` : `${Math.max(1, Math.round(days * 24))}h`} left · reward: {reward}
+                  {missing && <small className="muted request-why">{missing}</small>}
                 </span>
-                <button disabled={!trader || have < r.count || st.state !== 'home'} onClick={() => command({ c: 'deliverRequest', settlement: target.faction, request: r.id })}>
+                <button disabled={!!missing} onClick={() => command({ c: 'deliverRequest', settlement: target.faction, request: r.id })} title={missing || 'Hand it over'}>
                   Deliver
                 </button>
               </div>
             );
           })}
-        {(give.length > 0 || want.length > 0) && (
-          <p className={`small ${giveV + 1e-9 >= wantV ? 'good' : 'bad'}`}>
-            You offer {Math.round(giveV)} worth; they ask {Math.round(wantV)}.
-          </p>
-        )}
       </div>
     );
   }
+  const giveV = lineValue(lines(give));
+  const wantV = lineValue(lines(want)) * factor;
   return (
-    <div className="panel trade-panel">
+    <div className="panel trade-panel" role="dialog" aria-label="Trade">
+      {close}
       <h3>Trade</h3>
-      <div className="partners">
+      <div className="partners" role="tablist">
         {partners.map((p) => {
-          const pst = s.mirror.factions.get(p.faction)?.settlement;
+          const pf = s.mirror.factions.get(p.faction);
+          const pst = pf?.settlement;
           const mood = pst ? dispositionOf(pst, me) : null;
+          const there = pf && pst ? traderNear(me, pf.home) : null;
           return (
-            <button key={p.faction} className={p.faction === target.faction ? 'on' : ''} onClick={() => pick(p)} title={pst ? `Settlement (${mood})` : 'Player colony'}>
+            <button key={p.faction} role="tab" aria-selected={p.faction === target.faction} className={p.faction === target.faction ? 'on' : ''} onClick={() => pick(p)} title={pst ? `Settlement (${mood})${there ? `, ${there} is there` : ''}` : 'Player colony'}>
               <i style={{ background: hex(mood ? DISPOSITION_COLOR[mood] : p.color) }} /> {p.name}
-              {pst && <small className="muted"> settlement</small>}
+              {pst && <small className="muted"> {there ? '· colonist there' : 'settlement'}</small>}
             </button>
           );
         })}
@@ -167,13 +242,23 @@ export function TradePanel() {
         <p className="muted small">Goods move between stockpiles only if they accept and both sides can still pay. Offers expire after 8 in-game hours.</p>
       )}
       <div className="trade-sides">
-        <LineEditor title="You give" lines={give} setLines={setGive} stock={stockOf(me)} empty="Nothing in your stockpiles yet." />
-        <LineEditor title="You want" lines={want} setLines={setWant} stock={stockOf(target.faction)} empty="Nothing in their stockpiles yet." />
+        <LineEditor title="You give" lines={give} setLines={setGive} stock={myStock} empty="Nothing in your stockpiles yet." factor={1} />
+        <LineEditor title={st ? `You want (at their prices)` : 'You want'} lines={want} setLines={setWant} stock={theirStock} empty="Nothing in their stockpiles yet." factor={factor} />
       </div>
+      {(give.length > 0 || want.length > 0) && (
+        <div className="trade-balance">
+          <span>You offer {worth(giveV)}</span>
+          <span>{st ? 'they ask' : 'you ask'} {worth(wantV)}</span>
+          {st && <span className={giveV + 1e-9 >= wantV ? 'good' : 'bad'}>{giveV + 1e-9 >= wantV ? (want.length ? 'Fair: they accept' : 'A gift: raises goodwill') : 'Not enough'}</span>}
+        </div>
+      )}
       {!st && <input className="trade-note" placeholder="Add a note (optional)" maxLength={140} value={note} onChange={(e) => setNote(e.target.value)} />}
-      <button className="primary" disabled={(!give.length && !want.length) || blocked} onClick={send}>
-        {st ? (want.length ? 'Trade' : 'Give as a gift') : 'Send offer'}
-      </button>
+      <div className="trade-actions">
+        {(blocked || short) && (give.length > 0 || want.length > 0) && <span className="bad small">{short ? 'Some lines ask for more than is in stock.' : why}</span>}
+        <button className="primary" disabled={(!give.length && !want.length) || blocked || short} onClick={send}>
+          {st ? (give.length && !want.length ? 'Give as a gift' : 'Trade') : 'Send offer'}
+        </button>
+      </div>
     </div>
   );
 }

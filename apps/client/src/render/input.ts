@@ -1,7 +1,7 @@
 import type { Graphics } from 'pixi.js';
-import { BUILDINGS, WEAPONS } from '@fe/defs';
+import { BUILDINGS, ITEMS, WEAPONS } from '@fe/defs';
 import { pawnPosition } from '@fe/protocol';
-import type { Pawn, Rect } from '@fe/sim';
+import { dispositionOf, type Pawn, type Rect } from '@fe/sim';
 import { command } from '../net';
 import { store } from '../store';
 import { sound } from '../audio';
@@ -17,11 +17,22 @@ const PAN_SPEED = 900;
 
 const STEER_KEYS = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright']);
 
+/** Panels and menus with their own key. */
+const PANEL_KEYS: Record<string, 'work' | 'colonists' | 'trade'> = { p: 'work', l: 'colonists', t: 'trade' };
+const MENU_KEYS: Record<string, string> = { o: 'orders', z: 'zones', b: 'structure' };
+
+/** How long a "right-click again to attack" warning stays armed. */
+const CONFIRM_MS = 3000;
+
 export class Input {
   private keys = new Set<string>();
   private drag: Drag | null = null;
   private pan: { x: number; y: number; moved: boolean } | null = null;
   private off: (() => void)[] = [];
+  /** A peaceful target the player was warned about attacking; a second right-click confirms. */
+  private armed: { target: number; until: number } | null = null;
+  /** Times we've explained that right-click orders need drafted colonists (stop after a few). */
+  private draftNags = 0;
 
   constructor(
     private r: GameRenderer,
@@ -63,7 +74,10 @@ export class Input {
       return;
     }
     if (store.tool.kind === 'moveHome') {
-      if (store.mirror.inBounds(cell.x, cell.y)) command({ c: 'setHome', x: cell.x, y: cell.y });
+      if (store.mirror.inBounds(cell.x, cell.y)) {
+        command({ c: 'setHome', x: cell.x, y: cell.y });
+        this.r.flashOrder(cell.x, cell.y, false);
+      }
       store.set({ tool: { kind: 'select' } });
       return;
     }
@@ -96,7 +110,10 @@ export class Input {
       this.pan = null;
       if (clicked) {
         if (store.tool.kind !== 'select') store.set({ tool: { kind: 'select' } });
-        else if (!this.order(e)) store.set({ selected: null, selectedCell: null, squad: [] });
+        else if (!this.order(e)) {
+          if (mySquad().some((p) => !p.downed) && this.draftNags++ < 3) store.toast('Right-click orders need drafted colonists: press R to draft the selection.', 'neutral');
+          store.set({ selected: null, selectedCell: null, squad: [] });
+        }
       }
       return;
     }
@@ -139,7 +156,11 @@ export class Input {
         for (const e of store.mirror.entities.values()) {
           if (e.kind === 'pawn' && e.species && e.x >= x0 - 1 && e.x <= x1 + 1 && e.y >= y0 - 1 && e.y <= y1 + 1) ids.push(e.id);
         }
-        if (ids.length) command({ c: 'hunt', pawns: ids, on: true });
+        if (ids.length) {
+          command({ c: 'hunt', pawns: ids, on: true });
+          const n = ids.length;
+          store.toast(`Marked ${n} animal${n > 1 ? 's' : ''} for hunting. Colonists with a bow or rifle will go after ${n > 1 ? 'them' : 'it'}.`, 'good');
+        } else store.toast('No animals there. Drag over the animals you want hunted.', 'neutral');
         break;
       }
     }
@@ -152,9 +173,28 @@ export class Input {
   }
 
   private key(e: KeyboardEvent, down: boolean): void {
-    const tag = (e.target as HTMLElement | null)?.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    const el = e.target as HTMLElement | null;
+    const tag = el?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+      // Esc leaves a text box, so the game keys work again.
+      if (down && e.key === 'Escape') el!.blur();
+      return;
+    }
     const k = e.key.toLowerCase();
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    // The help overlay sits on top of everything and takes Esc (and ?) first.
+    if (store.help) {
+      if (down && (k === 'escape' || k === '?' || k === 'f1')) {
+        e.preventDefault();
+        store.set({ help: false });
+      }
+      return;
+    }
+    if (down && (k === '?' || k === 'f1')) {
+      e.preventDefault();
+      store.set({ help: true });
+      return;
+    }
     if (down) this.keys.add(k);
     else this.keys.delete(k);
     // Steering a colonist: WASD walks them, C sneaks, E takes or drops, Esc lets go.
@@ -173,16 +213,35 @@ export class Input {
         command({ c: 'interact', pawn: steering.id });
         return;
       }
-      if (down && k === 'escape') {
+      // Esc closes an open tool, menu or panel first; only then does it let go.
+      if (down && k === 'escape' && store.tool.kind === 'select' && !store.menu && store.panel === 'none') {
         command({ c: 'possess', pawn: steering.id, on: false });
         return;
       }
     }
     if (!down) return;
     if (k === 'escape') {
+      // One layer at a time: the active tool, then an open menu or panel, then the selection.
       if (store.tool.kind !== 'select') store.set({ tool: { kind: 'select' } });
       else if (store.menu || store.panel !== 'none') store.set({ menu: null, panel: 'none' });
       else store.set({ selected: null, selectedCell: null, squad: [] });
+    } else if (k === 'enter') {
+      const chat = document.querySelector<HTMLInputElement>('.chat input');
+      if (chat) {
+        e.preventDefault();
+        chat.focus();
+      }
+    } else if (PANEL_KEYS[k] && store.me?.faction) {
+      const panel = PANEL_KEYS[k];
+      store.set({ panel: store.panel === panel ? 'none' : panel, menu: null });
+    } else if (MENU_KEYS[k] && store.me?.faction) {
+      const menu = MENU_KEYS[k];
+      store.set({ menu: store.menu === menu ? null : menu, panel: 'none' });
+    } else if (k === 'f') {
+      const sel = store.selected ? store.mirror.get(store.selected) : undefined;
+      const c = store.selectedCell;
+      if (sel) store.set({ focus: { x: sel.x, y: sel.y } });
+      else if (c !== null) store.set({ focus: { x: c % store.mirror.w, y: Math.floor(c / store.mirror.w) } });
     } else if (k === ' ') {
       e.preventDefault();
       togglePause();
@@ -276,8 +335,24 @@ export class Input {
     const target = this.pawnAt(p.x, p.y, (o) => o.faction !== store.me?.faction);
     const t = target ? store.mirror.get<Pawn>(target) : undefined;
     if (t && t.faction !== store.me?.faction) {
-      const raider = !!store.mirror.factions.get(t.faction)?.raid;
-      command(t.downed && raider ? { c: 'capture', pawns: ids, target: t.id } : { c: 'attack', pawns: ids, target: t.id });
+      const f = store.mirror.factions.get(t.faction);
+      const raider = !!f?.raid;
+      if (t.downed && raider) {
+        command({ c: 'capture', pawns: ids, target: t.id });
+        store.toast(`Capturing ${t.name.split(' ')[0]}: they'll be carried to a free bed.`, 'neutral');
+        this.r.flashOrder(t.x, t.y, false);
+        return true;
+      }
+      // Attacking someone you aren't at war with starts a war: ask once more first.
+      const st = f?.settlement;
+      const peaceful = !t.species && !raider && !t.prisoner && (!!f?.isPlayer || (!!st && st.state !== 'fallen' && dispositionOf(st, store.me!.faction) !== 'hostile'));
+      if (peaceful && !(this.armed?.target === t.id && performance.now() < this.armed.until)) {
+        this.armed = { target: t.id, until: performance.now() + CONFIRM_MS };
+        store.toast(`Right-click ${t.name.split(' ')[0]} again to attack. ${f?.isPlayer ? 'Their colony' : f?.name} will treat you as enemies.`, 'bad');
+        return true;
+      }
+      this.armed = null;
+      command({ c: 'attack', pawns: ids, target: t.id });
       this.r.flashOrder(t.x, t.y, !t.downed);
       return true;
     }
@@ -290,12 +365,14 @@ export class Input {
     if (it && it.kind === 'item' && zone?.kind === 'stockpile' && zone.faction !== store.me?.faction && (owner?.settlement || owner?.isPlayer)) {
       const who = squad.reduce((a, b) => (Math.hypot(b.x - cell.x, b.y - cell.y) < Math.hypot(a.x - cell.x, a.y - cell.y) ? b : a));
       command({ c: 'steal', pawn: who.id, item: it.id });
+      store.toast(`${who.name.split(' ')[0]} goes to steal the ${ITEMS[it.def]?.label.toLowerCase() ?? 'goods'}. Anyone awake who sees it raises the alarm.`, 'neutral');
       this.r.flashOrder(cell.x, cell.y, true);
       return true;
     }
     if (it && it.kind === 'item' && WEAPONS[it.def]) {
       const who = helpers(cell.x, cell.y).find((s) => s.drafted) ?? squad[0];
       command({ c: 'equip', pawn: who.id, item: it.id });
+      store.toast(`${who.name.split(' ')[0]} will pick up the ${ITEMS[it.def]?.label.toLowerCase() ?? 'weapon'}.`, 'neutral');
       this.r.flashOrder(cell.x, cell.y, false);
       return true;
     }

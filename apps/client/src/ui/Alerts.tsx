@@ -129,21 +129,41 @@ function computeAlerts(): Alert[] {
   return out.sort((a, b) => ORDER[a.severity] - ORDER[b.severity]);
 }
 
+/** Alerts the player waved away. One comes back if it clears and later recurs. */
+const snoozed = new Set<string>();
+
 export function Alerts() {
   useStore();
-  const alerts = computeAlerts();
+  const all = computeAlerts();
+  for (const k of [...snoozed]) if (!all.some((a) => a.key === k)) snoozed.delete(k);
+  const alerts = all.filter((a) => !snoozed.has(a.key));
   if (!alerts.length) return null;
   return (
-    <div className="alerts">
+    <div className="alerts" role="region" aria-label="Alerts">
       {alerts.slice(0, 10).map((a) => (
-        <button
-          key={a.key}
-          className={`alert ${a.severity}`}
-          title={a.detail}
-          onClick={() => a.focus && store.set({ focus: { x: a.focus.x, y: a.focus.y }, selected: a.focus.select ?? store.selected })}
-        >
-          {a.title}
-        </button>
+        <div key={a.key} className={`alert alert-row ${a.severity}`}>
+          <button
+            className="alert-body"
+            title={a.focus ? `${a.detail} Click to show.` : a.detail}
+            onClick={() => a.focus && store.set({ focus: { x: a.focus.x, y: a.focus.y }, selected: a.focus.select ?? store.selected })}
+          >
+            <span>{a.title}</span>
+            <small className="alert-detail">{a.detail}</small>
+          </button>
+          {a.severity !== 'critical' && (
+            <button
+              className="alert-close"
+              aria-label={`Dismiss alert: ${a.title}`}
+              title="Dismiss until it clears"
+              onClick={() => {
+                snoozed.add(a.key);
+                store.emit();
+              }}
+            >
+              ×
+            </button>
+          )}
+        </div>
       ))}
     </div>
   );

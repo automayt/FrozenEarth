@@ -24,6 +24,9 @@ export function WorkPanel() {
   const pawns = myPawns();
   return (
     <div className="panel work-panel">
+      <button className="close" onClick={() => store.set({ panel: 'none' })} aria-label="Close (Esc)" title="Close (Esc)">
+        ×
+      </button>
       <h3>Work priorities</h3>
       <p className="muted small">1 = do first, 4 = do last, blank = never. Click to cycle, right-click to go back.</p>
       <table>
