@@ -86,6 +86,8 @@ export interface PawnCondition {
   until: number;
   /** Wounds: tend quality (0-1) once a doctor has dressed them. Absent while untended. */
   tended?: number;
+  /** Worst stage already announced in a letter, so wavering doesn't repeat it. */
+  told?: number;
 }
 
 export interface PawnSkill {

@@ -1,6 +1,6 @@
 import { BUILD_CATEGORIES, BUILDINGS, ITEMS, SOWABLE_PLANTS, type BuildCategory } from '@fe/defs';
 import { store, useStore, type Tool } from '../store';
-import { myPlayer, mySquad, toggleDraft } from '../actions';
+import { myPawnsAll, myPlayer, mySquad, toggleDraft } from '../actions';
 
 type Cat = 'orders' | 'zones' | BuildCategory;
 
@@ -52,8 +52,10 @@ function sameTool(a: Tool, b: Tool): boolean {
 /** Draft or release the selected colonists (or everyone, with nobody selected). */
 function DraftButton() {
   const squad = mySquad().filter((p) => !p.downed);
-  const allDrafted = squad.length > 0 && squad.every((p) => p.drafted);
-  const label = squad.length ? (allDrafted ? 'Undraft' : 'Draft') : 'Draft all';
+  // With nobody selected the button acts on everyone, so it says what it will do to everyone.
+  const who = squad.length ? squad : myPawnsAll().filter((p) => !p.downed);
+  const allDrafted = who.length > 0 && who.every((p) => p.drafted);
+  const label = squad.length ? (allDrafted ? 'Undraft' : 'Draft') : allDrafted ? 'Undraft all' : 'Draft all';
   return (
     <button className={`draft ${allDrafted ? 'on' : ''}`} onClick={toggleDraft} title="Drafted colonists stop working and follow orders: right-click to move, right-click an enemy to attack (R)">
       {label} <small>R</small>

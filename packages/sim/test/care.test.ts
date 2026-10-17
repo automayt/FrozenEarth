@@ -264,3 +264,23 @@ describe('save format 5', () => {
     run(b, 300);
   });
 });
+
+describe('letters about conditions', () => {
+  it("blood loss wavering across a stage is reported once, not every time it crosses back", () => {
+    const w = flatWorld(30, 30);
+    const p = addPawn(w, 10, 10);
+    p.priorities.doctor = 0;
+    // A bleeding cut, and blood loss just under 'severe'.
+    p.conditions.push({ key: 'cut', severity: 0.3, immunity: 0, until: 0 });
+    p.conditions.push({ key: 'blood_loss', severity: 0.39, immunity: 0, until: 0 });
+    const count = () => w.dirty.msgs.filter((m) => m.text.includes('blood loss (severe)')).length;
+    for (let k = 0; k < 4; k++) {
+      // Crosses into severe, then gets pushed back under (as tending and reopening would).
+      run(w, 600);
+      const bl = p.conditions.find((c) => c.key === 'blood_loss');
+      if (!bl || !w.get(p.id)) break;
+      bl.severity = 0.39;
+    }
+    expect(count()).toBe(1);
+  });
+});

@@ -314,7 +314,10 @@ function exposure(w: World, p: Pawn, key: string, ratePerDay: number, dt: number
     return;
   }
   const def = CONDITIONS[key];
-  if (stageOf(def, before) !== stageOf(def, c.severity) && ratePerDay > 0 && c.severity >= 0.35) {
+  // Say so when it gets worse than anything already reported, not every time it wavers across a stage.
+  const stage = def.stages.indexOf(stageOf(def, c.severity));
+  if (stageOf(def, before) !== stageOf(def, c.severity) && ratePerDay > 0 && c.severity >= 0.35 && stage > (c.told ?? -1)) {
+    c.told = stage;
     w.message(p.faction, `${p.name} is suffering from ${def.label.toLowerCase()} (${stageOf(def, c.severity).label}).`, 'bad', w.cellOf(p));
   }
 }
