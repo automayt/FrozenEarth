@@ -1,11 +1,12 @@
 import { ITEMS } from '@fe/defs';
-import { type Item, type Pawn } from '@fe/sim';
+import { GOODWILL, type Item, type Pawn } from '@fe/sim';
 import { fog } from '../render/fog';
 import { command } from '../net';
 import { store, useStore } from '../store';
+import { goodwillShift } from './risk';
 
 /** What E would do right now: drop the load, or pick up something here or next door (and whose it is). */
-function interactLabel(p: Pawn): { text: string; steal: boolean } | null {
+function interactLabel(p: Pawn): { text: string; steal: boolean; owner?: number } | null {
   if (p.carrying) return { text: 'drop', steal: false };
   const m = store.mirror;
   for (let dy = -1; dy <= 1; dy++) {
@@ -17,7 +18,7 @@ function interactLabel(p: Pawn): { text: string; steal: boolean } | null {
       if (!it || it.kind !== 'item') continue;
       const z = m.zones.get(m.zoneAt[m.idx(x, y)]);
       const steal = !!z && z.kind === 'stockpile' && z.faction !== p.faction;
-      return { text: `take ${ITEMS[it.def]?.label.toLowerCase() ?? 'item'}`, steal };
+      return { text: `take ${ITEMS[it.def]?.label.toLowerCase() ?? 'item'}`, steal, owner: steal ? z.faction : undefined };
     }
   }
   return null;
@@ -38,6 +39,9 @@ export function ControlBar() {
   }
   const stolen = p.job?.type === 'control' && p.job.stolen;
   const e = interactLabel(p);
+  // Taking from a town's stores: what getting caught would do to their goodwill.
+  const shift = e?.steal && e.owner ? goodwillShift(store.mirror.factions.get(e.owner), me ?? 0, GOODWILL.caughtStealing) : null;
+  const caught = shift ? `If caught: goodwill ${shift.before} → ${shift.after}${shift.to !== shift.from ? ` (${shift.to})` : ''}` : e?.steal ? 'If caught, you drop it' : '';
   return (
     <div className="panel control-bar" role="region" aria-label="Direct control">
       <span className="muted small">Steering</span>
@@ -57,9 +61,10 @@ export function ControlBar() {
       <button className={p.sneaking ? 'on' : ''} onClick={() => command({ c: 'sneak', pawn: p.id, on: !p.sneaking })} title="Walk slowly and quietly (C)" aria-pressed={!!p.sneaking}>
         {p.sneaking ? 'Sneaking' : 'Sneak'} <kbd>C</kbd>
       </button>
-      <button disabled={!e} onClick={() => command({ c: 'interact', pawn: p.id })} title={e ? (e.steal ? 'This belongs to someone else: taking it is theft' : 'Take or drop (E)') : 'Nothing here to take'}>
+      <button disabled={!e} onClick={() => command({ c: 'interact', pawn: p.id })} title={e ? (e.steal ? `This belongs to someone else: taking it is theft. ${caught}.` : 'Take or drop (E)') : 'Nothing here to take'}>
         {e ? (e.steal ? `Steal: ${e.text.replace('take ', '')}` : e.text[0].toUpperCase() + e.text.slice(1)) : 'Take'} <kbd>E</kbd>
       </button>
+      {caught && <span className="bad small">{caught}</span>}
       <span className="muted small" title="Higher stealth means quieter steps and harder to spot">
         stealth {p.skills.stealth?.level ?? 0}
       </span>

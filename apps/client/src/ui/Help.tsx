@@ -1,5 +1,18 @@
 import { useEffect, useRef } from 'react';
 import { store, useStore } from '../store';
+import { myPlayer, setSpeed } from '../actions';
+
+/**
+ * Pausing for help. Speed is shared and, with others online, every second paused comes out of a
+ * daily pause budget. So help pauses the game only when you are the only one online (where
+ * pausing is free and stops nobody), and resumes it on close. With others online the game keeps
+ * running and the overlay says so, offering an explicit pause that spends your budget.
+ */
+let resumeTo: number | null = null;
+
+function onlineCount(): number {
+  return store.players.filter((p) => p.connected).length;
+}
 
 const KEYS: { title: string; rows: [string, string][] }[] = [
   {
@@ -52,23 +65,53 @@ const KEYS: { title: string; rows: [string, string][] }[] = [
 ];
 
 const HOWTO: [string, string][] = [
-  ['The frost', 'Permanent winter creeps inward from the map edge. Alerts count down the days. When it gets close: Orders → Move colony (click a new site further in), then Orders → Pack up the old one so haulers bring everything over.'],
-  ['Settlements', 'Towns of non-player people. Open Trade (T), pick the town, and send a colonist within range: the panel says who is there. Gifts (give, ask for nothing) raise goodwill. Towns sometimes ask for help in a letter: accept, gather the goods, then Deliver from the Trade panel.'],
-  ['Stealing', 'Orders → Steal, then drag over goods in a town or colony stockpile: haulers sneak in after dark. Or draft a colonist and right-click the goods to send them now. Anyone awake who sees it raises the alarm, and goodwill drops.'],
-  ['Hunting', 'Select an animal and press Hunt, or Orders → Hunt and drag over animals. Colonists with a bow or rifle bring them down for meat and hides. Predators bite back.'],
-  ['Stealth', 'When you steer a colonist, rings show what nearby watchers can see. Stay out of sight, sneak (C) to be quiet, and work at night. The control bar says whether you are seen.'],
-  ['Raids and cover', 'Alerts on the right say what raiders are doing. Defense → Sandbags and Embrasures give cover; draft colonists (R) and right-click to put them behind it. Raiders who give up on your walls go looting instead.'],
+  ['The frost', 'Permanent winter creeps inward from the map edge; the ❄ chip at the top counts the days until it reaches you. To move inward: Orders → Move colony and hover the map (it shows how long each spot stays warm), click the new site, then Orders → Pack up the old one so haulers carry everything over.'],
+  ['Settlements', 'Walled towns of non-player people; the ring around each is their land, coloured by their mood toward you. Click any of their people or buildings for goodwill, prices, what they want and what they have. To trade, open Trade (T) and get a colonist within 14 cells. Towns that know you sometimes ask for help in a letter: agree, gather the goods, then Deliver from the Trade panel.'],
+  ['Goodwill', 'Runs from -100 to 100. At -40 or below a town turns hostile and its guards attack your colonists near their land; at 30 or above they are friends. Gifts, fair trades and kept promises raise it. Getting caught stealing (-45), attacking their people and broken promises lower it. Hover a risky order to see the exact change.'],
+  ['Stealing', 'Orders → Steal, then drag over goods in a town or colony stockpile: haulers sneak in after dark (you need a stockpile of your own to carry it to). Or draft a colonist and right-click the goods to go now. Hovering shows who can see that spot and what getting caught would cost. Fires light the ground around them, even at night.'],
+  ['Hunting', 'Select an animal and press Hunt, or Orders → Hunt and drag over animals. Colonists with a bow or rifle bring them down for meat and hides; make bows at a workbench. Predators bite back, and wolves come for people once winter sets in.'],
+  ['Stealth', 'Select a colonist and press Take control to steer them yourself. Rings show what nearby watchers can see; red means they see you now. Sneak (C) to be slow, quiet and harder to spot, stay out of lit areas, and work at night. The bar at the top says whether you are seen.'],
+  ['Raids and cover', 'Alerts on the right say what raiders are doing. Defense → Sandbags (low cover you can shoot over) and Embrasures (walls with a firing slit) protect whoever stands right behind them. Draft colonists (R) and right-click to put them there before the raiders arrive. Raiders who give up on your walls go looting instead.'],
 ];
 
 /** Keyboard shortcuts and short how-tos for the less obvious systems. */
 export function Help() {
   const s = useStore();
   const box = useRef<HTMLDivElement>(null);
+  const online = onlineCount();
   useEffect(() => {
     if (s.help) box.current?.focus();
   }, [s.help]);
+  useEffect(() => {
+    const me = myPlayer();
+    if (s.help && online <= 1 && resumeTo === null && me && me.speed !== 0) {
+      resumeTo = me.speed;
+      setSpeed(0);
+    } else if (resumeTo !== null && (!s.help || online > 1)) {
+      // Closed, or someone joined (their arrival would start charging the pause to us): resume.
+      if (myPlayer()?.speed === 0) setSpeed(resumeTo);
+      resumeTo = null;
+    }
+  }, [s.help, online]);
   if (!s.help) return null;
   const close = () => store.set({ help: false });
+  const me = myPlayer();
+  const others = online - 1;
+  const status =
+    resumeTo !== null ? (
+      <p className="help-status">❚❚ Paused while you read (you're the only one online). Closing help resumes the game.</p>
+    ) : others > 0 ? (
+      <p className="help-status running">
+        ▶ The game keeps running: {others} other player{others > 1 ? 's are' : ' is'} online.{' '}
+        {me && me.speed !== 0 ? (
+          <button className="link" onClick={() => setSpeed(0)} disabled={me.pauseBudget <= 0}>
+            {me.pauseBudget > 0 ? `Pause (uses your pause time, ${me.pauseBudget}s left)` : 'No pause time left today'}
+          </button>
+        ) : (
+          <span>You are holding it paused ({me?.pauseBudget ?? 0}s of pause time left).</span>
+        )}
+      </p>
+    ) : null;
   return (
     <div className="help-backdrop" onClick={close}>
       <div className="panel help" role="dialog" aria-modal="true" aria-label="Help" tabIndex={-1} ref={box} onClick={(e) => e.stopPropagation()}>
@@ -76,6 +119,7 @@ export function Help() {
           ×
         </button>
         <h3>How to play</h3>
+        {status}
         <div className="help-cols">
           <div>
             {KEYS.map((g) => (

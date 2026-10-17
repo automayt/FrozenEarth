@@ -12,7 +12,7 @@ const ORDERS: { label: string; tool: Tool; hint: string }[] = [
   { label: 'Hunt', tool: { kind: 'hunt' }, hint: 'Drag over animals to mark them. Hunters with a bow or rifle bring them down for meat and hides.' },
   { label: 'Deconstruct', tool: { kind: 'deconstruct' }, hint: 'Remove your buildings (refunds 75%)' },
   { label: 'Steal', tool: { kind: 'designate', what: 'steal' }, hint: "Mark goods in a settlement's or another colony's stockpile: your haulers sneak in after dark to carry them off. Locked doors keep them out. Anyone awake who sees it raises the alarm. To send someone right now, draft them and right-click the goods." },
-  { label: 'Move colony', tool: { kind: 'moveHome' }, hint: 'Click a new home site. Colonists gather there; frost warnings follow.' },
+  { label: 'Move colony', tool: { kind: 'moveHome' }, hint: 'Pick a new home further in, away from the frost: hover to compare how long each spot stays warm, then click. Afterwards, Pack up the old site.' },
   { label: 'Pack up', tool: { kind: 'packUp' }, hint: 'Strip an area: remove zones, take down buildings (75% back), cancel blueprints' },
   { label: 'Cancel', tool: { kind: 'designate', what: 'cancel' }, hint: 'Cancel orders and blueprints' },
 ];
@@ -94,6 +94,25 @@ export function Architect() {
           ))}
         </div>
       )}
+      {s.tool.kind !== 'select' && (
+        <div className="panel tool-hint" role="status">
+          <b>{toolLabel}</b> · {s.tool.kind === 'moveHome'
+            ? 'click the new home site'
+            : s.tool.kind === 'build'
+              ? 'drag to place'
+              : s.tool.kind === 'hunt'
+                ? 'drag over animals'
+                : s.tool.kind === 'designate' && s.tool.what === 'steal'
+                  ? 'drag over goods; haulers go after dark'
+                  : 'drag over an area'} · right-click or Esc to stop
+          <button className="link" onClick={() => store.set({ tool: { kind: 'select' } })}>
+            Done
+          </button>
+        </div>
+      )}
+      {s.tool.kind === 'select' && mySquad().some((p) => p.drafted) && (
+        <div className="panel tool-hint">Right-click: move · on someone: attack · on goods: steal or pick up · R: back to work</div>
+      )}
       <div className="panel bar">
         {cats.map((c) => (
           <button key={c.key} className={open === c.key ? 'on' : ''} onClick={() => setOpen(open === c.key ? null : c.key)} aria-expanded={open === c.key} title={c.hotkey ? `${c.label} (${c.hotkey})` : c.label}>
@@ -116,17 +135,6 @@ export function Architect() {
           <button className={s.panel === 'events' ? 'on' : ''} onClick={() => store.set({ panel: s.panel === 'events' ? 'none' : 'events', menu: null })} title="Host tool: trigger events">
             Events
           </button>
-        )}
-        {s.tool.kind !== 'select' && (
-          <span className="tool-hint" role="status">
-            <b>{toolLabel}</b> · {s.tool.kind === 'moveHome' ? 'click the new home site' : s.tool.kind === 'build' ? 'drag to place' : s.tool.kind === 'hunt' ? 'drag over animals' : 'drag over an area'} · right-click or Esc to stop
-            <button className="link" onClick={() => store.set({ tool: { kind: 'select' } })}>
-              Done
-            </button>
-          </span>
-        )}
-        {s.tool.kind === 'select' && mySquad().some((p) => p.drafted) && (
-          <span className="tool-hint">Right-click: move · on someone: attack · on goods: steal or pick up · R: back to work</span>
         )}
       </div>
     </div>
