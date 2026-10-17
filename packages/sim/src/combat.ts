@@ -93,14 +93,56 @@ export function coverAgainst(w: World, shooter: number, target: number): number 
   const ty = m.cy(target);
   const vx = m.cx(shooter) - tx;
   const vy = m.cy(shooter) - ty;
+  // Firing slits and doors are built to protect the people inside, not whoever is outside them.
+  const indoors = m.roomAt[target] !== 0;
   let best = 0;
   for (const [dx, dy] of NEIGHBORS8) {
     if (!m.inBounds(tx + dx, ty + dy)) continue;
-    const c = m.cover[m.idx(tx + dx, ty + dy)];
+    const n = m.idx(tx + dx, ty + dy);
+    let c = m.cover[n];
+    if (!indoors && (m.seeThru[n] || m.doorFaction[n])) c = 0;
+    // A shooter right beside the cover shoots past it.
+    if (c && w.dist(shooter, n) <= 1) c = 0;
     // Only cover that faces the shooter: its offset points roughly toward them.
     if (c > best && dx * vx + dy * vy > 0) best = c;
   }
   return best / 100;
+}
+
+/**
+ * For an AI fighter in reach of `target`: the best covered cell within a few steps that still
+ * has a shot, if it's clearly better than where they stand. Null if there's nothing worth moving to.
+ */
+export function coverSpot(w: World, p: Pawn, target: number): number | null {
+  const wd = weaponFor(p);
+  if (wd.melee) return null;
+  const m = w.map;
+  const here = w.cellOf(p);
+  const comp = m.component(here);
+  let best = -1;
+  let bestScore = coverAgainst(w, target, here) + 0.15;
+  for (let dy = -4; dy <= 4; dy++) {
+    for (let dx = -4; dx <= 4; dx++) {
+      const x = p.x + dx;
+      const y = p.y + dy;
+      if (!m.inBounds(x, y)) continue;
+      const c = m.idx(x, y);
+      if (!w.passable(c, p.faction) || m.component(c) !== comp || !inReach(w, wd, c, target)) continue;
+      const cover = coverAgainst(w, target, c);
+      if (cover < 0.25) continue;
+      const score = cover - w.dist(here, c) * 0.03;
+      if (score > bestScore) {
+        bestScore = score;
+        best = c;
+      }
+    }
+  }
+  return best >= 0 ? best : null;
+}
+
+/** AI fighters with a ranged weapon look for cover; your drafted or steered colonists stay where you put them. */
+export function seeksCover(p: Pawn, t: Pawn): boolean {
+  return !p.drafted && !p.possessed && !p.species && !t.species && !weaponFor(p).melee;
 }
 
 /** True when anything right next to the target on the shooter's side gives cover. */
@@ -134,7 +176,14 @@ export function strike(w: World, p: Pawn, t: Pawn): void {
   const hit = w.rng.chance(hitChance(w, p, t));
   w.dirty.shots.push(p.id, t.id, p.x, p.y, t.x, t.y, hit ? 1 : 0, Math.max(0, WEAPON_KEYS.indexOf(p.weapon)));
   if (w.factions.get(t.faction)?.settlement) settlerAttacked(w, t, p, hit);
-  if (hit) injure(w, t, wd.injury, wd.damage * w.rng.range(0.7, 1.3), p);
+  if (!hit) return;
+  const dmg = wd.damage * w.rng.range(0.7, 1.3);
+  // Raids keep score, to judge whether to press on.
+  const ours = w.factions.get(p.faction)?.raid;
+  if (ours && t.faction === ours.target) ours.dealt = (ours.dealt ?? 0) + dmg;
+  const theirs = w.factions.get(t.faction)?.raid;
+  if (theirs) theirs.taken = (theirs.taken ?? 0) + dmg;
+  injure(w, t, wd.injury, dmg, p);
 }
 
 /** Start the aim delay for a fighter that has just come into reach. */

@@ -164,7 +164,8 @@ export type Job =
    * Fight a pawn. `forced` = an explicit player order (keeps hitting a downed target);
    * `chase` = walk after the target instead of giving up when it is out of reach.
    */
-  | (JobBase & { type: 'attack'; target: EntityId; forced: boolean; chase: boolean; next: number; until: number })
+  | (JobBase & { type: 'attack'; target: EntityId; forced: boolean; chase: boolean; next: number; until: number; /** A covered cell to shoot from, once picked (-1 = none worth it). */ spot?: number })
+  | (JobBase & { type: 'ignite'; cell: number })
   /** Drafted: walk to a cell and hold there. */
   | (JobBase & { type: 'goto'; dest: number })
   | (JobBase & { type: 'control'; /** Goods taken by hand from someone's stockpile, while still at risk. */ stolen?: number; stolenAt?: number })
@@ -222,7 +223,20 @@ export interface RaidState {
   fled: boolean;
   /** Sappers dig through rock as well as smashing walls. */
   sapper?: boolean;
+  /** What they're trying to do right now; it shifts as the fight goes. Missing = assault. */
+  goal?: RaidGoal;
+  goalSince?: number;
+  /** Recent wounds dealt to the colony and taken from it (decaying), to judge how it's going. */
+  dealt?: number;
+  taken?: number;
+  /** Fires set so far. */
+  fires?: number;
+  /** Defenders standing when the current goal was set, to tell progress from stalemate. */
+  foes?: number;
 }
+
+/** assault: go for the colonists. loot: grab goods and go. burn: torch fields and outbuildings. siege: dig in out there and pick off anyone who shows. */
+export type RaidGoal = 'assault' | 'loot' | 'burn' | 'siege';
 
 export interface Faction {
   id: number;

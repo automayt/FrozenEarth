@@ -46,11 +46,11 @@ export const WALL_COVER = 0.75;
 export const TREE_COVER = 0.25;
 
 export const BUILDINGS: Record<string, BuildingDef> = {
-  wood_wall: { key: 'wood_wall', label: 'Wood wall', category: 'structure', color: 0x7a5530, cost: { wood: 5 }, work: 240, blocksMovement: true, wall: true, hp: 220 },
-  stone_wall: { key: 'stone_wall', label: 'Stone wall', category: 'structure', color: 0x8a8580, cost: { stone: 5 }, work: 480, blocksMovement: true, wall: true, hp: 600 },
-  door: { key: 'door', label: 'Wood door', category: 'structure', color: 0xa07040, cost: { wood: 15 }, work: 360, blocksMovement: false, wall: true, door: true, hp: 180, cover: 0.5 },
+  wood_wall: { key: 'wood_wall', label: 'Wood wall', category: 'structure', color: 0x7a5530, cost: { wood: 5 }, work: 240, blocksMovement: true, wall: true, hp: 350 },
+  stone_wall: { key: 'stone_wall', label: 'Stone wall', category: 'structure', color: 0x8a8580, cost: { stone: 5 }, work: 480, blocksMovement: true, wall: true, hp: 900 },
+  door: { key: 'door', label: 'Wood door', category: 'structure', color: 0xa07040, cost: { wood: 15 }, work: 360, blocksMovement: false, wall: true, door: true, hp: 400, cover: 0.5 },
   sandbags: { key: 'sandbags', label: 'Sandbags', category: 'defense', color: 0xa89470, cost: { cloth: 4, stone: 6 }, work: 200, blocksMovement: false, hp: 300, cover: 0.55 },
-  embrasure: { key: 'embrasure', label: 'Embrasure', category: 'defense', color: 0x6a6660, cost: { stone: 8 }, work: 520, blocksMovement: true, wall: true, seeThrough: true, hp: 500, cover: 0.8 },
+  embrasure: { key: 'embrasure', label: 'Embrasure', category: 'defense', color: 0x6a6660, cost: { stone: 8 }, work: 520, blocksMovement: true, wall: true, seeThrough: true, hp: 700, cover: 0.8 },
   wood_floor: { key: 'wood_floor', label: 'Wood floor', category: 'floors', color: 0x8b6a43, cost: { wood: 2 }, work: 90, blocksMovement: false, floorTerrain: 'wood_floor' },
   stone_tile: { key: 'stone_tile', label: 'Stone tile', category: 'floors', color: 0x7d7a74, cost: { stone: 3 }, work: 200, blocksMovement: false, floorTerrain: 'stone_tile' },
   bed: { key: 'bed', label: 'Bed', category: 'furniture', color: 0x5a7aa0, cost: { wood: 25 }, work: 500, blocksMovement: false, bed: true },

@@ -4,7 +4,9 @@ import { endJob } from './pawns';
 import { maybeReachable } from './pathfinding';
 import { pawnName } from './names';
 import { breachJob } from './siege';
-import type { Faction, Item, Job, Pawn } from './types';
+import { cellDistance, coverAgainst, hostileInReach } from './combat';
+import { fuelAt } from './fire';
+import type { Building, Faction, Item, Job, Pawn, RaidGoal, RaidState } from './types';
 import { rk, type World } from './world';
 
 export type RaidKind = 'raid' | 'night' | 'scout' | 'sapper';
@@ -301,6 +303,20 @@ export function raiderThink(w: World, p: Pawn): Job {
   const raid = f.raid!;
   if (!raid.fled && w.tick >= raid.until) breakRaid(w, f, `${f.name} have given up and are leaving.`);
   if (raid.fled) return fleeJob(w, p);
+  switch (raid.goal ?? 'assault') {
+    case 'loot':
+      return lootThink(w, p, raid);
+    case 'burn':
+      return burnThink(w, p, raid);
+    case 'siege':
+      return siegeThink(w, p, raid);
+    default:
+      return assaultThink(w, p, raid);
+  }
+}
+
+/** Go for the colonists; break in if they're walled up. */
+function assaultThink(w: World, p: Pawn, raid: RaidState): Job {
   const here = w.cellOf(p);
   let best: Pawn | null = null;
   let bestScore = Infinity;
@@ -319,8 +335,11 @@ export function raiderThink(w: World, p: Pawn): Job {
   if (best) return { type: 'attack', stage: 0, target: best.id, forced: false, chase: true, next: 0, until: w.tick + 600 };
   // They're all behind walls: break in.
   if (anyTarget) {
-    const breach = breachJob(w, p, raid);
-    if (breach) return breach;
+    // A couple of them break in; the rest find cover and shoot at whatever shows.
+    if (breachers(w, p.faction) < MAX_BREACHERS) {
+      const breach = breachJob(w, p, raid);
+      if (breach) return breach;
+    } else return siegeThink(w, p, raid);
   }
   // Nobody left to fight, or no way in at all: grab something and go.
   const loot = lootFor(w, p, raid.target);
@@ -370,4 +389,214 @@ export function releasePrisoner(w: World, p: Pawn): void {
   p.prisoner = 'leaving';
   endJob(w, p);
   w.message(p.faction, `${p.name} has been released and is leaving.`, 'neutral', w.cellOf(p));
+}
+
+// ---------------------------------------------------------------- shifting goals
+
+/** Raiders smashing at walls at once; the rest give covering fire. */
+const MAX_BREACHERS = 2;
+
+function breachers(w: World, faction: number): number {
+  let n = 0;
+  for (const id of w.kinds.pawn) {
+    const p = w.get<Pawn>(id)!;
+    if (p.faction === faction && p.job?.type === 'bash') n++;
+  }
+  return n;
+}
+
+/** How often a raid takes stock, in ticks. */
+const REVIEW_TICKS = RARE_TICK;
+/** Ticks an assault keeps at it without downing a single defender before trying something else. */
+const ASSAULT_PATIENCE = 6000;
+/** Most fires one raid will set. */
+const MAX_FIRES = 4;
+
+const GOAL_NEWS: Record<RaidGoal, (name: string) => string> = {
+  assault: (n) => `${n} smell blood: they're storming in!`,
+  loot: (n) => `${n} can't break your defences. They're turning to loot whatever lies outside your walls.`,
+  burn: (n) => `${n} are setting fire to your fields and outbuildings!`,
+  siege: (n) => `${n} have dug in out of reach to wait you out. Anyone who shows themselves will be shot.`,
+};
+
+function standing(w: World, faction: number): number {
+  let n = 0;
+  for (const id of w.kinds.pawn) {
+    const p = w.get<Pawn>(id)!;
+    if (p.faction === faction && !p.downed && !p.prisoner) n++;
+  }
+  return n;
+}
+
+/** Things worth burning: the colony's crops, and its buildings out in the open. */
+function burnTargets(w: World, target: number): number[] {
+  const out: number[] = [];
+  for (const z of w.zones.values()) {
+    if (z.faction !== target || z.kind !== 'grow') continue;
+    for (const c of z.cells) if (w.map.plantAt[c] && !w.map.fire[c]) out.push(c);
+  }
+  for (const id of w.kinds.building) {
+    const b = w.get<Building>(id)!;
+    const c = w.cellOf(b);
+    if (b.faction === target && !w.map.roomAt[c] && !w.map.fire[c] && fuelAt(w, c) === 'building') out.push(c);
+  }
+  return out;
+}
+
+function lootLeft(w: World, faction: number, target: number): boolean {
+  const any = [...w.kinds.pawn].map((id) => w.get<Pawn>(id)!).find((p) => p.faction === faction && !p.downed);
+  return !!any && !!lootFor(w, any, target);
+}
+
+function setGoal(w: World, f: Faction, goal: RaidGoal): void {
+  const raid = f.raid!;
+  if ((raid.goal ?? 'assault') === goal) return;
+  raid.goal = goal;
+  raid.goalSince = w.tick;
+  raid.foes = standing(w, raid.target);
+  w.dirty.factions.add(f.id);
+  w.message(raid.target, GOAL_NEWS[goal](f.name), 'bad');
+  // Everyone drops what they were doing and acts on the new plan.
+  for (const p of pawnsOf(w, f.id)) if (!p.downed && p.job?.type !== 'flee') endJob(w, p);
+}
+
+/** If the fight isn't going their way, try something else; if it's going too well, press on. */
+function fallback(w: World, f: Faction, raiders: number): void {
+  const raid = f.raid!;
+  if (lootLeft(w, f.id, raid.target)) setGoal(w, f, 'loot');
+  else if ((raid.fires ?? 0) < MAX_FIRES && burnTargets(w, raid.target).length) setGoal(w, f, 'burn');
+  else if (raiders >= 2) setGoal(w, f, 'siege');
+  else breakRaid(w, f, `${f.name} have had enough and are leaving.`);
+}
+
+/**
+ * Every few seconds each raid takes stock: how many are still standing on each side, and who's
+ * been getting the worse of the exchange lately. Defenders dug in behind good cover make an
+ * assault expensive, so the raid turns to easier pickings; defenders who crumble invite a storm.
+ */
+export function reviewRaids(w: World): void {
+  if (w.tick % REVIEW_TICKS !== 0) return;
+  for (const f of w.factions.values()) {
+    const raid = f.raid;
+    if (!raid || raid.fled) continue;
+    const raiders = standing(w, f.id);
+    if (!raiders) continue;
+    const defenders = standing(w, raid.target);
+    const dealt = raid.dealt ?? 0;
+    const taken = raid.taken ?? 0;
+    // Recent blows count most.
+    raid.dealt = dealt * 0.97;
+    raid.taken = taken * 0.97;
+    const since = w.tick - (raid.goalSince ?? raid.until - Math.round(TICKS_PER_DAY * 1.2));
+    const losing = taken > dealt * 1.6 + 0.35;
+    const winning = defenders === 0 || dealt > taken * 1.5 + 0.35;
+    const goal = raid.goal ?? 'assault';
+    if (goal !== 'assault' && winning && raiders >= Math.max(1, defenders)) {
+      setGoal(w, f, 'assault');
+      continue;
+    }
+    switch (goal) {
+      case 'assault': {
+        // Bleeding for nothing, unable to land a blow on people holed up, or hours gone without
+        // downing anyone: change plan.
+        raid.foes ??= defenders;
+        const stalled = since > ASSAULT_PATIENCE && defenders >= raid.foes;
+        if ((since > 1500 && losing) || (since > 4000 && dealt < 0.05 && defenders > 0) || stalled) fallback(w, f, raiders);
+        break;
+      }
+      case 'loot':
+        if (since > 5000 || !lootLeft(w, f.id, raid.target)) {
+          if ((raid.fires ?? 0) < MAX_FIRES && burnTargets(w, raid.target).length) setGoal(w, f, 'burn');
+          else if (raiders >= 2 && !losing) setGoal(w, f, 'siege');
+          else breakRaid(w, f, `${f.name} are making off with what they could grab.`);
+        }
+        break;
+      case 'burn':
+        if (since > 3000 || (raid.fires ?? 0) >= MAX_FIRES || !burnTargets(w, raid.target).length) {
+          if (raiders >= 2 && !losing) setGoal(w, f, 'siege');
+          else breakRaid(w, f, `${f.name} are leaving your colony to burn.`);
+        }
+        break;
+      case 'siege':
+        if (since > 9000 || losing) breakRaid(w, f, `${f.name} have given up the siege.`);
+        break;
+    }
+  }
+}
+
+/** Grab something from the colony's stockpiles and make off with it; fight only if cornered. */
+function lootThink(w: World, p: Pawn, raid: RaidState): Job {
+  if (p.carrying) return fleeJob(w, p);
+  const t = hostileInReach(w, p);
+  if (t && w.dist(w.cellOf(p), w.cellOf(t)) <= 4) return { type: 'attack', stage: 0, target: t.id, forced: false, chase: false, next: 0, until: w.tick + 200 };
+  const loot = lootFor(w, p, raid.target);
+  if (loot) {
+    w.reserve(rk.e(loot.id), p.id);
+    return fleeJob(w, p, loot.id);
+  }
+  return siegeThink(w, p, raid);
+}
+
+/** Torch the nearest crop or outbuilding; shoot back if fired on. */
+function burnThink(w: World, p: Pawn, raid: RaidState): Job {
+  const t = hostileInReach(w, p);
+  if (t) return { type: 'attack', stage: 0, target: t.id, forced: false, chase: false, next: 0, until: w.tick + 300 };
+  if ((raid.fires ?? 0) >= MAX_FIRES) return siegeThink(w, p, raid);
+  const here = w.cellOf(p);
+  let best = -1;
+  let bestD = Infinity;
+  for (const c of burnTargets(w, raid.target)) {
+    const d = w.dist(here, c);
+    if (d < bestD && !w.reservedByOther(rk.c(c), p.id) && maybeReachable(w, here, c, true)) {
+      bestD = d;
+      best = c;
+    }
+  }
+  if (best < 0) return siegeThink(w, p, raid);
+  w.reserve(rk.c(best), p.id);
+  return { type: 'ignite', stage: 0, cell: best };
+}
+
+/** A raider set a fire. */
+export function raiderSetFire(w: World, p: Pawn, cell: number): void {
+  const f = w.factions.get(p.faction);
+  const raid = f?.raid;
+  if (!f || !raid) return;
+  raid.fires = (raid.fires ?? 0) + 1;
+  if (raid.fires === 1) w.message(raid.target, `${p.name} of ${f.name} has started a fire!`, 'bad', cell);
+}
+
+/**
+ * Dig in: a spot out in the open some way from the colony with cover facing it, then shoot
+ * anyone in reach without leaving it.
+ */
+function siegeThink(w: World, p: Pawn, raid: RaidState): Job {
+  const t = hostileInReach(w, p);
+  if (t) return { type: 'attack', stage: 0, target: t.id, forced: false, chase: false, next: 0, until: w.tick + 300 };
+  const f = w.factions.get(raid.target);
+  if (!f) return fleeJob(w, p);
+  const m = w.map;
+  const home = m.idx(f.home.x, f.home.y);
+  const here = w.cellOf(p);
+  // Already dug in?
+  const d0 = cellDistance(w, here, home);
+  if (d0 >= 10 && d0 <= 20 && !m.roomAt[here] && coverAgainst(w, home, here) >= 0.25) return { type: 'hold', stage: 0, until: w.tick + 400 };
+  let best = -1;
+  let bestScore = -Infinity;
+  for (let k = 0; k < 40; k++) {
+    const a = w.rng.next() * Math.PI * 2;
+    const r = 11 + w.rng.int(8);
+    const x = Math.round(f.home.x + Math.cos(a) * r);
+    const y = Math.round(f.home.y + Math.sin(a) * r);
+    if (!m.inBounds(x, y)) continue;
+    const c = m.idx(x, y);
+    if (!w.passable(c, p.faction) || m.roomAt[c] || !maybeReachable(w, here, c, false)) continue;
+    const score = coverAgainst(w, home, c) * 3 - cellDistance(w, here, c) * 0.02;
+    if (score > bestScore) {
+      bestScore = score;
+      best = c;
+    }
+  }
+  if (best < 0) return { type: 'hold', stage: 0, until: w.tick + 300 };
+  return { type: 'goto', stage: 0, dest: best };
 }

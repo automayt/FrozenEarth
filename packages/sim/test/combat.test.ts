@@ -132,7 +132,12 @@ describe('line of sight and cover', () => {
       const w = duelWorld();
       const a = armed(w, 5, 10, 1, 'rifle');
       const b = armed(w, 15, 10, 2, '');
-      if (def) w.spawnBuilding(def, w.map.idx(14, 10), 1);
+      if (def === 'embrasure') {
+        // A slit only shields someone inside: a little room around the target.
+        for (let x = 14; x <= 16; x++) for (let y = 9; y <= 11; y++) if (x !== 15 || y !== 10) w.spawnBuilding(x === 14 && y === 10 ? 'embrasure' : 'stone_wall', w.map.idx(x, y), 1);
+        a.drafted = b.drafted = true;
+        run(w, 250);
+      } else if (def) w.spawnBuilding(def, w.map.idx(14, 10), 1);
       if (tree) w.spawnPlant('oak', w.map.idx(14, 10), 1);
       // Shooting through an embrasure needs the line clear; the others are low or beside the line.
       return lineOfSight(w, w.cellOf(a), w.cellOf(b)) || def === 'sandbags' ? hitChance(w, a, b) : -1;

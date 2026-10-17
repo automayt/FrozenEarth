@@ -57,6 +57,23 @@ function computeAlerts(): Alert[] {
   const sick = pawns.filter((p) => p.conditions.some((c) => CONDITIONS[c.key]?.kind === 'disease'));
   if (sick.length) out.push({ key: 'sick', severity: 'info', title: `${sick.length} sick`, detail: sick.map((p) => p.name.split(' ')[0]).join(', '), focus: at(sick[0]) });
 
+  // Raiders, and what they're up to right now.
+  for (const f of m.factions.values()) {
+    const raid = f.raid;
+    if (!raid || raid.fled || raid.target !== me) continue;
+    const raiders = [...m.entities.values()].filter((e): e is Pawn => e.kind === 'pawn' && e.faction === f.id && !e.downed);
+    if (!raiders.length) continue;
+    const goal = raid.goal ?? 'assault';
+    const what = { assault: 'Attacking', loot: 'Looting your stores', burn: 'Setting fires', siege: 'Besieging you' }[goal];
+    const how = {
+      assault: 'Hold them off from behind cover: embrasures and sandbags.',
+      loot: 'They gave up on your walls. Anything left outside is fair game to them.',
+      burn: 'Firefighters will need cover; or wait them out.',
+      siege: "They're dug in out there. Stay behind cover; they'll give up.",
+    }[goal];
+    out.push({ key: `raid-${f.id}`, severity: 'critical', title: `${f.name}: ${what.toLowerCase()} (${raiders.length})`, detail: how, focus: { x: raiders[0].x, y: raiders[0].y } });
+  }
+
   // Promises to settlements.
   for (const f of m.factions.values()) {
     for (const r of f.settlement?.requests ?? []) {

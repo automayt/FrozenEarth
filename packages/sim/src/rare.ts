@@ -4,7 +4,7 @@ import { FROST_BAND, FROST_COLD, frostDistance } from './frost';
 import { effectsOf, healthTick } from './health';
 import { endJob, exposureSeverity, needsWarmth, warmthJob } from './pawns';
 import { isRaider } from './combat';
-import { prisonerTick } from './raids';
+import { prisonerTick, reviewRaids } from './raids';
 import { settlementsTick } from './settlements';
 import { animalNeeds, wildlifeTick } from './wildlife';
 import { answerUrgentCare } from './work';
@@ -26,6 +26,7 @@ export function rareTick(w: World): void {
   plantsTick(w);
   freezeWater(w);
   settlementsTick(w);
+  reviewRaids(w);
   wildlifeTick(w);
   rotTick(w);
   conditionsTick(w);

@@ -8,8 +8,10 @@ import { damageBuilding, repairBuilding } from './siege';
 import type { Building, Carried, Construct, Item, Job, Pawn, Plant } from './types';
 import { DESIG } from './types';
 import { caughtStealing, intruderNear } from './settlements';
+import { raiderSetFire } from './raids';
 import { canStealFrom, noticeTheft, theftPickupNoise, thiefCheck } from './stealth';
-import { weaponFor } from './combat';
+import { coverSpot, seeksCover, weaponFor } from './combat';
+import { startFire } from './fire';
 import { controlTick } from './control';
 import type { World } from './world';
 
@@ -51,6 +53,13 @@ export function runJob(w: World, p: Pawn): JobResult {
       return wear(w, p, j);
     case 'attack':
       return attack(w, p, j);
+    case 'ignite': {
+      const r = goTo(w, p, j.cell, true);
+      if (r === 'moving') return 'continue';
+      if (r === 'fail') return 'fail';
+      if (startFire(w, j.cell)) raiderSetFire(w, p, j.cell);
+      return 'done';
+    }
     case 'control':
       return controlTick(w, p, j);
     case 'goto': {
@@ -142,6 +151,13 @@ function attack(w: World, p: Pawn, j: J<'attack'>): JobResult {
   const here = w.cellOf(p);
   const there = w.cellOf(t);
   if (inReach(w, weaponFor(p), here, there)) {
+    // AI fighters get behind something before they open up.
+    if (j.spot === undefined && seeksCover(p, t)) j.spot = coverSpot(w, p, there) ?? -1;
+    if (j.spot !== undefined && j.spot >= 0 && j.spot !== here) {
+      const r = goTo(w, p, j.spot, false);
+      if (r === 'moving') return 'continue';
+      j.spot = -1;
+    }
     if (p.path) {
       p.path = null;
       w.markDirty(p);
@@ -157,6 +173,7 @@ function attack(w: World, p: Pawn, j: J<'attack'>): JobResult {
     return 'continue';
   }
   j.stage = 0;
+  j.spot = undefined;
   if (!j.chase) return 'done';
   if (chase(w, p, there)) return 'continue';
   w.markUnreachable(p.faction, there);
@@ -211,6 +228,9 @@ function flee(w: World, p: Pawn, j: J<'flee'>): JobResult {
 }
 
 /** Smash the wall or door in the way, or (sappers) dig through the rock. */
+/** How hard raiders without proper tools hit walls and doors, relative to sappers. */
+const IMPROVISED_BREACH = 0.3;
+
 function bash(w: World, p: Pawn, j: J<'bash'>): JobResult {
   const m = w.map;
   const b = m.buildingAt[j.cell] ? w.get<Building>(m.buildingAt[j.cell]) : undefined;
@@ -231,7 +251,9 @@ function bash(w: World, p: Pawn, j: J<'bash'>): JobResult {
     j.next = w.tick + wd.cooldown;
     // Drawn as a melee swing, whatever they're holding.
     w.dirty.shots.push(p.id, target.id, p.x, p.y, target.x, target.y, 1, wd.melee ? Math.max(0, WEAPON_KEYS.indexOf(p.weapon)) : 0);
-    return damageBuilding(w, target, wd.structDamage * w.rng.range(0.8, 1.2)) ? 'done' : 'continue';
+    // Without picks and hammers it's slow going: sappers come equipped, everyone else improvises.
+    const tools = w.factions.get(p.faction)?.raid?.sapper ? 1 : IMPROVISED_BREACH;
+    return damageBuilding(w, target, wd.structDamage * tools * w.rng.range(0.8, 1.2)) ? 'done' : 'continue';
   }
   j.progress += 0.8 * Math.max(0.1, effectsOf(w, p).work);
   if (j.progress < ROCKS[rock].mineWork) return 'continue';
