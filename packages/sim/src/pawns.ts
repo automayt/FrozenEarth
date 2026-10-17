@@ -7,6 +7,7 @@ import { hostileInReach, isRaider } from './combat';
 import { fleeJob, raiderThink } from './raids';
 import { settlerThink } from './settlements';
 import { animalThink, speciesOf } from './wildlife';
+import { SNEAK_SPEED } from './stealth';
 import type { Building, Item, Job, Pawn } from './types';
 import { NEIGHBORS8, rk, type World } from './world';
 
@@ -23,7 +24,7 @@ export function tickPawn(w: World, p: Pawn): void {
 
 /** Walk speed multiplier. */
 export function pawnSpeed(w: World, p: Pawn): number {
-  let s = Math.max(0.15, effectsOf(w, p).move) * (speciesOf(p)?.speed ?? 1);
+  let s = Math.max(0.15, effectsOf(w, p).move) * (speciesOf(p)?.speed ?? 1) * (p.sneaking ? SNEAK_SPEED : 1);
   if (p.needs.rest < 0.1) s *= 0.8;
   return s;
 }
@@ -127,6 +128,11 @@ export function dropWeapon(w: World, p: Pawn): void {
 function think(w: World, p: Pawn): void {
   if (p.prisoner) {
     p.job = prisonerThink(w, p);
+    w.markDirty(p);
+    return;
+  }
+  if (p.possessed) {
+    p.job = { type: 'control', stage: 0 };
     w.markDirty(p);
     return;
   }

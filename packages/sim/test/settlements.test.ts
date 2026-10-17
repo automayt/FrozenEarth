@@ -231,8 +231,10 @@ describe('settlements', () => {
     }
     const mark = (w: World, player: number) => w.enqueue(player, { c: 'designate', kind: 'steal', x0: 36, y0: 37, x1: 44, y1: 43 });
 
-    it('at night, while they sleep, a thief walks in through the open gate and gets away with it', () => {
-      const { w, s, player } = heist(23);
+    it('at night, while they sleep, a practised thief sneaks in through the open gate and gets away with it', () => {
+      const { w, s, player, thief } = heist(23);
+      thief.sneaking = true;
+      thief.skills.stealth = { level: 18, xp: 0 };
       runUntil(w, () => residents(w, s.id).every((p) => p.asleep), 3000);
       const steel = stock(w, s.id, 'steel');
       mark(w, player);

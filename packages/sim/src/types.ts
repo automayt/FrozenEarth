@@ -131,6 +131,12 @@ export interface Pawn extends Base {
   aggro?: EntityId;
   /** Animals: the colony whose hunters are after it. */
   hunted?: number;
+  /** Moving quietly: slower, harder to see and hear. */
+  sneaking?: boolean;
+  /** Steered directly by its player (WASD), not by orders. */
+  possessed?: boolean;
+  /** Held steering direction while possessed. */
+  steer?: [dx: number, dy: number];
 }
 
 export type PrisonerState = '' | 'held' | 'leaving';
@@ -161,6 +167,7 @@ export type Job =
   | (JobBase & { type: 'attack'; target: EntityId; forced: boolean; chase: boolean; next: number; until: number })
   /** Drafted: walk to a cell and hold there. */
   | (JobBase & { type: 'goto'; dest: number })
+  | (JobBase & { type: 'control'; /** Goods taken by hand from someone's stockpile, while still at risk. */ stolen?: number; stolenAt?: number })
   /** Drafted: stand ready, shooting hostiles in range. Ends now and then to rescan. */
   | (JobBase & { type: 'hold'; until: number })
   | (JobBase & { type: 'tend'; patient: EntityId; progress: number })
@@ -339,6 +346,10 @@ export type Command =
   | { c: 'deliverRequest'; settlement: number; request: number }
   | { c: 'steal'; pawn: EntityId; item: EntityId }
   | { c: 'hunt'; pawns: EntityId[]; on: boolean }
+  | { c: 'possess'; pawn: EntityId; on: boolean }
+  | { c: 'steer'; pawn: EntityId; dx: number; dy: number }
+  | { c: 'sneak'; pawn: EntityId; on: boolean }
+  | { c: 'interact'; pawn: EntityId }
   | { c: 'draft'; pawns: EntityId[]; on: boolean }
   | { c: 'move'; pawns: EntityId[]; x: number; y: number }
   | { c: 'attack'; pawns: EntityId[]; target: EntityId }

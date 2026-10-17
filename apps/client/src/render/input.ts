@@ -15,6 +15,8 @@ interface Drag {
 
 const PAN_SPEED = 900;
 
+const STEER_KEYS = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright']);
+
 export class Input {
   private keys = new Set<string>();
   private drag: Drag | null = null;
@@ -155,6 +157,27 @@ export class Input {
     const k = e.key.toLowerCase();
     if (down) this.keys.add(k);
     else this.keys.delete(k);
+    // Steering a colonist: WASD walks them, C sneaks, E takes or drops, Esc lets go.
+    const steering = this.r.controlled();
+    if (steering) {
+      if (STEER_KEYS.has(k)) {
+        e.preventDefault();
+        this.sendSteer(steering.id);
+        return;
+      }
+      if (down && k === 'c') {
+        command({ c: 'sneak', pawn: steering.id, on: !steering.sneaking });
+        return;
+      }
+      if (down && k === 'e') {
+        command({ c: 'interact', pawn: steering.id });
+        return;
+      }
+      if (down && k === 'escape') {
+        command({ c: 'possess', pawn: steering.id, on: false });
+        return;
+      }
+    }
     if (!down) return;
     if (k === 'escape') {
       if (store.tool.kind !== 'select') store.set({ tool: { kind: 'select' } });
@@ -175,7 +198,26 @@ export class Input {
     }
   }
 
+  private lastSteer = '';
+
+  /** Tell the sim which way the held keys point; only when it changes. */
+  private sendSteer(pawn: number): void {
+    const k = this.keys;
+    const dx = (k.has('d') || k.has('arrowright') ? 1 : 0) - (k.has('a') || k.has('arrowleft') ? 1 : 0);
+    const dy = (k.has('s') || k.has('arrowdown') ? 1 : 0) - (k.has('w') || k.has('arrowup') ? 1 : 0);
+    const key = `${pawn}:${dx},${dy}`;
+    if (key === this.lastSteer) return;
+    this.lastSteer = key;
+    command({ c: 'steer', pawn, dx, dy });
+  }
+
   update(dtMs: number): void {
+    const steering = this.r.controlled();
+    if (steering) {
+      this.r.follow(steering.id);
+      return;
+    }
+    this.lastSteer = '';
     const step = (PAN_SPEED * dtMs) / 1000;
     const k = this.keys;
     if (k.has('w') || k.has('arrowup')) this.r.world.y += step;

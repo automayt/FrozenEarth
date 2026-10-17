@@ -177,7 +177,7 @@ describe('health', () => {
   });
 
   it('a wiped-out colony gets survivors a day later', () => {
-    const w = createWorld({ seed: 3, width: 80, height: 80 });
+    const w = createWorld({ seed: 3, width: 80, height: 80, settlements: false, wildlife: false });
     const f = addPlayerFaction(w, 'Doomed');
     for (const p of pawns(w, f.id)) w.despawn(p.id);
     const victim = w.spawnPawn(f.id, w.map.idx(f.home.x, f.home.y), 'Last');

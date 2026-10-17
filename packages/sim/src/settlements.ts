@@ -1,6 +1,6 @@
 import { ITEM_CATEGORIES, ITEMS, TERRAINS } from '@fe/defs';
 import { RARE_TICK, TICKS_PER_DAY } from './constants';
-import { cellDistance, hostile, lineOfSight } from './combat';
+import { cellDistance, hostile } from './combat';
 import { frostDistance } from './frost';
 import { pawnName } from './names';
 import { maybeReachable } from './pathfinding';
@@ -272,6 +272,19 @@ export function settlerThink(w: World, p: Pawn): Job {
     if (w.passable(c, p.faction) && m.component(c) === m.component(here)) return { type: 'wander', stage: 0, dest: c, until: w.tick + 200 + w.rng.int(400) };
   }
   return { type: 'hold', stage: 0, until: w.tick + 300 };
+}
+
+/** For an idle settler: is anyone hostile on their land? */
+export function intruderNear(w: World, p: Pawn): boolean {
+  const f = w.factions.get(p.faction);
+  const s = f?.settlement;
+  if (!f || !s || s.state !== 'home') return false;
+  const home = w.map.idx(f.home.x, f.home.y);
+  for (const id of w.kinds.pawn) {
+    const o = w.get<Pawn>(id)!;
+    if (!o.downed && !o.prisoner && hostile(w, p.faction, o.faction) && cellDistance(w, w.cellOf(o), home) <= s.radius + 4) return true;
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------- the settlement over time
@@ -668,47 +681,10 @@ export function deliverRequest(w: World, faction: number, settlement: number, re
 
 // ---------------------------------------------------------------- theft
 
-/** How far a settler can spot a thief, in cells. */
-const SIGHT = 9;
-/** Chance per look (every 15 ticks) that an awake settler with a clear view notices. */
-const SPOT_CHANCE = 0.3;
 const CAUGHT = -45;
 
-/** A thief is safe once this far from where they took the goods. */
-const CLEAR_DIST = 22;
-
-/** Whose stockpiles a colony may steal from: a living settlement's, or another player's. */
-export function canStealFrom(w: World, thief: number, owner: number): boolean {
-  if (!owner || owner === thief) return false;
+/** One of their people caught a colony's colonist stealing from them. */
+export function caughtStealing(w: World, owner: number, thiefFaction: number): void {
   const f = w.factions.get(owner);
-  return !!f && (f.isPlayer || (!!f.settlement && f.settlement.state !== 'fallen'));
-}
-
-/**
- * A colonist carrying goods stolen from `owner` (a settlement or another colony), taken at cell
- * `from`. Anyone of theirs who's awake and can see the thief may raise the alarm.
- */
-export function thiefCheck(w: World, thief: Pawn, owner: number, from: number): 'risk' | 'clear' | 'caught' {
-  const f = w.factions.get(owner);
-  const s = f?.settlement;
-  if (!f || (s && s.state !== 'home')) return 'clear';
-  const here = w.cellOf(thief);
-  if (cellDistance(w, here, from) > CLEAR_DIST) return 'clear';
-  for (const id of w.kinds.pawn) {
-    const o = w.get<Pawn>(id)!;
-    if (o.faction !== owner || o.asleep || o.downed || o.prisoner || o.species) continue;
-    const c = w.cellOf(o);
-    if (cellDistance(w, c, here) > SIGHT || !lineOfSight(w, c, here) || !w.rng.chance(SPOT_CHANCE)) continue;
-    const colony = w.factions.get(thief.faction)?.name ?? 'a colony';
-    w.message(0, `${o.name} of ${f.name} caught ${thief.name} of ${colony} stealing!`, 'bad', here);
-    if (s) shiftGoodwill(w, f, thief.faction, CAUGHT);
-    return 'caught';
-  }
-  return 'risk';
-}
-
-/** A colony finds goods gone from its stockpile, with no idea who took them. */
-export function noticeTheft(w: World, owner: number, def: string, count: number, at: number): void {
-  if (!w.factions.get(owner)?.isPlayer) return;
-  w.message(owner, `${count} ${ITEMS[def]?.label.toLowerCase() ?? def} has gone missing from your stockpile. Nobody saw who took it.`, 'bad', at);
+  if (f?.settlement) shiftGoodwill(w, f, thiefFaction, CAUGHT);
 }

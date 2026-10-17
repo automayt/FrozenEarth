@@ -14,6 +14,7 @@ import { Alerts } from './Alerts';
 import { Minimap } from './Minimap';
 import { SettlePanel } from './SettlePanel';
 import { TradePanel } from './TradePanel';
+import { ControlBar } from './ControlBar';
 
 export function App() {
   const s = useStore();
@@ -35,6 +36,7 @@ export function App() {
           <Minimap />
           <Alerts />
           <Inspect />
+          <ControlBar />
           {s.panel === 'work' && <WorkPanel />}
           {s.panel === 'colonists' && <ColonistsPanel />}
           {s.panel === 'events' && <EventsPanel />}

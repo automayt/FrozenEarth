@@ -6,7 +6,8 @@ import { bedBound, effectsOf, hoursToBleedOut, inBed, needsTending, type Effects
 import type { Building, Construct, Item, Job, Pawn, Plant, Zone } from './types';
 import { DESIG } from './types';
 import { giveHunt } from './wildlife';
-import { canStealFrom, dangerZones } from './settlements';
+import { dangerZones } from './settlements';
+import { canStealFrom } from './stealth';
 import { rk, type World } from './world';
 
 type Giver = (w: World, p: Pawn) => Job | null;

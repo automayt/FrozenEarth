@@ -7,8 +7,10 @@ import { raiderGone, takePrisoner } from './raids';
 import { damageBuilding, repairBuilding } from './siege';
 import type { Building, Carried, Construct, Item, Job, Pawn, Plant } from './types';
 import { DESIG } from './types';
-import { canStealFrom, noticeTheft, thiefCheck } from './settlements';
+import { caughtStealing, intruderNear } from './settlements';
+import { canStealFrom, noticeTheft, theftPickupNoise, thiefCheck } from './stealth';
 import { weaponFor } from './combat';
+import { controlTick } from './control';
 import type { World } from './world';
 
 export type JobResult = 'continue' | 'done' | 'fail';
@@ -49,6 +51,8 @@ export function runJob(w: World, p: Pawn): JobResult {
       return wear(w, p, j);
     case 'attack':
       return attack(w, p, j);
+    case 'control':
+      return controlTick(w, p, j);
     case 'goto': {
       const r = goTo(w, p, j.dest, false);
       return r === 'moving' ? 'continue' : 'done';
@@ -345,6 +349,8 @@ function pickUp(w: World, p: Pawn, it: Item, n: number): void {
 }
 
 function wander(w: World, p: Pawn, j: J<'wander'>): JobResult {
+  // Settlers glance up from their pottering a couple of times a second.
+  if ((w.tick + p.id) % 30 === 0 && intruderNear(w, p)) return 'done';
   if (j.stage === 0) {
     const r = goTo(w, p, j.dest, false);
     if (r === 'fail') return 'done';
@@ -355,6 +361,30 @@ function wander(w: World, p: Pawn, j: J<'wander'>): JobResult {
     return 'continue';
   }
   return w.tick >= j.until ? 'done' : 'continue';
+}
+
+/**
+ * A thief on the way out with someone's goods: footsteps carry, and anyone awake who sees them
+ * raises the alarm. Caught by a colony, the thief drops the goods ('dropped'); a settlement's
+ * guards deal with thieves themselves.
+ */
+export function theftTick(w: World, p: Pawn, j: { stolen?: number; stolenAt?: number }): 'ok' | 'dropped' {
+  if (!j.stolen || !p.carrying || (w.tick + p.id) % 15 !== 0) return 'ok';
+  const victim = j.stolen;
+  const verdict = thiefCheck(w, p, victim, j.stolenAt ?? w.cellOf(p), () => caughtStealing(w, victim, p.faction));
+  if (verdict === 'clear') {
+    noticeTheft(w, victim, p.carrying.def, p.carrying.count, j.stolenAt ?? w.cellOf(p));
+    j.stolen = undefined;
+  } else if (verdict === 'caught') {
+    j.stolen = undefined;
+    if (w.factions.get(victim)?.isPlayer) {
+      w.placeItemNear(p.carrying.def, p.carrying.count, w.cellOf(p), p.carrying.rot);
+      p.carrying = null;
+      w.markDirty(p);
+      return 'dropped';
+    }
+  }
+  return 'ok';
 }
 
 function haul(w: World, p: Pawn, j: J<'haul'>): JobResult {
@@ -371,28 +401,12 @@ function haul(w: World, p: Pawn, j: J<'haul'>): JobResult {
       j.stolen = owner;
       j.stolenAt = cell;
       if (!w.map.itemAt[cell] && w.map.desig[cell] === DESIG.steal) w.setDesig(cell, 0, 0);
+      theftPickupNoise(w, p, owner);
     }
     j.stage = 1;
     return 'continue';
   }
-  // Sneaking off with someone's goods: anyone awake who sees it raises the alarm.
-  if (j.stolen && p.carrying && (w.tick + p.id) % 15 === 0) {
-    const verdict = thiefCheck(w, p, j.stolen, j.stolenAt ?? w.cellOf(p));
-    if (verdict === 'clear') {
-      noticeTheft(w, j.stolen, p.carrying.def, p.carrying.count, j.stolenAt ?? w.cellOf(p));
-      j.stolen = undefined;
-    } else if (verdict === 'caught') {
-      // Caught by a colony: drop the goods and run. (A settlement's guards deal with thieves themselves.)
-      const victim = j.stolen;
-      j.stolen = undefined;
-      if (w.factions.get(victim)?.isPlayer) {
-        w.placeItemNear(p.carrying.def, p.carrying.count, w.cellOf(p), p.carrying.rot);
-        p.carrying = null;
-        w.markDirty(p);
-        return 'done';
-      }
-    }
-  }
+  if (theftTick(w, p, j) === 'dropped') return 'done';
   const r = goTo(w, p, j.dest, false);
   if (r !== 'arrived') return r === 'fail' ? 'fail' : 'continue';
   const c = p.carrying!;

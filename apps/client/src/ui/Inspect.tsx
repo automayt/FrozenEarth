@@ -156,6 +156,11 @@ function PawnInfo({ p }: { p: Pawn }) {
             {p.drafted ? 'Undraft' : 'Draft'}
           </button>
         )}
+        {mine && !p.downed && !p.prisoner && (
+          <button className={p.possessed ? 'on' : ''} onClick={() => command({ c: 'possess', pawn: p.id, on: !p.possessed })} title="Steer them yourself: WASD to walk, C to sneak, E to take or drop, Esc to let go">
+            {p.possessed ? 'Let go' : 'Take control'}
+          </button>
+        )}
         {mine && p.prisoner === 'held' && (
           <button onClick={() => command({ c: 'release', pawn: p.id })} title="Let them walk away">
             Release

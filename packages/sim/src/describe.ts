@@ -15,6 +15,8 @@ export function describeJob(job: Job | null, lookup: (id: number) => Entity | un
   switch (job.type) {
     case 'wander':
       return 'Wandering';
+    case 'control':
+      return job.stolen ? 'Sneaking off with stolen goods (under your control)' : 'Under your direct control';
     case 'haul':
       return job.stolen ? 'Sneaking off with stolen goods' : `Hauling ${name(job.item)}`;
     case 'deliver':

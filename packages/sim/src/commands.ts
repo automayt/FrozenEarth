@@ -10,7 +10,9 @@ import { NEIGHBORS4, rk, unreachableKey, type World } from './world';
 import { resolveChoice } from './choices';
 import { siteProblem } from './setup';
 import { offerTrade } from './trade';
-import { canStealFrom, deliverRequest, settlementTrade } from './settlements';
+import { deliverRequest, settlementTrade } from './settlements';
+import { canStealFrom } from './stealth';
+import { interact, setPossessed } from './control';
 import { markHunt } from './wildlife';
 
 /** Validate and apply one player command. Invalid commands are silently ignored. */
@@ -114,6 +116,31 @@ export function applyCommand(w: World, faction: number, cmd: Command): void {
       w.reserve(rk.c(dest), p.id);
       p.job = { type: 'haul', stage: 0, item: it.id, dest };
       w.markDirty(p);
+      return;
+    }
+    case 'possess': {
+      const p = ownPawns(w, faction, [cmd.pawn])[0];
+      if (p) setPossessed(w, p, !!cmd.on);
+      return;
+    }
+    case 'steer': {
+      const p = ownPawns(w, faction, [cmd.pawn])[0];
+      if (!p?.possessed) return;
+      const dx = Math.sign(Number(cmd.dx) || 0);
+      const dy = Math.sign(Number(cmd.dy) || 0);
+      p.steer = dx || dy ? [dx, dy] : undefined;
+      return;
+    }
+    case 'sneak': {
+      const p = ownPawns(w, faction, [cmd.pawn])[0];
+      if (!p) return;
+      p.sneaking = !!cmd.on;
+      w.markDirty(p);
+      return;
+    }
+    case 'interact': {
+      const p = ownPawns(w, faction, [cmd.pawn])[0];
+      if (p?.possessed) interact(w, p);
       return;
     }
     case 'hunt':

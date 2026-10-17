@@ -1,9 +1,10 @@
 import { Application, BitmapText, Container, Graphics, Sprite, Texture } from 'pixi.js';
 import { ANIMALS, BUILDINGS, maxHp, PLANTS, ROCKS, TERRAINS, WEAPON_KEYS, weaponOf, type TerrainDef } from '@fe/defs';
 import { pawnPosition } from '@fe/protocol';
-import { DESIG, FROST_BAND, MIN_COLONY_GAP, SHOT_FIELDS, TICKS_PER_DAY, TICKS_PER_HOUR, bleedRate, calendar, dispositionOf, frostLevel, frostRadius, hash2, outdoorTempAt, woundTotal, type Construct, type Entity, type Pawn } from '@fe/sim';
+import { DESIG, FROST_BAND, MIN_COLONY_GAP, SHOT_FIELDS, TICKS_PER_DAY, TICKS_PER_HOUR, bleedRate, calendar, dispositionOf, NOISE, stealthMult, frostLevel, frostRadius, hash2, outdoorTempAt, woundTotal, type Construct, type Entity, type Pawn } from '@fe/sim';
 import { ease, Particles, Tweens, Weather, type Precip } from './fx';
 import { sound } from '../audio';
+import { fog } from './fog';
 import { store } from '../store';
 import { TextureBank } from './textures';
 import { Input } from './input';
@@ -80,6 +81,8 @@ export class GameRenderer {
     items: new Container(),
     buildings: new Container(),
     plants: new Container(),
+    /** Shade over building interiors none of your people can see into. */
+    fog: new Container(),
     /** Frost over the frozen zone: whitens ground, buildings and trees alike. */
     frost: new Container(),
     pawns: new Container(),
@@ -275,12 +278,16 @@ export class GameRenderer {
     if (!this.built && m.entities.size) this.built = true;
 
     const tick = store.estTick();
+    if (fog.update(now)) this.drawFog();
+    const me = store.me?.faction;
     for (const id of this.pawnIds) {
       const e = m.entities.get(id);
       const v = this.views.get(id);
       if (!e || e.kind !== 'pawn' || !v) continue;
       const pos = pawnPosition(e, tick, m.w);
       v.root.position.set((pos.x + 0.5) * TILE, (pos.y + 0.5) * TILE);
+      // Others indoors, out of your people's sight, aren't shown.
+      v.root.visible = e.faction === me || !fog.hidden(Math.round(pos.y) * m.w + Math.round(pos.x));
       this.animatePawn(e, v, now);
     }
     this.cullChunks();
@@ -939,6 +946,8 @@ export class GameRenderer {
     g.clear();
     const m = store.mirror;
     this.drawSettlements(g);
+    const steering = this.controlled();
+    if (steering) this.drawWatchers(g, steering);
     if (store.me?.faction === 0) {
       this.drawSettleUi(g);
       return;
@@ -1149,6 +1158,86 @@ export class GameRenderer {
   }
 
   /** Redraw the frost overlay when the line has moved a little, plus a faint ring along its edge. */
+  private fogCanvas = document.createElement('canvas');
+  private fogTex: Texture | null = null;
+
+  /** Darken building interiors none of your people can see into. */
+  private drawFog(): void {
+    const m = store.mirror;
+    const c = this.fogCanvas;
+    if (c.width !== m.w || c.height !== m.h) {
+      c.width = m.w;
+      c.height = m.h;
+      this.fogTex?.destroy(true);
+      this.fogTex = null;
+      this.layers.fog.removeChildren();
+    }
+    const ctx = c.getContext('2d')!;
+    const img = ctx.createImageData(m.w, m.h);
+    const d = img.data;
+    for (let i = 0; i < m.w * m.h; i++) {
+      if (!fog.hidden(i)) continue;
+      d[i * 4] = 8;
+      d[i * 4 + 1] = 12;
+      d[i * 4 + 2] = 20;
+      d[i * 4 + 3] = 120;
+    }
+    ctx.putImageData(img, 0, 0);
+    if (!this.fogTex) {
+      this.fogTex = Texture.from(c);
+      this.fogTex.source.scaleMode = 'nearest';
+      const s = new Sprite(this.fogTex);
+      s.scale.set(TILE);
+      this.layers.fog.addChild(s);
+    } else {
+      this.fogTex.source.update();
+    }
+  }
+
+  /** The colonist you're steering, if any. */
+  controlled(): Pawn | undefined {
+    const me = store.me?.faction;
+    for (const e of store.mirror.entities.values()) if (e.kind === 'pawn' && e.faction === me && e.possessed) return e;
+    return undefined;
+  }
+
+  /** Keep the camera on the colonist you're steering. */
+  follow(id: number): void {
+    const v = this.views.get(id);
+    if (!v) return;
+    const s = this.world.scale.x;
+    this.world.x = this.app.screen.width / 2 - v.root.x * s;
+    this.world.y = this.app.screen.height / 2 - v.root.y * s;
+  }
+
+  /**
+   * While steering: how far each person nearby can see you (red if they can right now) and, for
+   * sleepers, how close a clatter would have to be to wake them.
+   */
+  private drawWatchers(g: Graphics, me: Pawn): void {
+    const m = store.mirror;
+    const sw = 1.5 / this.world.scale.x;
+    const cell = me.y * m.w + me.x;
+    const sight = fog.sightAt(cell) * (me.sneaking ? 0.4 + 0.6 * stealthMult(me) : 1);
+    const hearing = NOISE.pickup * (me.sneaking ? 0.6 : 1) * (1 - Math.min(0.6, (me.skills.stealth?.level ?? 0) * 0.03));
+    for (const o of m.entities.values()) {
+      if (o.kind !== 'pawn' || o.faction === me.faction || o.species || o.downed || o.prisoner) continue;
+      if (Math.abs(o.x - me.x) > 30 || Math.abs(o.y - me.y) > 30) continue;
+      if (fog.hidden(o.y * m.w + o.x)) continue;
+      const v = this.views.get(o.id);
+      const x = v ? v.root.x : (o.x + 0.5) * TILE;
+      const y = v ? v.root.y : (o.y + 0.5) * TILE;
+      if (o.asleep) {
+        g.circle(x, y, hearing * TILE).stroke({ width: sw, color: 0x8ac8ff, alpha: 0.45 });
+        continue;
+      }
+      const seen = fog.sees(o, me);
+      g.circle(x, y, sight * TILE)
+        .fill({ color: seen ? 0xff4030 : 0xf0b43c, alpha: seen ? 0.1 : 0.04 })
+        .stroke({ width: sw, color: seen ? 0xff4030 : 0xf0b43c, alpha: 0.6 });
+    }
+  }
+
   private drawFrost(tick: number): void {
     const m = store.mirror;
     const r = frostRadius(tick, m.frost);

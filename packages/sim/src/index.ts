@@ -22,5 +22,6 @@ export { describeJob } from './describe';
 export * from './time';
 export * from './frost';
 export { spawnAnimal, wildFaction, speciesOf, populateWildlife } from './wildlife';
-export { weaponFor } from './combat';
+export { weaponFor, coverAgainst } from './combat';
+export { SIGHT_DAY, SIGHT_NIGHT, NOISE, sightRange, stealthMult, canStealFrom } from './stealth';
 export { placeSettlements, foundSettlement, dispositionOf, goodwillOf, priceFactor, lineValue, traderAt, requestText, askForHelp, storedOf, HOSTILE_AT, FRIENDLY_AT, TRADE_RANGE, type Disposition } from './settlements';

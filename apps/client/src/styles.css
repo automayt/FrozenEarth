@@ -1089,3 +1089,19 @@ button.link {
   border-radius: var(--radius);
   font-size: 12px;
 }
+
+/* ------------------------------------------------------------------ direct control */
+
+.control-bar {
+  position: absolute;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  font-size: 12px;
+  pointer-events: auto;
+  border-color: var(--amber);
+}
