@@ -1188,7 +1188,13 @@ export class GameRenderer {
       label.tint = color;
       label.scale.set(scale);
       label.position.set((f.home.x + 0.5) * TILE, (f.home.y - 4.3) * TILE);
-      if (s.state === 'home') g.circle((f.home.x + 0.5) * TILE, (f.home.y + 0.5) * TILE, s.radius * TILE).stroke({ width: sw, color, alpha: 0.4 });
+      if (s.state === 'home') {
+        // A dark under-stroke keeps the coloured ring visible over pale sand, snow and ice.
+        const cx = (f.home.x + 0.5) * TILE;
+        const cy = (f.home.y + 0.5) * TILE;
+        g.circle(cx, cy, s.radius * TILE).stroke({ width: sw * 2.6, color: 0x000000, alpha: 0.22 });
+        g.circle(cx, cy, s.radius * TILE).stroke({ width: sw, color, alpha: 0.7 });
+      }
     }
     for (const [id, label] of this.settlementLabels) {
       if (seen.has(id)) continue;
