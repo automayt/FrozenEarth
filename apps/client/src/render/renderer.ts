@@ -7,6 +7,8 @@ import { sound } from '../audio';
 import { fog } from './fog';
 import { store } from '../store';
 import { TextureBank } from './textures';
+import { ChunkedBitmap, MapBitmap } from './bitmap';
+import { FOG_RES, paintFog, paintOverlayCell, PX } from './paint';
 import { Input } from './input';
 
 /** World units per cell. */
@@ -24,12 +26,11 @@ const LABEL_STYLE = { fontFamily: 'IBM Plex Sans', fontSize: 22, fill: 0xffffff,
  * and never freed); sharing the instance means one atlas for all of them.
  */
 const LABEL_TEXT = new TextStyle(LABEL_STYLE);
-/** Pixels per cell in the terrain and overlay canvases. */
-const PX = 8;
 /** Texture pixels skipped per canvas pixel when sampling terrain art (texture repeats every 128/(PX*STEP) cells). */
 const TEX_STEP = 2;
 /** Colour and strength of the night shade at its darkest (light pools are carved out of it). */
 const NIGHT_COLOR = 0x0c1838;
+
 const NIGHT_ALPHA = 0.5;
 
 /** One attack being animated: a projectile flies, then its tracer fades. */
@@ -81,10 +82,13 @@ type WorkFx = 'stone' | 'wood' | 'leaf' | 'build' | 'soil' | 'craft' | 'steam' |
 export class GameRenderer {
   app = new Application();
   world = new Container();
-  private terrainCanvas = document.createElement('canvas');
-  private overlayCanvas = document.createElement('canvas');
-  private terrainTex!: Texture;
-  private overlayTex!: Texture;
+  /** Ground art and the zone/designation overlay, PX pixels a cell, in chunk textures. */
+  private terrainMap: ChunkedBitmap | null = null;
+  private overlayMap: ChunkedBitmap | null = null;
+  /** What each overlay cell was last painted as (see overlayCell()), to skip unchanged cells. */
+  private overlayKeys = new Int32Array(0);
+  /** Faction the overlay was drawn for: your zones are drawn stronger, and only your theft plans show. */
+  private overlayFor = -1;
   private layers = {
     terrain: new Container(),
     overlay: new Container(),
@@ -116,8 +120,8 @@ export class GameRenderer {
   private prevRock = new Uint8Array(0);
   private glide: { fx: number; fy: number; tx: number; ty: number; t0: number } | null = null;
   private lastFrame = performance.now();
-  private frostCanvas = document.createElement('canvas');
-  private frostTex: Texture | null = null;
+  /** Frost over the frozen zone, one pixel a cell. */
+  private frostMap: MapBitmap | null = null;
   /** Radius the frost overlay was last drawn at. */
   private frostDrawn = -1;
   private frostRing = new Graphics();
@@ -267,17 +271,11 @@ export class GameRenderer {
       }
     }
     for (const c of m.changedCells) this.prevRock[c] = m.rock[c];
-    if (m.changedCells.size) {
-      const ctx = this.terrainCanvas.getContext('2d')!;
-      // Neighbours below and right re-bevel when rock next to them changes.
-      const n = m.w * m.h;
-      for (const c of m.changedCells) for (const k of [c, c + 1, c + m.w, c - m.w]) if (k >= 0 && k < n) this.drawTerrainCell(ctx, k);
-      this.terrainTex.source.update();
-    }
-    if (m.zonesChanged || m.changedCells.size) {
-      this.drawOverlay();
+    if (m.changedCells.size) this.drawTerrainCells(m.changedCells);
+    if (m.zonesChanged || this.overlayFor !== (store.me?.faction ?? 0)) {
+      this.drawOverlay(null);
       m.zonesChanged = false;
-    }
+    } else if (m.changedCells.size) this.drawOverlay(m.changedCells);
     m.changedCells.clear();
 
     // Walls join up with their neighbours, so a wall appearing or vanishing redraws the ones around it.
@@ -518,41 +516,38 @@ export class GameRenderer {
     const m = store.mirror;
     this.mapW = m.w;
     this.mapH = m.h;
-    this.terrainCanvas.width = m.w * PX;
-    this.terrainCanvas.height = m.h * PX;
-    this.overlayCanvas.width = m.w * PX;
-    this.overlayCanvas.height = m.h * PX;
-    this.terrainTex?.destroy(true);
-    this.overlayTex?.destroy(true);
-    this.terrainTex = Texture.from(this.terrainCanvas);
-    this.overlayTex = Texture.from(this.overlayCanvas);
-    this.terrainTex.source.scaleMode = this.tex.pixels.size ? 'linear' : 'nearest';
-    this.overlayTex.source.scaleMode = 'nearest';
-    this.layers.terrain.removeChildren();
-    this.layers.overlay.removeChildren();
-    const ts = new Sprite(this.terrainTex);
-    ts.scale.set(TILE / PX);
-    const os = new Sprite(this.overlayTex);
-    os.scale.set(TILE / PX);
-    this.layers.terrain.addChild(ts);
-    this.layers.overlay.addChild(os);
+    this.terrainMap?.destroy();
+    this.overlayMap?.destroy();
+    this.terrainMap = new ChunkedBitmap({ w: m.w, h: m.h, px: PX, tile: TILE, linear: this.tex.pixels.size > 0 });
+    this.overlayMap = new ChunkedBitmap({ w: m.w, h: m.h, px: PX, tile: TILE });
+    this.layers.terrain.addChild(this.terrainMap.root);
+    this.layers.overlay.addChild(this.overlayMap.root);
+    this.overlayKeys = new Int32Array(m.w * m.h).fill(-1);
     m.allCellsChanged = true;
   }
 
   private drawAllTerrain(): void {
-    const m = store.mirror;
-    const img = new ImageData(m.w * PX, m.h * PX);
-    const n = m.w * m.h;
-    for (let c = 0; c < n; c++) this.paintCell(img.data, m.w * PX, c, (c % m.w) * PX, ((c / m.w) | 0) * PX);
-    this.terrainCanvas.getContext('2d')!.putImageData(img, 0, 0);
-    this.terrainTex.source.update();
+    const t = this.terrainMap!;
+    const n = store.mirror.w * store.mirror.h;
+    for (let c = 0; c < n; c++) {
+      const s = t.cell(c);
+      this.paintCell(s.data, s.stride, c, s.ox, s.oy);
+    }
+    t.flush();
   }
 
-  private drawTerrainCell(ctx: CanvasRenderingContext2D, c: number): void {
+  /** Repaint changed cells, and the neighbours whose rock bevel depends on them; upload only their rows. */
+  private drawTerrainCells(cells: Set<number>): void {
     const m = store.mirror;
-    const img = new ImageData(PX, PX);
-    this.paintCell(img.data, PX, c, 0, 0);
-    ctx.putImageData(img, (c % m.w) * PX, ((c / m.w) | 0) * PX);
+    const t = this.terrainMap!;
+    const n = m.w * m.h;
+    const todo = new Set<number>();
+    for (const c of cells) for (const k of [c, c + 1, c + m.w, c - m.w]) if (k >= 0 && k < n) todo.add(k);
+    for (const c of todo) {
+      const s = t.cell(c);
+      this.paintCell(s.data, s.stride, c, s.ox, s.oy);
+    }
+    t.flush();
   }
 
   /** Write one cell's PX x PX pixels into an RGBA buffer of the given stride, at (ox, oy). */
@@ -638,34 +633,33 @@ export class GameRenderer {
     }
   }
 
-  private drawOverlay(): void {
+  /**
+   * Zones and designations, per cell. With `cells`, only those; otherwise every cell is checked.
+   * Cells whose look hasn't changed are skipped, and only touched rows are uploaded.
+   */
+  private drawOverlay(cells: Iterable<number> | null): void {
     const m = store.mirror;
-    const ctx = this.overlayCanvas.getContext('2d')!;
-    ctx.clearRect(0, 0, this.overlayCanvas.width, this.overlayCanvas.height);
-    for (const z of m.zones.values()) {
-      const f = m.factions.get(z.faction);
-      const color = z.kind === 'grow' ? 0x7ac04a : (f?.color ?? 0xffffff);
-      ctx.fillStyle = rgba(color, z.faction === store.me?.faction ? 0.22 : 0.12);
-      for (const c of z.cells) ctx.fillRect((c % m.w) * PX, ((c / m.w) | 0) * PX, PX, PX);
-    }
-    const n = m.w * m.h;
-    for (let c = 0; c < n; c++) {
-      const d = m.desig[c];
-      if (!d) continue;
-      // Someone else's plan to rob you stays their secret.
-      if (d === DESIG.steal && m.desigFaction[c] !== store.me?.faction) continue;
-      const x = (c % m.w) * PX;
-      const y = ((c / m.w) | 0) * PX;
-      ctx.fillStyle = d === DESIG.mine ? 'rgba(240,180,60,0.85)' : d === DESIG.cut ? 'rgba(230,80,60,0.85)' : d === DESIG.steal ? 'rgba(190,110,240,0.9)' : 'rgba(120,220,90,0.85)';
-      // Corner brackets so the cell content stays visible.
-      const t = PX / 4;
-      const l = PX / 2;
-      ctx.fillRect(x, y, l, t);
-      ctx.fillRect(x, y, t, l);
-      ctx.fillRect(x + PX - l, y + PX - t, l, t);
-      ctx.fillRect(x + PX - t, y + PX - l, t, l);
-    }
-    this.overlayTex.source.update();
+    const o = this.overlayMap!;
+    this.overlayFor = store.me?.faction ?? 0;
+    if (cells) for (const c of cells) this.overlayCell(o, c);
+    else for (let c = 0, n = m.w * m.h; c < n; c++) this.overlayCell(o, c);
+    o.flush();
+  }
+
+  private overlayCell(o: ChunkedBitmap, c: number): void {
+    const m = store.mirror;
+    const me = this.overlayFor;
+    const z = m.zoneAt[c] ? m.zones.get(m.zoneAt[c]) : undefined;
+    const mine = z?.faction === me;
+    const zoneColor = z ? (z.kind === 'grow' ? 0x7ac04a : (m.factions.get(z.faction)?.color ?? 0xffffff)) : 0;
+    let d = m.desig[c];
+    // Someone else's plan to rob you stays their secret.
+    if (d === DESIG.steal && m.desigFaction[c] !== me) d = 0;
+    const key = (z ? ((zoneColor << 1) | (mine ? 1 : 0)) + 1 : 0) * 8 + Math.min(7, d);
+    if (this.overlayKeys[c] === key) return;
+    this.overlayKeys[c] = key;
+    const s = o.cell(c);
+    paintOverlayCell(s.data, s.stride, s.ox, s.oy, z ? zoneColor : -1, mine ? 0.22 : 0.12, d);
   }
 
   // ---------------------------------------------------------------- entities
@@ -1319,41 +1313,49 @@ export class GameRenderer {
     }
   }
 
-  /** Redraw the frost overlay when the line has moved a little, plus a faint ring along its edge. */
-  private fogCanvas = document.createElement('canvas');
-  private fogTex: Texture | null = null;
+  /** Shade over building interiors none of your people can see, FOG_RES texels a cell. */
+  private fogMap: MapBitmap | null = null;
+  /** Per cell as last drawn: 0 not indoors, 1 indoors and seen, 2 indoors and hidden. */
+  private fogState = new Uint8Array(0);
 
-  /** Darken building interiors none of your people can see into. */
+  /**
+   * Darken building interiors none of your people can see into, with soft edges: each texel
+   * averages the hidden state of the indoor cells around its corner, and linear filtering blends
+   * the rest. Only the area around cells whose state changed is repainted and uploaded.
+   */
   private drawFog(): void {
     const m = store.mirror;
-    const c = this.fogCanvas;
-    if (c.width !== m.w || c.height !== m.h) {
-      c.width = m.w;
-      c.height = m.h;
-      this.fogTex?.destroy(true);
-      this.fogTex = null;
-      this.layers.fog.removeChildren();
+    const n = m.w * m.h;
+    if (!this.fogMap || this.fogMap.width !== m.w * FOG_RES || this.fogMap.height !== m.h * FOG_RES) {
+      this.fogMap?.destroy();
+      this.fogMap = new MapBitmap(m.w * FOG_RES, m.h * FOG_RES, TILE / FOG_RES, { linear: true });
+      this.layers.fog.addChild(this.fogMap.sprite);
+      this.fogState = new Uint8Array(n);
     }
-    const ctx = c.getContext('2d')!;
-    const img = ctx.createImageData(m.w, m.h);
-    const d = img.data;
-    for (let i = 0; i < m.w * m.h; i++) {
-      if (!fog.hidden(i)) continue;
-      d[i * 4] = 8;
-      d[i * 4 + 1] = 12;
-      d[i * 4 + 2] = 20;
-      d[i * 4 + 3] = 120;
+    const st = this.fogState;
+    let x0 = m.w;
+    let y0 = m.h;
+    let x1 = -1;
+    let y1 = -1;
+    for (let c = 0; c < n; c++) {
+      const v = m.roomAt[c] === 0 ? 0 : fog.visible[c] ? 1 : 2;
+      if (v === st[c]) continue;
+      st[c] = v;
+      const x = c % m.w;
+      const y = (c / m.w) | 0;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
     }
-    ctx.putImageData(img, 0, 0);
-    if (!this.fogTex) {
-      this.fogTex = Texture.from(c);
-      this.fogTex.source.scaleMode = 'nearest';
-      const s = new Sprite(this.fogTex);
-      s.scale.set(TILE);
-      this.layers.fog.addChild(s);
-    } else {
-      this.fogTex.source.update();
-    }
+    if (x1 < 0) return;
+    // Texels blend with the neighbouring cells, so repaint one cell beyond the change.
+    x0 = Math.max(0, x0 - 1);
+    y0 = Math.max(0, y0 - 1);
+    x1 = Math.min(m.w - 1, x1 + 1);
+    y1 = Math.min(m.h - 1, y1 + 1);
+    paintFog(this.fogMap.data, st, m.w, m.h, x0, y0, x1, y1);
+    this.fogMap.update(y0 * FOG_RES, (y1 + 1) * FOG_RES);
   }
 
   /** The colonist you're steering, if any. */
@@ -1408,14 +1410,13 @@ export class GameRenderer {
     const r = frostRadius(tick, m.frost);
     if (Math.abs(r - this.frostDrawn) > 0.001) {
       this.frostDrawn = r;
-      const c = this.frostCanvas;
-      if (c.width !== m.w || c.height !== m.h) {
-        c.width = m.w;
-        c.height = m.h;
+      if (!this.frostMap || this.frostMap.width !== m.w || this.frostMap.height !== m.h) {
+        this.frostMap?.destroy();
+        this.frostMap = new MapBitmap(m.w, m.h, TILE, { linear: true });
+        this.layers.frost.addChildAt(this.frostMap.sprite, 0);
       }
-      const ctx = c.getContext('2d')!;
-      const img = ctx.createImageData(m.w, m.h);
-      const d = img.data;
+      const d = this.frostMap.data;
+      d.fill(0);
       for (let y = 0; y < m.h; y++) {
         for (let x = 0; x < m.w; x++) {
           const f = frostLevel(x, y, m.w, m.h, r);
@@ -1423,21 +1424,14 @@ export class GameRenderer {
           const o = (y * m.w + x) * 4;
           // A little per-cell sparkle so it reads as snow, not paint.
           const k = 0.92 + hash2(x, y, 17) * 0.08;
-          d[o] = 232 * k;
-          d[o + 1] = 242 * k;
-          d[o + 2] = 255;
-          d[o + 3] = 175 * f;
+          const a = (175 * f) / 255;
+          d[o] = 232 * k * a;
+          d[o + 1] = 242 * k * a;
+          d[o + 2] = 255 * a;
+          d[o + 3] = 255 * a;
         }
       }
-      ctx.putImageData(img, 0, 0);
-      if (!this.frostTex) {
-        this.frostTex = Texture.from(c);
-        const s = new Sprite(this.frostTex);
-        s.scale.set(TILE);
-        this.layers.frost.addChildAt(s, 0);
-      } else {
-        this.frostTex.source.update();
-      }
+      this.frostMap.update();
       const ring = this.frostRing;
       ring.clear();
       if (r < 1.42) {
@@ -1508,8 +1502,7 @@ export class GameRenderer {
     if (active.has('cold_wind') || active.has('cold_snap') || active.has('early_frost')) tintAll(0xa8d8ff, 0.1);
   }
 
-  private nightCanvas = document.createElement('canvas');
-  private nightTex: Texture | null = null;
+  private nightMap: MapBitmap | null = null;
   private nightSprite: Sprite | null = null;
   private lightLevel = new Float32Array(0);
   private lightVersion = -1;
@@ -1519,17 +1512,11 @@ export class GameRenderer {
     const m = store.mirror;
     this.lightVersion = fog.version;
     const n = m.w * m.h;
-    const c = this.nightCanvas;
-    if (c.width !== m.w || c.height !== m.h || !this.nightTex) {
-      c.width = m.w;
-      c.height = m.h;
-      this.nightTex?.destroy(true);
-      this.layers.night.removeChildren();
-      this.nightTex = Texture.from(c);
+    if (!this.nightMap || this.nightMap.width !== m.w || this.nightMap.height !== m.h) {
+      this.nightMap?.destroy();
       // Linear filtering turns the per-cell map into soft pools.
-      this.nightTex.source.scaleMode = 'linear';
-      this.nightSprite = new Sprite(this.nightTex);
-      this.nightSprite.scale.set(TILE);
+      this.nightMap = new MapBitmap(m.w, m.h, TILE, { linear: true });
+      this.nightSprite = this.nightMap.sprite;
       this.layers.night.addChild(this.nightSprite);
     }
     if (this.lightLevel.length !== n) this.lightLevel = new Float32Array(n);
@@ -1560,21 +1547,19 @@ export class GameRenderer {
       }
     }
     for (const f of m.fireCells) stamp(f % m.w, (f / m.w) | 0, 4 + m.fire[f], 1);
-    const ctx = c.getContext('2d')!;
-    const img = ctx.createImageData(m.w, m.h);
-    const d = img.data;
+    const d = this.nightMap.data;
     const r = (NIGHT_COLOR >> 16) & 255;
     const g = (NIGHT_COLOR >> 8) & 255;
     const b = NIGHT_COLOR & 255;
     for (let i = 0; i < n; i++) {
       const o = i * 4;
-      d[o] = r;
-      d[o + 1] = g;
-      d[o + 2] = b;
-      d[o + 3] = 255 * (1 - light[i]);
+      const a = 1 - light[i];
+      d[o] = r * a;
+      d[o + 1] = g * a;
+      d[o + 2] = b * a;
+      d[o + 3] = 255 * a;
     }
-    ctx.putImageData(img, 0, 0);
-    this.nightTex.source.update();
+    this.nightMap.update();
   }
 }
 
@@ -1596,8 +1581,4 @@ function isWall(e: Entity | undefined): boolean {
   if (!e || e.kind !== 'building') return false;
   const d = BUILDINGS[e.def];
   return !!d?.wall && !d.door;
-}
-
-function rgba(color: number, a: number): string {
-  return `rgba(${(color >> 16) & 255},${(color >> 8) & 255},${color & 255},${a})`;
 }
