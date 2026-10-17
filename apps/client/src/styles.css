@@ -1795,10 +1795,17 @@ button.primary:disabled {
   opacity: 1;
 }
 
+.temp-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .frost-chip {
-  padding: 2px 9px;
+  padding: 0 7px;
   border-radius: 99px;
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 16px;
   border-color: rgba(138, 200, 255, 0.45);
   color: var(--ice);
   white-space: nowrap;
@@ -2034,5 +2041,50 @@ button.danger {
 @media (max-height: 760px) {
   .hud:has(.tool-hint) .feed {
     bottom: 96px;
+  }
+}
+
+/* Steering on a smaller window: the control bar fits the gap between the tips and the inspect panel. */
+.control-bar button {
+  white-space: nowrap;
+}
+
+@media (max-width: 1100px) {
+  .control-bar {
+    left: 286px;
+    right: 8px;
+    transform: none;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 4px 8px;
+  }
+
+  .hud:has(> .inspect) .control-bar {
+    right: 286px;
+  }
+
+  .control-bar .keys-inline,
+  .control-bar kbd {
+    display: none;
+  }
+
+  /* The camera follows the steered colonist; the minimap would sit under the bar. */
+  .hud:has(> .control-bar) .minimap {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .control-bar {
+    left: 8px;
+    top: 112px;
+  }
+
+  .hud:has(> .inspect) .control-bar {
+    right: 8px;
+  }
+
+  .hud:has(> .control-bar) .feed {
+    top: 176px;
   }
 }

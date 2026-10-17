@@ -11,6 +11,8 @@ export interface Alert {
   detail: string;
   /** Where to jump when clicked. */
   focus?: { x: number; y: number; select?: number };
+  /** Also open the Trade panel on this partner when clicked. */
+  trade?: number;
 }
 
 const ORDER: Record<Severity, number> = { critical: 0, warning: 1, info: 2 };
@@ -83,8 +85,9 @@ export function computeAlerts(): Alert[] {
         key: `request-${r.id}`,
         severity: days < 1 ? 'warning' : 'info',
         title: `${f.name} wants ${requestText(r.item, r.count)}`,
-        detail: `${days < 1 ? `Under ${Math.max(1, Math.round(days * 24))} hours` : `${Math.ceil(days)} days`} left. Send a colonist and deliver from the Trade panel.`,
+        detail: `${days < 1 ? `Under ${Math.max(1, Math.round(days * 24))} hours` : `${Math.ceil(days)} days`} left. Send a colonist and deliver from the Trade panel (click).`,
         focus: { x: f.home.x, y: f.home.y },
+        trade: f.id,
       });
     }
   }
@@ -145,7 +148,10 @@ export function Alerts() {
           <button
             className="alert-body"
             title={a.focus ? `${a.detail} Click to show.` : a.detail}
-            onClick={() => a.focus && store.set({ focus: { x: a.focus.x, y: a.focus.y }, selected: a.focus.select ?? store.selected })}
+            onClick={() => {
+              if (a.focus) store.set({ focus: { x: a.focus.x, y: a.focus.y }, selected: a.focus.select ?? store.selected });
+              if (a.trade) store.openTrade(a.trade);
+            }}
           >
             <span>{a.title}</span>
             <small className="alert-detail">{a.detail}</small>

@@ -30,6 +30,12 @@ function steps(): Step[] {
     { done: buildings.some((b) => BUILDINGS[b.def]?.recipes?.some((r) => r.startsWith('cook')) && b.bills.length > 0), title: 'Start cooking', how: 'Production → Campfire, then select it and add a "Cook simple meal" bill.' },
     { done: buildings.some((b) => (BUILDINGS[b.def]?.heat ?? 0) > 0 && inRoom(b) && b.def !== 'campfire'), title: 'Heat a room', how: 'Temperature → Wood heater inside an enclosed room. Winter nights kill.' },
     { done: pawns.some((p) => p.apparel.includes('parka')) || buildings.some((b) => b.def === 'tailor_bench'), title: 'Get parkas', how: "Production → Tailor's bench, then a \"Sew a parka\" bill. Parkas let colonists work outside in winter." },
+    {
+      done: [...m.factions.values()].some((f) => f.settlement?.met.includes(me)),
+      title: 'Meet a neighbour',
+      how: 'Towns are the diamonds on the minimap: green ones trade gladly, red ones attack. Walk a colonist toward one, then click the town to see what they want.',
+    },
+    { done: buildings.some((b) => b.def === 'sandbags' || b.def === 'embrasure'), title: 'Build cover', how: 'Defense → Sandbags or Embrasures facing open ground. Raiders will come; colonists behind cover are much harder to hit.' },
   ];
 }
 

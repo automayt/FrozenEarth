@@ -17,9 +17,11 @@ export function TopBar() {
     <div className="topbar panel">
       <div className="clock">
         <div className="date">{cal.label}</div>
-        <div className={`temp ${temp < 0 ? 'cold' : temp > 30 ? 'hot' : ''}`}>{temp.toFixed(1)}°C outdoors</div>
+        <div className="temp-row">
+          <span className={`temp ${temp < 0 ? 'cold' : temp > 30 ? 'hot' : ''}`}>{temp.toFixed(1)}°C outdoors</span>
+          <FrostChip />
+        </div>
       </div>
-      <FrostChip />
       <div className="conditions">
         {m.conditions.map((c, i) => (
           <span key={i} className={`chip ${EVENTS[c.key]?.tone ?? ''}`} title={`${EVENTS[c.key]?.description ?? ''} Ends in ${Math.max(0, Math.ceil((c.until - tick) / TICKS_PER_HOUR))}h.`}>

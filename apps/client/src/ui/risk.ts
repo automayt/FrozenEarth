@@ -109,7 +109,9 @@ export function stealRisk(owner: Faction, x: number, y: number, thief: Pawn | un
     );
   } else {
     const h = hoursToDark();
-    out.push({ text: h > 0 ? `Haulers go after dark, in about ${Math.ceil(h)}h, and need a stockpile of yours to carry it to` : 'It is dark: free haulers go now, if you have a stockpile to carry it to', tone: 'neutral' });
+    const stockpile = [...m.zones.values()].some((z) => z.faction === me && z.kind === 'stockpile');
+    if (!stockpile) out.push({ text: 'You have no stockpile yet: haulers need one to carry stolen goods to', tone: 'bad' });
+    out.push({ text: h > 0 ? `Haulers go after dark, in about ${Math.ceil(h)}h` : 'It is dark: free haulers go now', tone: 'neutral' });
     out.push(
       fog.isLit(m.idx(x, y))
         ? { text: 'A fire lights this spot: anyone awake sees it from 13 cells, even at night', tone: 'bad' }
