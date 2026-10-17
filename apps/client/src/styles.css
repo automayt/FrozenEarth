@@ -1748,3 +1748,10 @@ button.primary:disabled {
   font-size: 12px;
   padding: 0 6px;
 }
+
+/* Hotkey chips make the bar too wide for small windows: drop them there (the help overlay still lists them). */
+@media (max-width: 1100px) {
+  .architect .hotkey {
+    display: none;
+  }
+}
