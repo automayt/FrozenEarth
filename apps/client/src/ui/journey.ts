@@ -164,3 +164,41 @@ export function siteTrouble(m: Mirror, me: number, tick: number, x: number, y: n
   }
   return null;
 }
+
+/**
+ * A waypoint that takes the route around a town's land: out from the town, perpendicular to the
+ * leg that crosses it, just beyond where its guards reach. Returns the new via list, or null.
+ */
+export function detourAround(m: Mirror, home: Point, via: Point[], dest: Point, town: Faction): Point[] | null {
+  const s = town.settlement;
+  if (!s) return null;
+  const pts = [home, ...via, dest];
+  const reach = s.radius + GUARD_REACH + 6;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1];
+    const b = pts[i];
+    if (segDist(town.home, a, b) > s.radius + GUARD_REACH) continue;
+    // The closest point of the leg to the town, and the way out from the town through it.
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const l2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((town.home.x - a.x) * dx + (town.home.y - a.y) * dy) / l2));
+    let ox = a.x + t * dx - town.home.x;
+    let oy = a.y + t * dy - town.home.y;
+    if (Math.hypot(ox, oy) < 0.5) {
+      // Straight through the middle: go round on the left of the leg.
+      ox = -dy;
+      oy = dx;
+    }
+    const len = Math.hypot(ox, oy) || 1;
+    for (const side of [1, -1]) {
+      const x = Math.round(town.home.x + (ox / len) * reach * side);
+      const y = Math.round(town.home.y + (oy / len) * reach * side);
+      if (x < 6 || y < 6 || x >= m.w - 6 || y >= m.h - 6 || m.rock[y * m.w + x]) continue;
+      const out = [...via];
+      out.splice(i - 1, 0, { x, y });
+      return out;
+    }
+  }
+  return null;
+}

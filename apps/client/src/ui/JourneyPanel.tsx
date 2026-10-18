@@ -4,7 +4,7 @@ import { caravanLoad, carryCapacity, LOAD_RADIUS, MAX_VIA, sledgesIn, type Carav
 import { command } from '../net';
 import { store, useStore } from '../store';
 import { daysText, frostDays } from './OrderPreview';
-import { candidates, crossings, hoursFor, loadable, passCells, planLoad, routeLength, siteTrouble, type Point } from './journey';
+import { candidates, crossings, detourAround, hoursFor, loadable, passCells, planLoad, routeLength, siteTrouble, type Point } from './journey';
 
 const goodsText = (lines: [string, number][], max = 6) => {
   const sorted = [...lines].sort((a, b) => (ITEMS[b[0]]?.marketValue ?? 0) * b[1] - (ITEMS[a[0]]?.marketValue ?? 0) * a[1]);
@@ -76,7 +76,18 @@ export function JourneyPanel() {
                 {c.kind === 'ally' && `${c.town.name}, your ally, will wave you through.`}
                 {c.kind === 'friendly' && `${c.town.name} is friendly: free passage.`}
                 {c.kind === 'toll' && `${c.town.name} will ask a toll of about ${c.toll} (refusing costs goodwill).`}
-                {c.kind === 'hostile' && `${c.town.name} is hostile: its guards will attack the caravan. Route around it with a waypoint.`}
+                {c.kind === 'hostile' && `${c.town.name} is hostile: its guards will attack the caravan. `}
+                {(c.kind === 'hostile' || c.kind === 'toll') && j.dest && j.via.length < MAX_VIA && (
+                  <button
+                    className="link"
+                    onClick={() => {
+                      const via = detourAround(m, f.home, j.via, j.dest!, c.town);
+                      if (via) set({ via });
+                    }}
+                  >
+                    Go around
+                  </button>
+                )}
               </li>
             ))}
             {passes > 0 && <li className="bad">The route runs through mountain passes: raiders sometimes lie in wait there.</li>}

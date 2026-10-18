@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { kitKey } from '@fe/defs';
-import { addPlayerFaction, chooseLoad, createWorld, Rng, siteProblem, snapshot, START_TICK, TICKS_PER_DAY } from '@fe/sim';
+import { addPlayerFaction, chooseLoad, createWorld, foundSettlement, Rng, siteProblem, snapshot, START_TICK, TICKS_PER_DAY, World } from '@fe/sim';
 import { Mirror } from '@fe/protocol';
-import { planLoad, siteTrouble } from '../src/ui/journey';
+import { crossings, detourAround, planLoad, siteTrouble } from '../src/ui/journey';
 
 /** The journey panel must agree with the server about where a colony may go and what it can carry. */
 describe('journey planning', () => {
@@ -44,5 +44,20 @@ describe('journey planning', () => {
     // Only food: no wood, no kits.
     const food = planLoad(goods, 2, ['meal']);
     expect(food.cargo.map(([d]) => d).sort()).toEqual(['sledge', 'survival_meal']);
+  });
+
+  it('"Go around" puts a waypoint that takes the route off a hostile town’s land', () => {
+    const w = new World(3, 120, 120);
+    for (let i = 0; i < w.map.n; i++) w.refreshCell(i);
+    w.factions.set(1, { id: 1, name: 'Us', color: 0, home: { x: 10, y: 60 }, isPlayer: true });
+    const town = foundSettlement(w, { x: 60, y: 60 }, -60, 3);
+    const m = new Mirror();
+    m.applySnapshot(structuredClone(snapshot(w)));
+    const home = { x: 10, y: 60 };
+    const dest = { x: 110, y: 60 };
+    expect(crossings(m, 1, [home, dest], []).map((c) => c.kind)).toEqual(['hostile']);
+    const via = detourAround(m, home, [], dest, m.factions.get(town.id)!)!;
+    expect(via.length).toBe(1);
+    expect(crossings(m, 1, [home, ...via, dest], [])).toEqual([]);
   });
 });
