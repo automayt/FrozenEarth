@@ -23,7 +23,8 @@ import {
   type Faction,
   type Stance,
 } from '@fe/sim';
-import { command } from '../net';
+import { command, send } from '../net';
+import { myPlayer } from '../actions';
 import { store, useStore } from '../store';
 import { GoodwillMeter } from './SettlementCard';
 import { LineEditor, OutgoingOffers, sendEnvoy, stockOf, type Line } from './TradePanel';
@@ -452,6 +453,30 @@ function ColonyDetail({ f }: { f: Faction }) {
           Show on map
         </button>
       </div>
+      {owner && <HostTools name={owner.name} online={owner.connected} host={owner.admin} />}
     </>
+  );
+}
+
+/** For hosts: the server's kick, ban and host commands, without typing them. Replies come back in chat. */
+function HostTools({ name, online, host }: { name: string; online: boolean; host: boolean }) {
+  if (!myPlayer()?.admin) return null;
+  const run = (line: string) => send({ t: 'chat', text: line });
+  return (
+    <section className="diplo-act">
+      <h4>Host</h4>
+      <div className="diplo-buttons">
+        {online && <ConfirmButton label="Kick…" confirm={`Click again to kick ${name}`} onConfirm={() => run(`/kick ${name}`)} title="Disconnect them; they can rejoin" />}
+        <ConfirmButton label="Ban…" confirm={`Click again to ban ${name} (their colony stays)`} onConfirm={() => run(`/ban ${name}`)} title="Keep them out of this server" />
+        {host ? (
+          <button onClick={() => run(`/deop ${name}`)}>Remove host</button>
+        ) : (
+          <button onClick={() => run(`/op ${name}`)} title="Let them use host commands too">
+            Make host
+          </button>
+        )}
+      </div>
+      <p className="muted small">The server answers in chat. Type /help there for every host command.</p>
+    </section>
   );
 }
