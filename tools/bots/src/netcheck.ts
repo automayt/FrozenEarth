@@ -19,7 +19,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import WebSocket, { WebSocketServer } from 'ws';
-import { decode, encode, Mirror, pawnPosition, PROTOCOL_VERSION, TickClock, type ClientMsg, type ServerMsg } from '@fe/protocol';
+import {
+  decode,
+  encode,
+  Mirror,
+  PawnGlide,
+  pawnPosition,
+  PROTOCOL_VERSION,
+  TickClock,
+  type ClientMsg,
+  type ServerMsg,
+} from '@fe/protocol';
 import type { Choice, Entity, Pawn } from '@fe/sim';
 import { GameServer } from '../../../apps/server/src/game';
 import { worldPath } from '../../../apps/server/src/persistence';
@@ -106,6 +116,7 @@ interface Bot {
   stats: Stats;
   prevEst: number;
   prevPos: Map<number, { x: number; y: number }>;
+  glide: PawnGlide;
   welcomed: Promise<void>;
   /** Mirror rebuilt from a snapshot since the last frame: no jump counting across it. */
   fresh: boolean;
@@ -113,7 +124,13 @@ interface Bot {
 
 async function main() {
   const saves = mkdtempSync(join(tmpdir(), 'fe-net-'));
-  const game = new GameServer({ savePath: worldPath(saves, 'net'), seed: Number(args.seed), size: Number(args.size), frostStart: 99, log: args.quiet ? () => {} : (m) => log(`server: ${m}`) });
+  const game = new GameServer({
+    savePath: worldPath(saves, 'net'),
+    seed: Number(args.seed),
+    size: Number(args.size),
+    frostStart: 99,
+    log: args.quiet ? () => {} : (m) => log(`server: ${m}`),
+  });
   const world = () => game.world;
   // What every pawn looked like at each broadcast tick, to check bots against as their deltas land.
   const truth = new Map<number, string>();
@@ -122,12 +139,18 @@ async function main() {
   const truthJson = new Map<number, Map<number, string>>();
   const broadcast = game.broadcast.bind(game);
   let hashEvery = 0;
+  let lastBroadcastTick = -1;
   game.broadcast = (msg: ServerMsg) => {
-    if (msg.t === 'delta' && (truth.has(world().tick) || hashEvery++ % 3 === 0)) {
-      if (truth.has(world().tick)) ambiguous.add(world().tick);
+    // A second delta for the same tick (commands applied while paused) makes that tick ambiguous.
+    if (msg.t === 'delta' && world().tick === lastBroadcastTick) ambiguous.add(world().tick);
+    if (msg.t === 'delta') lastBroadcastTick = world().tick;
+    if (msg.t === 'delta' && hashEvery++ % 3 === 0) {
       truth.set(world().tick, pawnHash(world().entities.values()));
       if (process.env.NET_DEBUG) {
-        truthJson.set(world().tick, new Map([...world().kinds.pawn].map((id) => [id, JSON.stringify(visibleEntity(world().get(id)!))])));
+        truthJson.set(
+          world().tick,
+          new Map([...world().kinds.pawn].map((id) => [id, JSON.stringify(visibleEntity(world().get(id)!))])),
+        );
         if (truthJson.size > 60) truthJson.delete(truthJson.keys().next().value!);
       }
       if (truth.size > 3000) truth.delete(truth.keys().next().value!);
@@ -137,7 +160,9 @@ async function main() {
   const http = createServer();
   const wss = new WebSocketServer({ server: http, path: '/ws', perMessageDeflate: { threshold: 1024 } });
   wss.on('connection', (ws) => game.onConnect(ws));
-  const port = await new Promise<number>((res) => http.listen(0, '127.0.0.1', () => res((http.address() as { port: number }).port)));
+  const port = await new Promise<number>((res) =>
+    http.listen(0, '127.0.0.1', () => res((http.address() as { port: number }).port)),
+  );
   game.start();
 
   const profiles: [string, LagProfile][] = [
@@ -151,7 +176,6 @@ async function main() {
     ['bad', PROFILES.bad],
   ];
   const bots: Bot[] = [];
-
 
   function open(b: Bot, proxyPort: number, token?: string): Promise<void> {
     return new Promise((res, rej) => {
@@ -221,7 +245,22 @@ async function main() {
     });
   }
 
-  const stats = (): Stats => ({ hashOk: 0, hashBad: 0, hashSkipped: 0, firstBad: '', frames: 0, backsteps: 0, backTicks: 0, freezes: 0, jumps: 0, pawnFrames: 0, errSum: 0, lagSum: 0, errs: [], reconnects: 0 });
+  const stats = (): Stats => ({
+    hashOk: 0,
+    hashBad: 0,
+    hashSkipped: 0,
+    firstBad: '',
+    frames: 0,
+    backsteps: 0,
+    backTicks: 0,
+    freezes: 0,
+    jumps: 0,
+    pawnFrames: 0,
+    errSum: 0,
+    lagSum: 0,
+    errs: [],
+    reconnects: 0,
+  });
   const proxyPorts = new Map<Bot, number>();
   for (let i = 0; i < profiles.length; i++) {
     const [pn, profile] = profiles[i];
@@ -241,6 +280,7 @@ async function main() {
       stats: stats(),
       prevEst: 0,
       prevPos: new Map(),
+      glide: new PawnGlide(),
       fresh: true,
     } as unknown as Bot;
     b.chaos = new Chaos(
@@ -282,7 +322,17 @@ async function main() {
 
   for (const b of bots) {
     const f = b.mirror.factions.get(b.faction) ?? world().factions.get(b.faction)!;
-    send(b, { t: 'cmd', cmd: { c: 'zone', kind: 'stockpile', x0: f.home.x - 2, y0: f.home.y - 2, x1: f.home.x + 2, y1: f.home.y + 2 } });
+    send(b, {
+      t: 'cmd',
+      cmd: {
+        c: 'zone',
+        kind: 'stockpile',
+        x0: f.home.x - 2,
+        y0: f.home.y - 2,
+        x1: f.home.x + 2,
+        y1: f.home.y + 2,
+      },
+    });
   }
   send(bots[0], { t: 'admin', action: 'event', key: 'raid' });
   send(bots[0], { t: 'admin', action: 'event', key: 'settlement_raid' });
@@ -334,13 +384,15 @@ async function main() {
       b.prevEst = est;
       for (const e of b.mirror.entities.values()) {
         if (e.kind !== 'pawn' || e.species || !world().factions.get(e.faction)?.isPlayer) continue;
-        const pos = pawnPosition(e, est, b.mirror.w);
+        const pos = b.glide.at(e.id, pawnPosition(e, est, b.mirror.w), performance.now());
         const prev = b.prevPos.get(e.id);
         if (prev && Math.hypot(pos.x - prev.x, pos.y - prev.y) > 1.5) {
           s.jumps++;
           if (process.env.NET_DEBUG && b.profileName === 'lan') {
             const r = world().get<Pawn>(e.id);
-            log(`  jump ${e.id} ${prev.x.toFixed(1)},${prev.y.toFixed(1)} -> ${pos.x.toFixed(1)},${pos.y.toFixed(1)} est ${est.toFixed(0)} srv ${world().tick} job ${e.job?.type}/${r?.job?.type} poss ${!!e.possessed} path ${e.path ? `t0 ${e.path.t0} ${e.path.times.length}` : '-'} / ${r?.path ? `t0 ${r.path.t0}` : '-'} xy ${e.x},${e.y}/${r?.x},${r?.y} drafted ${e.drafted} downed ${e.downed}`);
+            log(
+              `  jump ${e.id} ${prev.x.toFixed(1)},${prev.y.toFixed(1)} -> ${pos.x.toFixed(1)},${pos.y.toFixed(1)} est ${est.toFixed(0)} srv ${world().tick} job ${e.job?.type}/${r?.job?.type} poss ${!!e.possessed} path ${e.path ? `t0 ${e.path.t0} ${e.path.times.length}` : '-'} / ${r?.path ? `t0 ${r.path.t0}` : '-'} xy ${e.x},${e.y}/${r?.x},${r?.y} drafted ${e.drafted} downed ${e.downed}`,
+            );
           }
         }
         b.prevPos.set(e.id, pos);
@@ -367,7 +419,10 @@ async function main() {
     while (Date.now() < until) {
       const tick = world().tick;
       if (bots.every((b) => b.mirror.tick === tick && Date.now() - b.lastMsgAt < 2500)) break;
-      if (process.env.NET_DEBUG) log(`  waiting: tick ${tick} ${JSON.stringify(game.computeTime())} mirrors ${bots.map((b) => b.mirror.tick).join(',')}`);
+      if (process.env.NET_DEBUG)
+        log(
+          `  waiting: tick ${tick} ${JSON.stringify(game.computeTime())} mirrors ${bots.map((b) => b.mirror.tick).join(',')}`,
+        );
       await sleep(250);
     }
     await sleep(1200);
@@ -379,7 +434,9 @@ async function main() {
         log(`  ${label}: ${b.name} ${diffs.length} differences: ${diffs.slice(0, 4).join(' | ')}`);
       }
     }
-    log(`${label} at ${elapsed()} s, tick ${world().tick}: ${bad ? `${bad} bots OUT OF SYNC` : 'all bots match the server field for field'}`);
+    log(
+      `${label} at ${elapsed()} s, tick ${world().tick}: ${bad ? `${bad} bots OUT OF SYNC` : 'all bots match the server field for field'}`,
+    );
     for (const b of bots) send(b, { t: 'speed', speed: 3 });
     playing = true;
     return bad;
@@ -402,12 +459,19 @@ async function main() {
   const victim = bots[1];
   const partner = bots[2];
   send(bots[0], { t: 'admin', action: 'event', key: 'raid' });
-  const mine = [...victim.mirror.entities.values()].find((e): e is Pawn => e.kind === 'pawn' && e.faction === victim.faction && !e.downed);
+  const mine = [...victim.mirror.entities.values()].find(
+    (e): e is Pawn => e.kind === 'pawn' && e.faction === victim.faction && !e.downed,
+  );
   if (mine) send(victim, { t: 'cmd', cmd: { c: 'possess', pawn: mine.id, on: true } });
-  send(partner, { t: 'cmd', cmd: { c: 'offerTrade', to: victim.faction, give: [], want: [['wood', 1]], note: 'net' } });
+  send(partner, {
+    t: 'cmd',
+    cmd: { c: 'offerTrade', to: victim.faction, give: [], want: [['wood', 1]], note: 'net' },
+  });
   send(victim, { t: 'cmd', cmd: { c: 'diplomacy', act: 'ally', target: partner.faction } });
   await sleep(2500);
-  const pactLetter = partner.mirror.choices.find((c) => c.event === 'pact_offer' && c.faction === partner.faction);
+  const pactLetter = partner.mirror.choices.find(
+    (c) => c.event === 'pact_offer' && c.faction === partner.faction,
+  );
   if (pactLetter) send(partner, { t: 'cmd', cmd: { c: 'choose', choice: pactLetter.id, option: 'accept' } });
   await sleep(2000);
   const before = {
@@ -435,7 +499,9 @@ async function main() {
     raid: [...w.factions.values()].some((f) => f.raid && !f.raid.fled),
   };
   const restored = JSON.stringify(after) === JSON.stringify(server);
-  log(`rejoined ${victim.name}: client ${JSON.stringify(after)}, server ${JSON.stringify(server)} ${restored ? 'OK' : 'MISMATCH'}`);
+  log(
+    `rejoined ${victim.name}: client ${JSON.stringify(after)}, server ${JSON.stringify(server)} ${restored ? 'OK' : 'MISMATCH'}`,
+  );
   if (!restored) failures++;
   const p = game.players.get([...game.players.values()].find((x) => x.name === victim.name)!.id)!;
   log(`  ${victim.name}'s speed vote after rejoin: ${p.speed} (was 3)`);
@@ -462,7 +528,9 @@ async function main() {
   }
   const speedDuringHole = game.computeTime().speed;
   ghost.proxy.blackhole(false);
-  log(`  server ${serverDropped < 0 ? 'still counted it online after 30 s' : `dropped it after ${(serverDropped / 1000).toFixed(1)} s`}; game speed during the outage ${speedDuringHole}; client noticed after ${(clientNoticed / 1000).toFixed(1)} s`);
+  log(
+    `  server ${serverDropped < 0 ? 'still counted it online after 30 s' : `dropped it after ${(serverDropped / 1000).toFixed(1)} s`}; game speed during the outage ${speedDuringHole}; client noticed after ${(clientNoticed / 1000).toFixed(1)} s`,
+  );
   await reconnect(ghost);
   send(ghost, { t: 'speed', speed: 3 });
   await sleep(2000);
@@ -475,7 +543,9 @@ async function main() {
   clearInterval(frame);
 
   console.log('');
-  console.log('bot              profile  wire KB/s  deltas  hash ok/bad  backsteps(ticks)  freeze%  jumps/min/pawn  err mean/p95 (cells)  lag ms  rejoins');
+  console.log(
+    'bot              profile  wire KB/s  deltas  hash ok/bad  backsteps(ticks)  freeze%  jumps/min/pawn  err mean/p95 (cells)  lag ms  rejoins',
+  );
   const secs = (Date.now() - t0) / 1000;
   for (const b of bots) {
     const s = b.stats;
@@ -488,7 +558,9 @@ async function main() {
     if (s.firstBad) console.log(`    first hash mismatch ${s.firstBad}`);
     if (s.hashBad) failures++;
   }
-  console.log(`server's own pawns: ${(truthJumps / Math.max(1e-9, truthPawnFrames / 30 / 60)).toFixed(2)} jumps/min/pawn`);
+  console.log(
+    `server's own pawns: ${(truthJumps / Math.max(1e-9, truthPawnFrames / 30 / 60)).toFixed(2)} jumps/min/pawn`,
+  );
   console.log(failures ? `FAIL: ${failures} problems` : 'PASS');
   for (const b of bots) b.ws.terminate();
   game.stop();

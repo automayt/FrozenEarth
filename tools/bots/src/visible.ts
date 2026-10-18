@@ -44,7 +44,8 @@ function visibleFields(e: Entity): unknown {
     }
     // Needs and conditions are resent when they move a visible step, not every tick.
     c.needs = Object.fromEntries(Object.entries(e.needs).map(([k, v]) => [k, Math.round(v * 50)]));
-    c.conditions = e.conditions.map((x) => ({ ...x, severity: Math.round(x.severity * 20), immunity: Math.round(x.immunity * 20) }));
+    // `told` is server bookkeeping (the worst stage a letter already announced), set without a resend.
+    c.conditions = e.conditions.map(({ told: _told, ...x }) => ({ ...x, severity: Math.round(x.severity * 20), immunity: Math.round(x.immunity * 20) }));
     // XP accrues every work tick; only level-ups are sent.
     c.skills = Object.fromEntries(Object.entries(e.skills).map(([k, v]) => [k, v.level]));
   }
