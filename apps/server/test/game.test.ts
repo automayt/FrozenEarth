@@ -242,6 +242,29 @@ describe('game server', () => {
     expect(h.world.get<Pawn>(other.id)!.possessed).toBe(false);
     h.stop();
   });
+  it('someone still choosing where to settle does not hold everyone at their speed', () => {
+    const g = new GameServer({ savePath: worldPath(dir, 'settling'), seed: 4, size: 80, log: () => {} });
+    const ann = new FakeSocket();
+    g.onConnect(ann as unknown as WebSocket);
+    ann.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Ann' });
+    ann.say({ t: 'settle' });
+    ann.say({ t: 'speed', speed: 3 });
+    expect(g.computeTime().speed).toBe(3);
+    // Bob joins and looks at the map for a while before settling, at the default 1x.
+    const bob = new FakeSocket();
+    g.onConnect(bob as unknown as WebSocket);
+    bob.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Bob' });
+    expect(g.computeTime().speed).toBe(3);
+    // A pause still counts.
+    bob.say({ t: 'speed', speed: 0 });
+    expect(g.computeTime().paused).toBe(true);
+    bob.say({ t: 'speed', speed: 1 });
+    // Once settled, his vote counts like anyone's.
+    bob.say({ t: 'settle' });
+    expect(g.computeTime().speed).toBe(1);
+    g.stop();
+  });
+
   it('drops a link that has gone silent, so a dead connection stops holding everyone at its speed', () => {
     const g = new GameServer({ savePath: worldPath(dir, 'heartbeat'), seed: 4, size: 80, log: () => {} });
     const ann = new FakeSocket();

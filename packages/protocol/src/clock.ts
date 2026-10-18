@@ -18,7 +18,7 @@ const SNAP_S = 2;
  *   - runs a little behind the newest delta: one broadcast interval plus about twice the link's
  *     jitter, so a walk is nearly always known before it is drawn;
  *   - never goes backwards: when it's ahead it slows down (to 75%), when behind it speeds up
- *     (to 125%), and it only jumps when it's off by seconds;
+ *     (up to 2x after a stall), and it only jumps when it's off by seconds;
  *   - stops at most MAX_AHEAD_S past the newest delta when the link stalls;
  *   - while paused, glides on to the paused tick instead of hopping there.
  */
@@ -70,7 +70,12 @@ export class TickClock {
     let t: number;
     if (this.rate() > 0) {
       t = this.base + ((now - this.baseAt) / 1000) * this.rate() * this.k;
-      t = Math.min(t, this.latest + MAX_AHEAD_S * this.rate());
+      const cap = this.latest + MAX_AHEAD_S * this.rate();
+      if (t > cap) {
+        // Held at the cap: restart from here, so the clock doesn't leap ahead when the stall ends.
+        t = this.base = cap;
+        this.baseAt = now;
+      }
     } else {
       // Paused: glide on to where the server stopped.
       t = Math.min(this.latest, this.shown + ((now - this.shownAt) / 1000) * this.lastRate);
@@ -108,7 +113,8 @@ export class TickClock {
     if (!rate) return;
     // Where the drawn tick should be now, and how far off it is, in seconds.
     const err = (tick - this.delay * rate - cur) / rate;
-    this.k = 1 + Math.max(-0.25, Math.min(0.25, err));
+    // Behind after a stall: catch up briskly (up to 2x) rather than fast-forwarding for seconds. Ahead: ease off gently.
+    this.k = 1 + Math.max(-0.25, Math.min(1, err));
   }
 }
 

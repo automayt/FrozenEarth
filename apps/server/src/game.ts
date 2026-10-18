@@ -253,8 +253,11 @@ export class GameServer {
     if (online.length === 0) return { speed: 0, paused: true, reason: 'No players online' };
     const pausers = online.filter((p) => p.speed === 0);
     if (pausers.length > 0) return { speed: 0, paused: true, reason: `Paused by ${pausers.map((p) => p.name).join(', ')}` };
-    // A tab left in the background doesn't hold everyone at its speed (pauses still count: they are deliberate and budgeted).
-    const voters = online.some((p) => !p.away) ? online.filter((p) => !p.away) : online;
+    // A tab left in the background doesn't hold everyone at its speed (pauses still count: they are deliberate and budgeted),
+    // and nor does someone still picking where to settle: their colony doesn't exist yet.
+    const playing = online.filter((p) => p.faction);
+    const pool = playing.length ? playing : online;
+    const voters = pool.some((p) => !p.away) ? pool.filter((p) => !p.away) : pool;
     const speed = Math.min(...voters.map((p) => p.speed));
     const slowest = voters.filter((p) => p.speed === speed).map((p) => p.name);
     return { speed, paused: false, reason: online.length > 1 && speed < MAX_SPEED ? `Speed ${speed} set by ${slowest.join(', ')}` : '' };

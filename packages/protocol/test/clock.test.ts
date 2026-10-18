@@ -67,6 +67,29 @@ describe('client tick clock', () => {
     expect(wifi.lagMs).toBeLessThan(60 + 120 + 400);
   });
 
+  it('after a link stalls for a second and a half, catches up quickly but without a leap', () => {
+    let now = 0;
+    const c = new TickClock(() => now);
+    c.setTime({ speed: 3, paused: false });
+    let tick = 10_000;
+    let prev = 0;
+    let worstStep = 0;
+    for (; now < 8000; now += 16) {
+      const stalled = now > 3000 && now < 4500;
+      // Deltas every 66 ms; during the stall they pile up and arrive together when it ends.
+      if (Math.floor(now / 66) !== Math.floor((now - 16) / 66)) {
+        tick += 12;
+        if (!stalled) c.setServerTick(tick);
+      }
+      const t = c.estTick();
+      if (now > 1000) worstStep = Math.max(worstStep, t - prev);
+      prev = t;
+    }
+    // 60 fps at 3x is 3 ticks a frame; even catching up it stays under 2x that, never a jump.
+    expect(worstStep).toBeLessThan(7);
+    expect(tick - c.estTick()).toBeLessThan(0.4 * 180);
+  });
+
   it('glides to the paused tick, carries on smoothly after, and jumps only when far off', () => {
     let now = 0;
     const c = new TickClock(() => now);
