@@ -33,6 +33,8 @@ const CAMP_FROM = 21;
 const DAWN = 6;
 /** Most waypoints a route may take you through. */
 export const MAX_VIA = 4;
+/** Bulk of a wounded colonist carried on a stretcher or a sledge. */
+export const CARRIED_BULK = 60;
 /** How heavy a full load is on the legs: a fully loaded caravan moves at this share of a light one's pace. */
 const FULL_LOAD_PACE = 0.6;
 
@@ -45,6 +47,11 @@ export function bulkOf(def: string, n: number): number {
 
 export function cargoBulk(cargo: [string, number][]): number {
   return cargo.reduce((a, [d, n]) => a + bulkOf(d, n), 0);
+}
+
+/** Everything the walkers carry: the goods, and any wounded. */
+export function caravanLoad(c: Caravan): number {
+  return cargoBulk(c.cargo) + (c.wounded?.length ?? 0) * CARRIED_BULK;
 }
 
 export function sledgesIn(cargo: [string, number][]): number {
@@ -61,7 +68,7 @@ export function caravanPace(w: World, p: Pawn): number {
   const c = w.factions.get(p.faction)?.caravan;
   if (!c || c.phase !== 'travel' || !c.members.includes(p.id)) return 1;
   const cap = carryCapacity(c.members.length, sledgesIn(c.cargo));
-  return 1 - (1 - FULL_LOAD_PACE) * Math.min(1, cap ? cargoBulk(c.cargo) / cap : 1);
+  return 1 - (1 - FULL_LOAD_PACE) * Math.min(1, cap ? caravanLoad(c) / cap : 1);
 }
 
 export function inCaravan(w: World, p: Pawn): Caravan | undefined {
@@ -274,8 +281,9 @@ function leaderCell(w: World, c: Caravan): number {
 
 // ---------------------------------------------------------------- the journey over time
 
-/** Every half second or so: drop the fallen, load, move on, camp, break camp, arrive. */
+/** Every tick the wounded are carried along; every half second or so: who's still walking, load, move on, camp, arrive. */
 export function caravanTick(w: World): void {
+  for (const f of w.factions.values()) if (f.caravan?.wounded?.length) carryWounded(w, f.caravan);
   if (w.tick % 30 !== 0) return;
   for (const f of w.factions.values()) {
     const c = f.caravan;
@@ -289,25 +297,49 @@ export function caravanTick(w: World): void {
   }
 }
 
-/** Who's still with the caravan: the dead are gone; the downed are left behind (with a letter). */
+/** Who's still walking: the dead are gone; the downed are carried (slowing everyone); the recovered walk again. */
 function roll(w: World, f: Faction, c: Caravan): void {
-  const keep: EntityId[] = [];
-  for (const id of c.members) {
+  const alive = (id: EntityId) => {
     const p = w.get<Pawn>(id);
-    if (!p || p.kind !== 'pawn' || p.faction !== f.id || p.prisoner) continue;
+    return p && p.kind === 'pawn' && p.faction === f.id && !p.prisoner ? p : undefined;
+  };
+  const walking: EntityId[] = [];
+  const wounded: EntityId[] = [];
+  for (const id of [...c.members, ...(c.wounded ?? [])]) {
+    const p = alive(id);
+    if (!p) continue;
     if (p.downed && c.phase !== 'muster') {
-      w.message(f.id, `${p.name} is down and has been left behind by the caravan. Send someone back, or halt the caravan.`, 'bad', w.cellOf(p));
-      continue;
+      if (c.members.includes(id)) w.message(f.id, `${p.name} is down. The caravan carries them on, slower for it.`, 'bad', w.cellOf(p));
+      wounded.push(id);
+    } else if (p.downed) continue;
+    else {
+      if (c.wounded?.includes(id)) w.message(f.id, `${p.name} is back on their feet and walking with the caravan.`, 'good', w.cellOf(p));
+      walking.push(id);
     }
-    keep.push(id);
   }
-  if (keep.length === c.members.length) return;
-  c.members = keep;
+  const same = walking.length === c.members.length && wounded.length === (c.wounded?.length ?? 0) && walking.every((id, i) => id === c.members[i]);
+  if (same) return;
+  c.members = walking;
+  c.wounded = wounded.length ? wounded : undefined;
   w.dirty.factions.add(f.id);
-  if (!keep.length) {
+  if (!walking.length) {
     const at = c.at ?? c.muster;
     unload(w, f, at);
-    w.message(f.id, 'Nobody is left to carry on with the caravan. Its goods lie where it last stood.', 'bad', at);
+    w.message(f.id, 'Nobody is left standing to carry on with the caravan. Its goods, and its wounded, lie where it last stood.', 'bad', at);
+  }
+}
+
+/** The wounded go where the first walker goes. */
+function carryWounded(w: World, c: Caravan): void {
+  const lead = c.members.map((id) => w.get<Pawn>(id)).find((p) => p && p.kind === 'pawn' && !p.downed);
+  if (!lead) return;
+  for (const id of c.wounded!) {
+    const p = w.get<Pawn>(id);
+    if (!p || p.kind !== 'pawn' || (p.x === lead.x && p.y === lead.y)) continue;
+    p.x = lead.x;
+    p.y = lead.y;
+    p.path = null;
+    w.markDirty(p);
   }
 }
 
@@ -332,7 +364,7 @@ function musterTick(w: World, f: Faction, c: Caravan): void {
   w.dirty.factions.add(f.id);
   endJobs(w, c);
   const cap = carryCapacity(c.members.length, sledgesIn(c.cargo));
-  w.message(f.id, `The caravan sets out: ${c.members.length} ${c.members.length === 1 ? 'colonist' : 'colonists'}, carrying ${Math.round(cargoBulk(c.cargo))} of ${cap}.`, 'good', c.muster);
+  w.message(f.id, `The caravan sets out: ${c.members.length} ${c.members.length === 1 ? 'colonist' : 'colonists'}, carrying ${Math.round(caravanLoad(c))} of ${cap}.`, 'good', c.muster);
 }
 
 /** Order goods are loaded in: sledges (they add room), kits, food, clothes, weapons, then materials. */

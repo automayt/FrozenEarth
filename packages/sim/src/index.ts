@@ -30,5 +30,5 @@ export { pactOf, allied, atWar, type RelView } from './pacts';
 export { computeRoof, rockDepth, THICK_ROOF_DEPTH } from './mapgen';
 export { TRADE_OFFER_HOURS } from './trade';
 export { constructCost, constructWork } from './jobs';
-export { MEMBER_CARRY, SLEDGE_CARRY, LOAD_RADIUS, MAX_VIA, bulkOf, cargoBulk, sledgesIn, carryCapacity, planRoute, chooseLoad } from './caravan';
+export { MEMBER_CARRY, SLEDGE_CARRY, LOAD_RADIUS, MAX_VIA, bulkOf, cargoBulk, caravanLoad, CARRIED_BULK, sledgesIn, carryCapacity, planRoute, chooseLoad } from './caravan';
 export { ROAD, cargoValue, tollFor, isPass } from './road';

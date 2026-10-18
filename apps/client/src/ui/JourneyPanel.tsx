@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ITEM_CATEGORIES, ITEMS } from '@fe/defs';
-import { cargoBulk, carryCapacity, LOAD_RADIUS, MAX_VIA, sledgesIn, type Caravan } from '@fe/sim';
+import { caravanLoad, carryCapacity, LOAD_RADIUS, MAX_VIA, sledgesIn, type Caravan } from '@fe/sim';
 import { command } from '../net';
 import { store, useStore } from '../store';
 import { daysText, frostDays } from './OrderPreview';
@@ -155,7 +155,8 @@ export function CaravanCard() {
       <span>{status}</span>
       {c.phase !== 'muster' && (
         <span className="muted small">
-          {c.members.length} · carrying {Math.round(cargoBulk(c.cargo))}/{cap} · food {Math.floor(food / Math.max(1, c.members.length))} meals each
+          {c.members.length}
+          {c.wounded?.length ? ` + ${c.wounded.length} wounded carried` : ''} · carrying {Math.round(caravanLoad(c))}/{cap} · food {Math.floor(food / Math.max(1, c.members.length))} meals each
         </span>
       )}
       {at !== undefined && (

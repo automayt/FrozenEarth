@@ -195,4 +195,34 @@ describe('the journey', () => {
     // (Goodwill drifts back a point at midnight, so look at what they remember.)
     expect(town.settlement!.memories?.some((m) => m.f === 2 && m.why === 'Our guests for a night')).toBe(true);
   });
+  it('carries its wounded along (slower), and they walk again once back on their feet', () => {
+    const { w, pawns } = colony(160, 3);
+    setOut(w, pawns, 120, 30);
+    w.step();
+    const f = w.factions.get(2)!;
+    for (let k = 0; k < 4000 && f.caravan?.phase !== 'travel'; k++) w.step();
+    run(w, 200);
+    const hurt = pawns[0];
+    // (Held down: without real wounds the health system would stand them up again.)
+    const down = (ticks: number) => {
+      for (let k = 0; k < ticks; k++) {
+        hurt.downed = true;
+        hurt.job = null;
+        hurt.path = null;
+        w.step();
+      }
+    };
+    down(31);
+    expect(f.caravan?.wounded).toEqual([hurt.id]);
+    expect(f.caravan?.members).not.toContain(hurt.id);
+    const x0 = hurt.x;
+    down(400);
+    const lead = pawns.find((p) => p !== hurt && !p.downed)!;
+    expect(hurt.x).toBeGreaterThan(x0);
+    expect(Math.abs(hurt.x - lead.x) + Math.abs(hurt.y - lead.y)).toBeLessThanOrEqual(2);
+    hurt.downed = false;
+    run(w, 31);
+    expect(f.caravan?.members).toContain(hurt.id);
+    expect(f.caravan?.wounded).toBeUndefined();
+  });
 });

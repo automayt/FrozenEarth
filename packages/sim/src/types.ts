@@ -306,6 +306,8 @@ export interface Caravan {
   ambushed?: boolean;
   /** A toll letter they wait on before going on. */
   waiting?: number;
+  /** Members who went down on the road, carried along by the others until they can walk. */
+  wounded?: EntityId[];
 }
 
 /** ally: fight for each other. truce: a ceasefire that runs out. war: fight on sight. */
