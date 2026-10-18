@@ -139,6 +139,12 @@ async function main() {
   const truthJson = new Map<number, Map<number, string>>();
   const broadcast = game.broadcast.bind(game);
   let hashEvery = 0;
+  const welcomeBytes: number[] = [];
+  let applyMs = 0;
+  let applies = 0;
+  let worstApply = 0;
+  const tickSamples: number[] = [];
+  const sampler = setInterval(() => tickSamples.push(game.tickMs), 1000);
   let lastBroadcastTick = -1;
   game.broadcast = (msg: ServerMsg) => {
     // A second delta for the same tick (commands applied while paused) makes that tick ambiguous.
@@ -191,6 +197,7 @@ async function main() {
         b.lastMsgAt = Date.now();
         const msg = decode<ServerMsg>(data);
         if (msg.t === 'welcome') {
+          welcomeBytes.push(data.length);
           b.mirror.applySnapshot(msg.snap);
           b.clock.setServerTick(msg.snap.tick);
           b.faction = msg.faction;
@@ -204,7 +211,12 @@ async function main() {
           b.faction = msg.faction;
           res();
         } else if (msg.t === 'delta') {
+          const a0 = performance.now();
           b.mirror.applyDelta(msg.d);
+          const da = performance.now() - a0;
+          applyMs += da;
+          applies++;
+          worstApply = Math.max(worstApply, da);
           b.clock.setServerTick(msg.d.tick);
           b.clock.setTime(msg.time);
           b.time = msg.time;
@@ -560,6 +572,18 @@ async function main() {
   }
   console.log(
     `server's own pawns: ${(truthJumps / Math.max(1e-9, truthPawnFrames / 30 / 60)).toFixed(2)} jumps/min/pawn`,
+  );
+  clearInterval(sampler);
+  const ticks = tickSamples.filter((x) => x > 0);
+  console.log(
+    JSON.stringify({
+      entities: world().entities.size,
+      pawns: world().kinds.pawn.size,
+      serverTickMs: { mean: +(ticks.reduce((x, y) => x + y, 0) / Math.max(1, ticks.length)).toFixed(3), max: +Math.max(0, ...ticks).toFixed(3) },
+      applyMs: { mean: +(applyMs / Math.max(1, applies)).toFixed(3), worst: +worstApply.toFixed(2) },
+      welcomeKBInflated: welcomeBytes.map((n) => Math.round(n / 1024)),
+      serverPacker: { full: game.packer.full, patched: game.packer.patched, skipped: game.packer.skipped },
+    }),
   );
   console.log(failures ? `FAIL: ${failures} problems` : 'PASS');
   for (const b of bots) b.ws.terminate();

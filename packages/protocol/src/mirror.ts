@@ -4,7 +4,8 @@ import { unpackPath, type WireDelta } from './packer';
 
 /**
  * A client's read-only replica of the world, built from a snapshot and kept current by deltas.
- * Deltas are idempotent, so applying one twice or out of join order is harmless.
+ * Deltas are idempotent (patches set absolute values), so applying one twice is harmless; they must
+ * arrive in order, which WebSocket (TCP) guarantees.
  */
 export class Mirror {
   w = 0;
