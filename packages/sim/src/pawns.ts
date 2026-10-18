@@ -1,3 +1,4 @@
+import { caravanJob, caravanPace, inCaravan } from './caravan';
 import { APPAREL, BUILDINGS, COMFORT_MAX, COMFORT_MIN, ITEMS, MAX_SKILL, SKILL_LABELS, skillSpeed, xpToNext, type SkillKey } from '@fe/defs';
 import { conditionOf, effectsOf, type Effects } from './health';
 import { atGoal, findPath, makePathState } from './pathfinding';
@@ -35,7 +36,7 @@ export function tickPawn(w: World, p: Pawn): void {
 
 /** Walk speed multiplier. */
 export function pawnSpeed(w: World, p: Pawn): number {
-  let s = Math.max(0.15, effectsOf(w, p).move) * (speciesOf(p)?.speed ?? 1) * (p.sneaking ? SNEAK_SPEED : 1);
+  let s = Math.max(0.15, effectsOf(w, p).move) * (speciesOf(p)?.speed ?? 1) * (p.sneaking ? SNEAK_SPEED : 1) * caravanPace(w, p);
   if (p.needs.rest < 0.1) s *= 0.8;
   return s;
 }
@@ -170,6 +171,9 @@ function think(w: World, p: Pawn): void {
     const threat = threatTo(w, p);
     if (threat) job = shelterJob(w, p, threat);
   }
+  // On a journey, the caravan decides (they eat from the packs as they go).
+  const caravan = !job ? inCaravan(w, p) : undefined;
+  if (caravan) job = caravanJob(w, p, caravan);
   if (!job && n.food < 0.3 || (e.binge && n.food < 0.95)) job = findFood(w, p);
   // Severe exposure beats everything else: get somewhere survivable first.
   if (!job && exposureSeverity(p) > 0.3 && needsWarmth(w, p, e)) job = warmthJob(w, p, e);

@@ -1,3 +1,4 @@
+import { caravanCommand } from './caravan';
 import { BUILDINGS, ITEM_CATEGORIES, ITEMS, kitKey, packable, PLANTS, RECIPES, TERRAINS, WEAPONS, WORK_TYPES } from '@fe/defs';
 import { storedCount } from './eventHandlers';
 import { MAX_COMMAND_AREA } from './constants';
@@ -24,6 +25,7 @@ const NUM_FIELDS = ['x', 'y', 'x0', 'y0', 'x1', 'y1', 'pawn', 'prio', 'zone', 'b
 /** Fields that must be strings when present. */
 const STR_FIELDS = ['kind', 'def', 'plant', 'work', 'mode', 'recipe', 'option', 'note', 'act'];
 const DIPLOMACY_ACTS = ['ally', 'peace', 'war', 'breakAlly', 'mediate'];
+const CARAVAN_ACTS = ['form', 'halt', 'resume', 'disband'];
 const DESIGNATE_KINDS = ['mine', 'chop', 'cut', 'harvest', 'steal', 'cancel'];
 const ZONE_KINDS = ['stockpile', 'grow'];
 
@@ -63,6 +65,11 @@ export function wellFormed(cmd: unknown): cmd is Command {
       return DIPLOMACY_ACTS.includes(o.act as string) && typeof o.target === 'number';
     case 'withdraw':
       return typeof o.choice === 'number';
+    case 'caravan':
+      if (!CARAVAN_ACTS.includes(o.act as string)) return false;
+      if (o.via != null && !(Array.isArray(o.via) && o.via.length <= 8 && o.via.every((v) => Array.isArray(v) && v.length === 2 && v.every((n) => typeof n === 'number' && Number.isFinite(n))))) return false;
+      if (o.take != null && !(Array.isArray(o.take) && o.take.every((t) => typeof t === 'string'))) return false;
+      return o.act !== 'form' || (typeof o.x === 'number' && typeof o.y === 'number' && Array.isArray(o.pawns));
   }
   return true;
 }
@@ -153,6 +160,9 @@ export function applyCommand(w: World, faction: number, cmd: Command): void {
       return;
     case 'withdraw':
       withdrawChoice(w, cmd.choice, faction);
+      return;
+    case 'caravan':
+      caravanCommand(w, faction, cmd);
       return;
     case 'steal': {
       // Send one colonist (drafted or not, awake at any hour) to carry off an item from a settlement's or colony's stores.

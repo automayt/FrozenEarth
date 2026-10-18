@@ -50,6 +50,8 @@ export function describeJob(job: Job | null, lookup: (id: number) => Entity | un
       return 'Standing ready';
     case 'tend':
       return `Tending ${name(job.patient)}'s wounds`;
+    case 'trek':
+      return job.phase === 'muster' ? 'Gathering for the journey' : job.phase === 'travel' ? 'On the road with the caravan' : job.phase === 'halt' ? 'Waiting with the caravan' : 'In camp';
     case 'shelter':
       return `Taking cover from ${name(job.from)}`;
     case 'flee':

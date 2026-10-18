@@ -158,14 +158,15 @@ function sideName(w: World, c: number): string {
  * Raiders arrive at the map edge nearest the target colony. `points` buys them: richer raids
  * bring more fighters and better guns. Returns the raiders, or null if nobody could arrive.
  */
-export function startRaid(w: World, target: number, points: number, kind: RaidKind, sponsor?: number): Pawn[] | null {
+export function startRaid(w: World, target: number, points: number, kind: RaidKind, sponsor?: number, near?: number): Pawn[] | null {
   const f = w.factions.get(target);
   if (!f || !(f.isPlayer || f.settlement?.state === 'home') || !pawnsOf(w, target).length) return null;
   const m = w.map;
   const home = m.idx(f.home.x, f.home.y);
   // A town's own fighters set out from just outside their compound; raiders come in from the edge.
   const from = sponsor ? w.factions.get(sponsor) : undefined;
-  const arrive = from ? nearOpenCell(w, m.idx(from.home.x, from.home.y), home) : arrivalCell(w, home);
+  // A town's fighters set out from their compound; an ambush waits by the road; others come from the edge.
+  const arrive = from ? nearOpenCell(w, m.idx(from.home.x, from.home.y), home) : near !== undefined ? nearOpenCell(w, near, near) : arrivalCell(w, home);
   if (arrive < 0) return null;
   const weapons: string[] = [];
   let budget = points;
@@ -218,7 +219,8 @@ export function startRaid(w: World, target: number, points: number, kind: RaidKi
           ? `${rf.name} (${raiders.length}) have come from the ${sideName(w, arrive)} with picks and hammers. They will dig and smash their way in!`
           : `${rf.name} (${raiders.length}) have arrived from the ${sideName(w, arrive)} edge to attack you!`;
   if (f.isPlayer) {
-    w.message(target, `${what} Draft your colonists (R) and right-click to fight.`, 'bad', arrive);
+    const said = near !== undefined ? `${rf.name} (${raiders.length}) spring an ambush on your caravan!` : what;
+    w.message(target, `${said} Draft your colonists (R) and right-click to fight.`, 'bad', arrive);
     callAllies(w, target, rf);
   } else {
     const why = from ? ` ${from.name} and ${f.name} are rivals; whoever helps ${f.name} will be resented in ${from.name}.` : '';

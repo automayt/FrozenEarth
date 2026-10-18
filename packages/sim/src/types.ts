@@ -157,6 +157,8 @@ interface JobBase {
 
 export type Job =
   | (JobBase & { type: 'wander'; dest: number; until: number })
+  /** With the caravan: gather, walk the route, or wait (the phase it was given for). */
+  | (JobBase & { type: 'trek'; phase: 'muster' | 'travel' | 'camp' | 'halt' })
   /** Getting away from a raider, predator or enemy colonist: run to dest, wait there until the danger passes. */
   | (JobBase & { type: 'shelter'; dest: number; from: EntityId; until: number })
   | (JobBase & { type: 'haul'; item: EntityId; dest: number; /** Settlement or colony the goods were taken from, while the thief is still at risk. */ stolen?: number; /** Where they were taken from. */ stolenAt?: number })
@@ -266,6 +268,44 @@ export interface Faction {
   wild?: 'prey' | 'predator';
   /** Agreements with other factions, by their id; kept on both sides. */
   pacts?: Record<number, Pact>;
+  /** A colony on the move: its caravan, while one is out. */
+  caravan?: Caravan;
+}
+
+/** A colony moving inward as one group: who, where, what they carry, how far they've come. */
+export interface Caravan {
+  /** muster: gathering and loading at home; travel; camp: stopped for the night; halt: stopped by the player. */
+  phase: 'muster' | 'travel' | 'camp' | 'halt';
+  members: EntityId[];
+  /** Where they gather and load (home), and where they're going (the new home). */
+  muster: number;
+  dest: number;
+  /** Waypoints the player routed it through. */
+  via: number[];
+  /** Cells to regroup at along the way, the last one dest. */
+  route: number[];
+  /** Index in route the group is heading for. */
+  leg: number;
+  legSince: number;
+  cargo: [item: string, count: number][];
+  /** Categories to load (empty = anything). */
+  take: string[];
+  /** Muster deadline, or the dawn a camp breaks at. */
+  until: number;
+  started: number;
+  /** Where the group is (its first standing member), for others to see. */
+  at?: number;
+  /** The fire they lit for the night. */
+  fire?: EntityId;
+  /** A friendly town they're spending the night with. */
+  shelter?: number;
+  /** Towns whose land they've crossed this trip, and colonies whose caravans they've met. */
+  dealt: number[];
+  met: number[];
+  /** Raiders have already jumped them this trip. */
+  ambushed?: boolean;
+  /** A toll letter they wait on before going on. */
+  waiting?: number;
 }
 
 /** ally: fight for each other. truce: a ceasefire that runs out. war: fight on sight. */
@@ -400,6 +440,8 @@ export type Command =
   | { c: 'updateBill'; bench: EntityId; bill: number; mode?: BillMode; target?: number; suspended?: boolean }
   | { c: 'removeBill'; bench: EntityId; bill: number }
   | { c: 'choose'; choice: number; option: string }
+  /** The colony's journey: set out (who, where, through which waypoints, what to take), stop, go on, or call it off. */
+  | { c: 'caravan'; act: 'form' | 'halt' | 'resume' | 'disband'; pawns?: EntityId[]; x?: number; y?: number; via?: [number, number][]; take?: string[] }
   /** Take back an offer you sent another player, before they answer. */
   | { c: 'withdraw'; choice: number }
   | { c: 'offerTrade'; to: number; give: [string, number][]; want: [string, number][]; note?: string }

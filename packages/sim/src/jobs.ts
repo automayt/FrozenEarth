@@ -1,3 +1,4 @@
+import { trekTick } from './caravan';
 import { APPAREL, BUILDINGS, CONDITIONS, ITEMS, maxHp, PLANTS, RECIPES, ROCKS, T, WEAPON_KEYS, WEAPONS, KIT_WORK, kitKey } from '@fe/defs';
 import { dropWeapon, goTo, needsWarmth, pawnSpeed, pushOut, workSpeed } from './pawns';
 import { addCondition, bedBound, effectsOf, inBed, needsTending } from './health';
@@ -28,6 +29,8 @@ export function runJob(w: World, p: Pawn): JobResult {
   switch (j.type) {
     case 'shelter':
       return shelter(w, p, j);
+    case 'trek':
+      return trekTick(w, p, j.phase);
     case 'wander':
       return wander(w, p, j);
     case 'haul':

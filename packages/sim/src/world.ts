@@ -1,3 +1,4 @@
+import { caravanTick } from './caravan';
 import { allied } from './pacts';
 import { BUILDINGS, DEFAULT_PRIORITY, ITEMS, maxHp, PLANTS, RANDOM_TRAITS, SKILLS, START_PRIORITY, TERRAINS, TREE_COVER, WALL_COVER, WEATHER, WORK_TYPES, type SkillKey, type WorkType, ALL_CATEGORIES } from '@fe/defs';
 import * as C from './constants';
@@ -148,6 +149,7 @@ export class World {
       if (p) tickPawn(this, p);
     }
     rareTick(this);
+    caravanTick(this);
     fireTick(this);
     tickStoryteller(this);
     if (this.tick % C.TICKS_PER_HOUR === 0) this.pruneUnreachable();
