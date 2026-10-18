@@ -100,6 +100,18 @@ describe('hauling near other colonies', () => {
 });
 
 describe('joining late', () => {
+  it("no colonist shares a player's first name", () => {
+    const w = createWorld({ seed: 6, width: 120, height: 120, settlements: false, wildlife: false });
+    addPlayerFaction(w, "Cora's colony", 3);
+    const marsh = w.spawnPawn(1, w.map.idx(60, 60), 'Cora Marsh');
+    expect(marsh.name.endsWith(' Marsh')).toBe(true);
+    expect(marsh.name.startsWith('Cora ')).toBe(false);
+    // Someone already here when a player of that name settles gets another name too.
+    const lake = w.spawnPawn(1, w.map.idx(61, 60), 'Bjorn Lake');
+    addPlayerFaction(w, "Bjorn's colony", 3);
+    expect(lake.name.startsWith('Bjorn ')).toBe(false);
+  });
+
   it('suggests a spot next to an existing colony, for friends who want to be neighbours', () => {
     const w = createWorld({ seed: 6, width: 160, height: 160 });
     const ann = addPlayerFaction(w, "Ann's colony", 3);

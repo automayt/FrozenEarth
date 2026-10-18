@@ -1,7 +1,7 @@
 import { TERRAINS } from '@fe/defs';
 import { generateMap } from './mapgen';
 import { FACTION_COLORS, pawnName } from './names';
-import type { Building, Faction } from './types';
+import type { Building, Faction, Pawn } from './types';
 import { Rng } from './rng';
 import { daysUntilFrost, FROST_MAX, frostLevel } from './frost';
 import { World } from './world';
@@ -214,6 +214,17 @@ export function addPlayerFaction(w: World, name: string, colonists = 3, at?: { x
   const f: Faction = { id, name, color: FACTION_COLORS[players % FACTION_COLORS.length], home, isPlayer: true };
   w.factions.set(id, f);
   w.dirty.factions.add(id);
+  // Anyone already on the map who shares the new player's name gets another.
+  const names = w.playerNames();
+  for (const pid of w.kinds.pawn) {
+    const p = w.get<Pawn>(pid)!;
+    if (p.species) continue;
+    const renamed = w.unclashedName(p.name, names);
+    if (renamed !== p.name) {
+      p.name = renamed;
+      w.markDirty(p);
+    }
+  }
   const m = w.map;
   const open: number[] = [];
   for (let y = home.y - 3; y <= home.y + 3; y++) {

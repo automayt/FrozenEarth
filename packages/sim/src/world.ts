@@ -1,3 +1,4 @@
+import { pawnName } from './names';
 import { caravanTick } from './caravan';
 import { allied } from './pacts';
 import { BUILDINGS, DEFAULT_PRIORITY, ITEMS, maxHp, PLANTS, RANDOM_TRAITS, SKILLS, START_PRIORITY, TERRAINS, TREE_COVER, WALL_COVER, WEATHER, WORK_TYPES, type SkillKey, type WorkType, ALL_CATEGORIES } from '@fe/defs';
@@ -549,6 +550,27 @@ export class World {
     });
   }
 
+  /** First names of the players, from their colonies' names ("Ann's colony"). */
+  playerNames(): Set<string> {
+    const out = new Set<string>();
+    for (const f of this.factions.values()) if (f.isPlayer && f.name.endsWith("'s colony")) out.add(f.name.slice(0, -"'s colony".length).toLowerCase());
+    return out;
+  }
+
+  /**
+   * A colonist who shares a player's name ("Cora Marsh" in Astrid's colony, while Cora plays)
+   * muddles every letter and chat line: they get another first name.
+   */
+  unclashedName(name: string, players = this.playerNames()): string {
+    const [first, ...rest] = name.split(' ');
+    if (!players.has(first.toLowerCase())) return name;
+    for (let k = 0; k < 12; k++) {
+      const alt = pawnName(this.rng).split(' ')[0];
+      if (!players.has(alt.toLowerCase())) return [alt, ...rest].join(' ');
+    }
+    return name;
+  }
+
   spawnConstruct(def: string, cell: number, faction: number): Construct {
     const m = this.map;
     return this.add<Construct>({
@@ -585,6 +607,7 @@ export class World {
 
   spawnPawn(faction: number, cell: number, name: string, traits?: string[], weapon = ''): Pawn {
     const m = this.map;
+    name = this.unclashedName(name);
     const priorities = Object.fromEntries(WORK_TYPES.map((w) => [w, START_PRIORITY[w] ?? DEFAULT_PRIORITY])) as Record<WorkType, number>;
     return this.add<Pawn>({
       kind: 'pawn',
