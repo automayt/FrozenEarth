@@ -156,9 +156,10 @@ export function deserializeWorld(data: SaveData): World {
     if (e.kind === 'pawn') {
       e.apparel ??= [];
       e.priorities.hunt ??= DEFAULT_PRIORITY;
+      // Skills first: worlds from before skills have none, and the newer skills go into that.
+      e.skills ??= Object.fromEntries(SKILLS.map((k) => [k, { level: 3, xp: 0 }])) as Pawn['skills'];
       e.skills.stealth ??= { level: 2, xp: 0 };
       e.skills.social ??= { level: 3, xp: 0 };
-      e.skills ??= Object.fromEntries(SKILLS.map((k) => [k, { level: 3, xp: 0 }])) as Pawn['skills'];
     }
     w.add(e);
   }
