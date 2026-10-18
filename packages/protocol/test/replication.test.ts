@@ -142,7 +142,7 @@ describe('replication with every system running', () => {
       for (const c of w.choices.values()) if (c.event === 'settlement_request') w.enqueue(c.faction, { c: 'choose', choice: c.id, option: 'accept' });
       w.step();
       if (t % 4 === 0) {
-        const msg = wire<DeltaMsg>({ t: 'delta', d: packer.pack(w.takeDelta()), time: { speed: 1, paused: false, reason: '' } });
+        const msg = wire<DeltaMsg>({ t: 'delta', d: packer.pack(w.takeDelta(), w.map.w), time: { speed: 1, paused: false, reason: '' } });
         early.applyDelta(msg.d);
         late?.applyDelta(msg.d);
         for (let k = 0; k < msg.d.cells.length; k += 6) if (msg.d.cells[k + 1] === T.ice) seen.ice = true;
@@ -157,6 +157,14 @@ describe('replication with every system running', () => {
           seen.requests ||= !!f.settlement?.requests?.length;
         }
       }
+      // Pawns, the busiest entities, after every few deltas: a field left stale even briefly is a bug.
+      if (t % 20 === 0) {
+        for (const id of w.kinds.pawn) {
+          const want = visibleEntity(w.get(id)!);
+          expect(visibleEntity(early.get(id)!), `pawn ${id} at tick ${w.tick}`).toEqual(want);
+          if (late) expect(visibleEntity(late.get(id)!), `pawn ${id} at tick ${w.tick} (late)`).toEqual(want);
+        }
+      }
       if (t === 4000) {
         late = join(w);
         packer.reset();
@@ -167,7 +175,7 @@ describe('replication with every system running', () => {
         if (late) expectInSync(late, w);
       }
     }
-    const final = wire<DeltaMsg>({ t: 'delta', d: packer.pack(w.takeDelta()), time: { speed: 1, paused: false, reason: '' } }).d;
+    const final = wire<DeltaMsg>({ t: 'delta', d: packer.pack(w.takeDelta(), w.map.w), time: { speed: 1, paused: false, reason: '' } }).d;
     early.applyDelta(final);
     late!.applyDelta(final);
     expectInSync(early, w);

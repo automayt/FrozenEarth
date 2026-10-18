@@ -11,8 +11,25 @@
  */
 import { constants, createDeflateRaw, type DeflateRaw } from 'node:zlib';
 import { parseArgs } from 'node:util';
-import { decode, DeltaPacker, encode, Mirror, type ServerMsg, type WireDelta } from '@fe/protocol';
-import { addPlayerFaction, createWorld, fireEvent, Rng, snapshot, TICKS_PER_DAY, TICKS_PER_HOUR, type World } from '@fe/sim';
+import {
+  decode,
+  DeltaPacker,
+  encode,
+  Mirror,
+  packSnapshot,
+  type ServerMsg,
+  type WireDelta,
+} from '@fe/protocol';
+import {
+  addPlayerFaction,
+  createWorld,
+  fireEvent,
+  Rng,
+  snapshot,
+  TICKS_PER_DAY,
+  TICKS_PER_HOUR,
+  type World,
+} from '@fe/sim';
 import { Chaos } from '../bots/src/chaos';
 
 const { values: args } = parseArgs({
@@ -90,9 +107,19 @@ const chaos = new Chaos(rng, {
   },
 });
 const players = [...w.factions.values()].filter((f) => f.isPlayer).map((f) => f.id);
-const snap0 = encode({ t: 'welcome', playerId: 1, faction: players[0], token: '', snap: snapshot(w) }).length;
+const snap0 = encode({
+  t: 'welcome',
+  playerId: 1,
+  faction: players[0],
+  token: '',
+  snap: packSnapshot(snapshot(w)),
+}).length;
 const mirror = new Mirror();
-mirror.applySnapshot(decode<Extract<ServerMsg, { t: 'welcome' }>>(encode({ t: 'welcome', playerId: 1, faction: 1, token: '', snap: snapshot(w) })).snap);
+mirror.applySnapshot(
+  decode<Extract<ServerMsg, { t: 'welcome' }>>(
+    encode({ t: 'welcome', playerId: 1, faction: 1, token: '', snap: snapshot(w) }),
+  ).snap,
+);
 w.takeDelta();
 
 const deflate = new Deflater();
@@ -162,7 +189,9 @@ for (let t = 1; t <= ticks; t++) {
     if (fireEvent(w, ev, ev === 'settlement_raid' ? 0 : rng.pick(players))) events++;
   }
   // Players answer some letters; the rest expire.
-  if (t % TICKS_PER_HOUR === 0) for (const c of [...w.choices.values()]) if (rng.chance(0.3)) w.enqueue(c.faction, { c: 'choose', choice: c.id, option: c.options[0].key });
+  if (t % TICKS_PER_HOUR === 0)
+    for (const c of [...w.choices.values()])
+      if (rng.chance(0.3)) w.enqueue(c.faction, { c: 'choose', choice: c.id, option: c.options[0].key });
   const s = performance.now();
   w.step();
   const dt = performance.now() - s;
@@ -170,7 +199,7 @@ for (let t = 1; t <= ticks; t++) {
   worstTick = Math.max(worstTick, dt);
   if (t % PER_DELTA === 0) {
     const e0 = performance.now();
-    const d = args.raw ? w.takeDelta() : packer.pack(w.takeDelta());
+    const d = args.raw ? w.takeDelta() : packer.pack(w.takeDelta(), w.map.w);
     const bytes = encode({ t: 'delta', d, time: { speed: SPEED, paused: false, reason: '' } });
     // Packing is part of the server's cost of a delta.
     encodeMs += performance.now() - e0;
@@ -192,7 +221,13 @@ for (let t = 1; t <= ticks; t++) {
 const wall = (performance.now() - t0) / 1000;
 const secs = deltas / DELTAS_PER_SEC;
 const snapEnd = snapshot(w);
-const snapEndBytes = encode({ t: 'welcome', playerId: 1, faction: players[0], token: '', snap: snapEnd });
+const snapEndBytes = encode({
+  t: 'welcome',
+  playerId: 1,
+  faction: players[0],
+  token: '',
+  snap: packSnapshot(snapEnd),
+});
 const snapDeflate = new Deflater();
 await snapDeflate.push(snapEndBytes);
 const kbps = (n: number) => +(n / secs / 1024).toFixed(2);
@@ -223,11 +258,18 @@ console.log(
       snapshotStartKB: Math.round(snap0 / 1024),
       snapshotEndKB: Math.round(snapEndBytes.length / 1024),
       snapshotEndDeflatedKB: Math.round(snapDeflate.bytes / 1024),
-      snapshotParts: Object.fromEntries(Object.entries(snapEnd).map(([k, v]) => [k, Math.round(size(v) / 1024)]).filter(([, v]) => (v as number) > 0)),
+      snapshotParts: Object.fromEntries(
+        Object.entries(snapEnd)
+          .map(([k, v]) => [k, Math.round(size(v) / 1024)])
+          .filter(([, v]) => (v as number) > 0),
+      ),
     },
     null,
     1,
   ),
 );
 console.log('bytes per second by part (raw msgpack, per client):');
-for (const [k, v] of top) console.log(`  ${k.padEnd(24)} ${(v / secs / 1024).toFixed(2).padStart(7)} KB/s${counts.has(k) ? `  (${(counts.get(k)! / secs).toFixed(1)}/s)` : ''}`);
+for (const [k, v] of top)
+  console.log(
+    `  ${k.padEnd(24)} ${(v / secs / 1024).toFixed(2).padStart(7)} KB/s${counts.has(k) ? `  (${(counts.get(k)! / secs).toFixed(1)}/s)` : ''}`,
+  );

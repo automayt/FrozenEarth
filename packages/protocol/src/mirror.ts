@@ -1,6 +1,6 @@
 import { CELL_FIELDS, DEFAULT_FROST, type FrostParams, type Choice, type Condition, type Delta, type Entity, type Faction, type GameMessage, type Pawn, type Room, type Snapshot, type Zone } from '@fe/sim';
 import { toU8 } from './codec';
-import type { WireDelta } from './packer';
+import { unpackPath, type WireDelta } from './packer';
 
 /**
  * A client's read-only replica of the world, built from a snapshot and kept current by deltas.
@@ -171,6 +171,7 @@ export class Mirror {
   }
 
   private upsert(e: Entity): void {
+    if (e.kind === 'pawn' && e.path && !Array.isArray(e.path.cells)) e = { ...e, path: unpackPath(e.path, this.w) };
     const old = this.entities.get(e.id);
     if (old) this.unindex(old);
     this.entities.set(e.id, e);

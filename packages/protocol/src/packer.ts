@@ -1,4 +1,4 @@
-import type { Delta, Entity, EntityId } from '@fe/sim';
+import type { Delta, Entity, EntityId, PathState, Snapshot } from '@fe/sim';
 
 /**
  * Changed fields of an entity every client already has: `set` replaces those fields, `del`
@@ -16,6 +16,71 @@ export interface WireDelta extends Delta {
 }
 
 type Obj = Record<string, unknown>;
+
+/**
+ * A pawn's walk as it goes over the wire: each step as a direction (0-8, (dy+1)*3 + dx+1) and the
+ * ticks it takes, one byte each, instead of a cell index and an absolute arrival tick (about
+ * 8 bytes a step). Walks are the biggest thing left in a delta once entities are patched.
+ */
+export interface WirePath extends Omit<PathState, 'cells' | 'times'> {
+  dir: Uint8Array;
+  dt: Uint8Array;
+}
+
+/** The compact form of a walk, or the walk itself if a step isn't to a neighbour or takes over 255 ticks. */
+export function packPath(ps: PathState, mapW: number): PathState | WirePath {
+  const n = ps.cells.length;
+  const dir = new Uint8Array(n);
+  const dt = new Uint8Array(n);
+  let px = ps.fx;
+  let py = ps.fy;
+  let pt = ps.t0;
+  for (let i = 0; i < n; i++) {
+    const c = ps.cells[i];
+    const x = c % mapW;
+    const y = (c - x) / mapW;
+    const dx = x - px;
+    const dy = y - py;
+    const d = ps.times[i] - pt;
+    if (dx < -1 || dx > 1 || dy < -1 || dy > 1 || d < 0 || d > 255) return ps;
+    dir[i] = (dy + 1) * 3 + dx + 1;
+    dt[i] = d;
+    px = x;
+    py = y;
+    pt = ps.times[i];
+  }
+  const { cells: _c, times: _t, ...rest } = ps;
+  return { ...rest, dir, dt };
+}
+
+/** Back to cells and arrival ticks. A walk that arrived uncompacted passes through. */
+export function unpackPath(p: PathState | WirePath, mapW: number): PathState {
+  if (!('dir' in p)) return p;
+  const { dir, dt, ...rest } = p;
+  const cells: number[] = new Array(dir.length);
+  const times: number[] = new Array(dir.length);
+  let x = p.fx;
+  let y = p.fy;
+  let t = p.t0;
+  for (let i = 0; i < dir.length; i++) {
+    x += (dir[i] % 3) - 1;
+    y += Math.floor(dir[i] / 3) - 1;
+    t += dt[i];
+    cells[i] = y * mapW + x;
+    times[i] = t;
+  }
+  return { ...rest, cells, times };
+}
+
+/** An entity ready for the wire: a walking pawn's path compacted. Never mutates the sim's entity. */
+function wireEntity(e: Entity, mapW: number): Entity {
+  return e.kind === 'pawn' && e.path ? ({ ...e, path: packPath(e.path, mapW) } as Entity) : e;
+}
+
+/** A snapshot with every walk compacted (Mirror.applySnapshot reads either form). */
+export function packSnapshot(s: Snapshot): Snapshot {
+  return { ...s, ents: s.ents.map((e) => wireEntity(e, s.w)) };
+}
 
 /**
  * What a field is compared by, to decide whether it is worth resending. The value sent is always
@@ -39,11 +104,19 @@ function view(kind: Entity['kind'], key: string, v: unknown): unknown {
     }
     case 'skills':
       // XP accrues every work tick and no client shows it; levels are what change the game.
-      return Object.fromEntries(Object.entries(v as Obj).map(([k, s]) => [k, (s as { level: number }).level]));
+      return Object.fromEntries(
+        Object.entries(v as Obj).map(([k, s]) => [k, (s as { level: number }).level]),
+      );
     case 'needs':
-      return Object.fromEntries(Object.entries(v as Obj).map(([k, n]) => [k, Math.round((n as number) * 50)]));
+      return Object.fromEntries(
+        Object.entries(v as Obj).map(([k, n]) => [k, Math.round((n as number) * 50)]),
+      );
     case 'conditions':
-      return (v as { severity: number; immunity: number }[]).map((c) => ({ ...c, severity: Math.round(c.severity * 20), immunity: Math.round(c.immunity * 20) }));
+      return (v as { severity: number; immunity: number }[]).map((c) => ({
+        ...c,
+        severity: Math.round(c.severity * 20),
+        immunity: Math.round(c.immunity * 20),
+      }));
   }
   return v;
 }
@@ -84,7 +157,8 @@ export class DeltaPacker {
     this.sent.clear();
   }
 
-  pack(d: Delta): WireDelta {
+  /** `mapW` is the map's width, for compacting walks. */
+  pack(d: Delta, mapW: number): WireDelta {
     for (const id of d.removed) this.sent.delete(id);
     if (!d.ents.length) return d;
     const ents: Entity[] = [];
@@ -93,7 +167,7 @@ export class DeltaPacker {
       const prev = this.sent.get(e.id);
       if (!prev || prev.kind !== e.kind) {
         this.sent.set(e.id, structuredClone(e) as unknown as Obj);
-        ents.push(e);
+        ents.push(wireEntity(e, mapW));
         this.full++;
         continue;
       }
@@ -105,7 +179,7 @@ export class DeltaPacker {
         if (v === undefined) continue;
         const old = prev[k];
         if (old !== undefined && (v === old || sameData(view(e.kind, k, v), view(e.kind, k, old)))) continue;
-        (set ??= {})[k] = v;
+        (set ??= {})[k] = k === 'path' && e.kind === 'pawn' && v ? packPath(v as PathState, mapW) : v;
         prev[k] = typeof v === 'object' && v !== null ? structuredClone(v) : v;
       }
       for (const k in prev) {

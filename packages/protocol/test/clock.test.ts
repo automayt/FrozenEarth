@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Rng } from '@fe/sim';
-import { TickClock } from '../src';
+import { PawnGlide, TickClock } from '../src';
 
 /**
  * A server at 3x (180 ticks/s) sending a delta every 66 ms over a link with this one-way latency
@@ -94,5 +94,30 @@ describe('client tick clock', () => {
     expect(Math.abs(c.estTick() - 90_000)).toBeLessThan(10);
     c.setServerTick(1_000);
     expect(Math.abs(c.estTick() - 1_000)).toBeLessThan(10);
+  });
+});
+
+describe('pawn glide', () => {
+  it('follows a walk exactly, eases a late one-cell correction over a few frames, and snaps a teleport', () => {
+    const g = new PawnGlide();
+    let now = 1000;
+    let x = 10;
+    expect(g.at(1, { x, y: 5 }, now)).toEqual({ x, y: 5 });
+    // Walking at 3x: about a quarter cell a frame, followed exactly.
+    for (let i = 0; i < 10; i++) {
+      now += 16;
+      x += 0.25;
+      expect(g.at(1, { x, y: 5 }, now)).toEqual({ x, y: 5 });
+    }
+    // A walk that arrived late puts it 1.5 cells further on: no pop, but caught up within 200 ms.
+    now += 16;
+    x += 1.5;
+    const first = g.at(1, { x, y: 5 }, now);
+    expect(first.x).toBeLessThan(x - 0.5);
+    expect(first.x).toBeGreaterThan(x - 1.5);
+    for (let i = 0; i < 12; i++) g.at(1, { x, y: 5 }, (now += 16));
+    expect(g.at(1, { x, y: 5 }, (now += 16)).x).toBe(x);
+    // Across the map: a snap, not a slide.
+    expect(g.at(1, { x: 80, y: 40 }, (now += 16))).toEqual({ x: 80, y: 40 });
   });
 });

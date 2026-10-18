@@ -5,10 +5,11 @@ import { DeltaPacker, encode } from '../src';
 /**
  * Cheap guards against performance regressions. A busy world (four colonies of five, two
  * settlements' worth of townsfolk, wildlife) currently runs at about 0.02 ms per tick on a
- * laptop and sends about 6.6 KB/s of deltas (20 KB/s before entities were sent as field patches). The time budget is 20x that, so a slow CI machine
- * never trips it, but an accidental O(n^2) in a per-tick path does. The bandwidth budgets are
- * exact counts on a seeded world, so they never flake; raise them deliberately (with the new
- * numbers in the message) when a feature really needs to send more.
+ * laptop; the time budget is 20x that, so a slow CI machine never trips it, but an accidental
+ * O(n^2) in a per-tick path does. It sends about 6 KB/s of deltas (20 KB/s before changed
+ * entities went out as field patches). The bandwidth budgets are exact counts on a seeded world,
+ * so they never flake; raise them deliberately (with the new numbers in the message) when a
+ * feature really needs to send more.
  */
 
 const TICKS = 8000;
@@ -47,7 +48,7 @@ describe('performance budget', () => {
           const raw = w.takeDelta();
           rawBytes += encode({ t: 'delta', d: raw, time: { speed: 3, paused: false, reason: '' } }).length;
           // What the server sends: entities seen before go out as patches of what changed.
-          const d = packer.pack(raw);
+          const d = packer.pack(raw, w.map.w);
           resent += d.ents.length + (d.patches?.length ?? 0);
           bytes += encode({ t: 'delta', d, time: { speed: 3, paused: false, reason: '' } }).length;
         }
@@ -56,8 +57,8 @@ describe('performance budget', () => {
     }
     expect(best, `ms per tick (${w.entities.size} entities)`).toBeLessThan(0.4);
     const seconds = TICKS / 60;
-    // On the wire, after field patching (protocol 9): was ~6,600. Whole entities, as protocol 8 sent them: ~20,500.
-    expect(bytes / seconds, `wire delta bytes per game second (was ~6,600)`).toBeLessThan(10_000);
+    // On the wire, after field patching and compact walks (protocol 9): was ~6,100. Whole entities, as protocol 8 sent them: ~20,500.
+    expect(bytes / seconds, `wire delta bytes per game second (was ~6,100)`).toBeLessThan(9_000);
     // What the sim marks as changed, sent whole: a guard on the sim's own dirty-marking.
     expect(rawBytes / seconds, `unpacked delta bytes per game second (was ~20,500)`).toBeLessThan(30_000);
     expect(resent / seconds, `entities resent per game second (was ~48)`).toBeLessThan(80);

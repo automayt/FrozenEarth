@@ -19,7 +19,7 @@ import {
   type World,
 } from '@fe/sim';
 import { EVENTS } from '@fe/defs';
-import { decode, DeltaPacker, encode, PROTOCOL_VERSION, type ClientMsg, type PlayerInfo, type ServerMsg, type TimeState, type WireDelta } from '@fe/protocol';
+import { decode, DeltaPacker, encode, packSnapshot, PROTOCOL_VERSION, type ClientMsg, type PlayerInfo, type ServerMsg, type TimeState, type WireDelta } from '@fe/protocol';
 import { loadWorldFile, saveWorldFile, type StoredPlayer } from './persistence';
 
 /** Real seconds of pause each player gets per in-game day, and the most they can bank. */
@@ -201,7 +201,7 @@ export class GameServer {
 
     if (now - this.lastBroadcast >= BROADCAST_MS) {
       this.lastBroadcast = now;
-      const d = this.packer.pack(this.world.takeDelta());
+      const d = this.packer.pack(this.world.takeDelta(), this.world.map.w);
       // Also when only the clock moved, or speed or pause changed and changed back since the last send:
       // otherwise a client never learns that ticks passed with nothing visible happening.
       const st = this.sentTime;
@@ -368,7 +368,7 @@ export class GameServer {
       playerId: p.id,
       faction: p.faction,
       token: p.token,
-      snap: snapshot(this.world),
+      snap: packSnapshot(snapshot(this.world)),
       sites: p.faction ? undefined : suggestSites(this.world),
     });
     // The new client has the world as it is now, not as everyone else was last sent it.

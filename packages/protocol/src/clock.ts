@@ -111,3 +111,47 @@ export class TickClock {
     this.k = 1 + Math.max(-0.25, Math.min(0.25, err));
   }
 }
+
+/** Below this (plus how far the fastest walker gets in the frame) a pawn's drawn position just follows its walk; above GLIDE_MAX it's a teleport and snaps. In cells. */
+const GLIDE_MIN = 0.75;
+/** Cells per second a pawn can cover at 3x, diagonally: frames that long may move that far. */
+const WALK_MAX = 15;
+const GLIDE_MAX = 8;
+/** Time constant of the catch-up, ms: a one-cell correction is gone in about three of these. */
+const GLIDE_MS = 50;
+
+/**
+ * Hides the small corrections a jittery link still causes: a walk that arrived after it started,
+ * or a pawn the server moved a cell without a path. A drawn pawn more than GLIDE_MIN cells from
+ * where it should be (in one frame) catches up over a few frames instead of popping. Normal
+ * walking is followed exactly, and real teleports (a rejoin, a far move) snap.
+ */
+export class PawnGlide {
+  private drawn = new Map<number, { x: number; y: number; at: number }>();
+
+  at(id: number, target: { x: number; y: number }, now: number): { x: number; y: number } {
+    const d = this.drawn.get(id);
+    if (!d || now - d.at > 500) {
+      this.drawn.set(id, { x: target.x, y: target.y, at: now });
+      return target;
+    }
+    const dx = target.x - d.x;
+    const dy = target.y - d.y;
+    const dist = Math.hypot(dx, dy);
+    const dt = Math.max(0, now - d.at);
+    if (dist <= GLIDE_MIN + (WALK_MAX * dt) / 1000 || dist > GLIDE_MAX) {
+      d.x = target.x;
+      d.y = target.y;
+    } else {
+      const k = 1 - Math.exp(-dt / GLIDE_MS);
+      d.x += dx * k;
+      d.y += dy * k;
+    }
+    d.at = now;
+    return { x: d.x, y: d.y };
+  }
+
+  forget(id: number): void {
+    this.drawn.delete(id);
+  }
+}
