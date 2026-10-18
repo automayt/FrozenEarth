@@ -77,7 +77,8 @@ function visibleFactionFields(f: Faction): unknown {
 }
 
 /** Everything one client's mirror gets wrong about the server's world. */
-export function differences(m: Mirror, w: World): string[] {
+/** What this client sees differently from the server. A client only gets its own colony's open decisions. */
+export function differences(m: Mirror, w: World, faction: number): string[] {
   const out: string[] = [];
   const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
   if (m.tick !== w.tick) out.push(`tick ${m.tick} vs ${w.tick}`);
@@ -101,7 +102,7 @@ export function differences(m: Mirror, w: World): string[] {
       }
     }
   }
-  if (!same(m.choices, [...w.choices.values()])) out.push('choices differ');
+  if (!same(m.choices, [...w.choices.values()].filter((c) => c.faction === faction))) out.push('choices differ');
   if (!same(m.conditions, w.conditions)) out.push('conditions differ');
   return out;
 }

@@ -78,6 +78,51 @@ describe('game server', () => {
     for (const c of changes) expect(deltaIsEmpty({ ...emptyDelta(), ...c }), Object.keys(c)[0]).toBe(false);
   });
 
+  it("one colony never receives another's letters or decisions", () => {
+    const g = new GameServer({ savePath: worldPath(dir, 'private'), seed: 4, size: 80, log: () => {} });
+    const ann = new FakeSocket();
+    const bob = new FakeSocket();
+    const eve = new FakeSocket();
+    const tokens: Record<string, string> = {};
+    const join = (ws: FakeSocket, name: string) => {
+      g.onConnect(ws as unknown as WebSocket);
+      ws.say({ t: 'hello', v: PROTOCOL_VERSION, name });
+      tokens[name] = ws.take('welcome')[0].token;
+      ws.say({ t: 'settle' });
+      return ws.take('settled')[0].faction;
+    };
+    const a = join(ann, 'Ann');
+    const b = join(bob, 'Bob');
+    join(eve, 'Eve');
+    pump(g);
+    for (const ws of [ann, bob, eve]) ws.inbox = [];
+    ann.say({ t: 'cmd', cmd: { c: 'diplomacy', act: 'ally', target: b } });
+    pump(g);
+    pump(g);
+    const seen = (ws: FakeSocket) => {
+      const ds = ws.take('delta').map((m) => m.d);
+      return { choices: ds.flatMap((d) => d.choices ?? []), msgs: ds.flatMap((d) => d.msgs) };
+    };
+    const forBob = seen(bob);
+    const forEve = seen(eve);
+    const forAnn = seen(ann);
+    expect(forBob.choices.some((c) => c.event === 'pact_offer')).toBe(true);
+    expect(forEve.choices).toEqual([]);
+    expect(forAnn.choices).toEqual([]);
+    expect(forEve.msgs.every((m) => m.faction === 0)).toBe(true);
+    expect(forAnn.msgs.every((m) => m.faction === 0 || m.faction === a)).toBe(true);
+    // Coming back, each gets only their own open decisions in the snapshot.
+    for (const [name, ws] of [['Bob', bob], ['Eve', eve]] as const) {
+      ws.close();
+      const again = new FakeSocket();
+      g.onConnect(again as unknown as WebSocket);
+      again.say({ t: 'hello', v: PROTOCOL_VERSION, name, token: tokens[name] });
+      const choices = again.take('welcome')[0].snap.choices;
+      expect(choices.length).toBe(name === 'Bob' ? 1 : 0);
+    }
+    g.stop();
+  });
+
   it('a tab left in the background does not hold everyone at its speed', () => {
     const g = new GameServer({ savePath: worldPath(dir, 'away'), seed: 4, size: 80, log: () => {} });
     const ann = new FakeSocket();

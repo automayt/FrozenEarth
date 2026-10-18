@@ -440,7 +440,7 @@ async function main() {
     await sleep(1200);
     let bad = 0;
     for (const b of bots) {
-      const diffs = differences(b.mirror, world());
+      const diffs = differences(b.mirror, world(), b.faction);
       if (diffs.length) {
         bad++;
         log(`  ${label}: ${b.name} ${diffs.length} differences: ${diffs.slice(0, 4).join(' | ')}`);

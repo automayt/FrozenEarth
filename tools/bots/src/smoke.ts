@@ -219,7 +219,7 @@ async function main() {
     const world = deserializeWorld(file.save);
 
     for (const c of clients) {
-      const diffs = differences(c.mirror, world);
+      const diffs = differences(c.mirror, world, c.faction);
       const own = [...c.mirror.entities.values()].filter((e): e is Pawn => e.kind === 'pawn' && e.faction === c.faction).length;
       const sent = [...c.sent.values()].reduce((a, b) => a + b, 0);
       log(`${c.name}: faction ${c.faction}, ${own} pawns, ${sent} commands, saw ${[...c.seen].sort().join('/') || 'nothing new'}, ${diffs.length ? `${diffs.length} DIFFERENCES` : 'in sync'}`);

@@ -20,6 +20,7 @@ import {
   type GameMessage,
   type Pawn,
   type SaveData,
+  type Snapshot,
   type World,
 } from '@fe/sim';
 import { EVENTS } from '@fe/defs';
@@ -133,6 +134,19 @@ export interface CrashReport {
   checkpoint: SaveData;
   journal: JournalOp[];
   journalComplete: boolean;
+}
+
+/** Letters a colony may read: its own and those for everybody. */
+const mine = (faction: number) => (m: GameMessage) => m.faction === 0 || (faction > 0 && m.faction === faction);
+
+/** A delta as one colony sees it: other colonies' letters and decisions left out. */
+export function deltaFor(d: WireDelta, faction: number): WireDelta {
+  return { ...d, msgs: d.msgs.filter(mine(faction)), ...(d.choices ? { choices: d.choices.filter((c) => c.faction === faction) } : {}) };
+}
+
+/** A snapshot as one colony sees it: only its own open decisions. */
+export function snapshotFor(s: Snapshot, faction: number): Snapshot {
+  return { ...s, choices: s.choices.filter((c) => c.faction === faction) };
 }
 
 /** True when a delta carries nothing, so a paused server can skip sending it. Taking it clears the changes, so this must see every field. */
@@ -457,7 +471,7 @@ export class GameServer {
       if (!deltaIsEmpty(d) || d.tick !== this.sentTick || !st || st.speed !== time.speed || st.paused !== time.paused || st.reason !== time.reason) {
         this.sentTick = d.tick;
         this.sentTime = time;
-        this.broadcast({ t: 'delta', d, time });
+        this.broadcastDelta(d, time);
       }
     }
     this.heartbeat(now);
@@ -573,11 +587,11 @@ export class GameServer {
   private resync(): void {
     // A new World object: tell it who's here, and start the field patches over from the snapshot.
     this.refreshOnline();
-    const snap = packSnapshot(snapshot(this.world));
+    const snap = snapshot(this.world);
     const sites = suggestSites(this.world);
     for (const p of this.players.values()) {
       if (!p.ws) continue;
-      this.send(p.ws, { t: 'welcome', playerId: p.id, faction: p.faction, token: p.token, snap, sites: p.faction ? undefined : sites });
+      this.send(p.ws, { t: 'welcome', playerId: p.id, faction: p.faction, token: p.token, snap: packSnapshot(snapshotFor(snap, p.faction)), sites: p.faction ? undefined : sites });
     }
     this.packer.reset();
     this.sentTick = -1;
@@ -761,7 +775,7 @@ export class GameServer {
       playerId: p.id,
       faction: p.faction,
       token: p.token,
-      snap: packSnapshot(snapshot(this.world)),
+      snap: packSnapshot(snapshotFor(snapshot(this.world), p.faction)),
       sites: p.faction ? undefined : suggestSites(this.world),
       msgs: this.letters.filter((m) => m.faction === 0 || (mine && m.faction === mine)).slice(-SEND_LETTERS),
       chat: this.chatLog,
@@ -1083,17 +1097,38 @@ export class GameServer {
 
   broadcast(msg: ServerMsg): void {
     const bytes = encode(msg);
+    for (const p of this.players.values()) this.sendBytes(p, bytes);
+  }
+
+  /**
+   * A delta, with each colony seeing only its own letters and decisions (and the ones for
+   * everybody): trade offers, pacts and their text are nobody else's business. One encoding per
+   * colony, and one shared encoding when the delta carries none of either.
+   */
+  private broadcastDelta(d: WireDelta, time: TimeState): void {
+    if (!d.msgs.length && !d.choices) return this.broadcast({ t: 'delta', d, time });
+    const byFaction = new Map<number, Uint8Array>();
     for (const p of this.players.values()) {
-      const ws = p.ws;
-      if (!ws || ws.readyState !== ws.OPEN) continue;
-      // A client this far behind would miss deltas; drop it so it reconnects with a fresh snapshot.
-      if (ws.bufferedAmount > MAX_BUFFERED) {
-        ws.terminate();
-        continue;
+      if (!p.ws) continue;
+      let bytes = byFaction.get(p.faction);
+      if (!bytes) {
+        bytes = encode({ t: 'delta', d: deltaFor(d, p.faction), time });
+        byFaction.set(p.faction, bytes);
       }
-      ws.send(bytes);
-      this.bytesOut += bytes.length;
+      this.sendBytes(p, bytes);
     }
+  }
+
+  private sendBytes(p: Player, bytes: Uint8Array): void {
+    const ws = p.ws;
+    if (!ws || ws.readyState !== ws.OPEN) return;
+    // A client this far behind would miss deltas; drop it so it reconnects with a fresh snapshot.
+    if (ws.bufferedAmount > MAX_BUFFERED) {
+      ws.terminate();
+      return;
+    }
+    ws.send(bytes);
+    this.bytesOut += bytes.length;
   }
 
   private system(text: string): void {
