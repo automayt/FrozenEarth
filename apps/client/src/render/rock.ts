@@ -12,8 +12,13 @@ import { hash2 } from '@fe/sim';
  * repainted per cell, so mining a cell redraws its 3x3 neighbourhood and nothing else.
  */
 
-/** Bitmap pixels per cell (TILE 32 world units / 12 = 2.7 units per pixel). */
-export const ROCK_PX = 12;
+/** Bitmap pixels per cell (TILE 32 world units / 16 = 2 units per pixel). */
+export const ROCK_PX = 16;
+/**
+ * The look is designed at 12 pixels a cell: patterns, outline and rim widths are in those
+ * "design pixels", so the bitmap's resolution can change without the rock changing.
+ */
+const DESIGN_PX = 12;
 /** Cells per chunk side. */
 const CHUNK = 16;
 
@@ -174,10 +179,24 @@ function broad(x: number, y: number): number {
 function stoneTexel(stone: number, gx: number, gy: number, f: number): [number, number, number] {
   let tile = tiles.get(stone);
   if (!tile) tiles.set(stone, (tile = buildTile(stone)));
-  const o = ((gy % TEX) * TEX + (gx % TEX)) * 3;
-  tmp[0] = tile[o] * f;
-  tmp[1] = tile[o + 1] * f;
-  tmp[2] = tile[o + 2] * f;
+  // Bilinear between the four nearest texels: the tile is in design pixels, the bitmap may be finer.
+  const x0 = Math.floor(gx);
+  const y0 = Math.floor(gy);
+  const fx = gx - x0;
+  const fy = gy - y0;
+  const ax = ((x0 % TEX) + TEX) % TEX;
+  const ay = ((y0 % TEX) + TEX) % TEX;
+  const bx = (ax + 1) % TEX;
+  const by = (ay + 1) % TEX;
+  const o00 = (ay * TEX + ax) * 3;
+  const o10 = (ay * TEX + bx) * 3;
+  const o01 = (by * TEX + ax) * 3;
+  const o11 = (by * TEX + bx) * 3;
+  for (let k = 0; k < 3; k++) {
+    const top = tile[o00 + k] + (tile[o10 + k] - tile[o00 + k]) * fx;
+    const bot = tile[o01 + k] + (tile[o11 + k] - tile[o01 + k]) * fx;
+    tmp[k] = (top + (bot - top) * fy) * f;
+  }
   return tmp;
 }
 
@@ -228,8 +247,9 @@ export function rockCellHasContent(m: RockMap, c: number): boolean {
  * Paint cell c's ROCK_PX x ROCK_PX pixels (premultiplied RGBA) into data at (ox, oy).
  * Open cells away from rock and roof come out fully transparent.
  */
-export function paintRockCell(m: RockMap, c: number, data: Uint8ClampedArray, stride: number, ox: number, oy: number): void {
-  const P = ROCK_PX;
+export function paintRockCell(m: RockMap, c: number, data: Uint8ClampedArray, stride: number, ox: number, oy: number, P = ROCK_PX): void {
+  // Real pixels per design pixel.
+  const S = P / DESIGN_PX;
   const x = c % m.w;
   const y = (c / m.w) | 0;
   const isRock = m.rock[c] > 0;
@@ -291,11 +311,12 @@ export function paintRockCell(m: RockMap, c: number, data: Uint8ClampedArray, st
     for (let px = 0; px < P; px++) {
       const u = (px + 0.5) / P;
       const v = (py + 0.5) / P;
-      const gx = x * P + px;
-      const gy = y * P + py;
+      // Pattern coordinates in design pixels (fractional, so smooth noise gets the extra detail).
+      const gx = (x * P + px) / S;
+      const gy = (y * P + py) / S;
       const o = ((oy + py) * stride + ox + px) * 4;
-      // t: depth in pixels into the drawn rock (negative out on open ground). nx, ny: outward normal of the nearest edge.
-      let t = isRock ? P * 3 : -P * 3;
+      // t: depth in design pixels into the drawn rock (negative out on open ground). nx, ny: outward normal of the nearest edge.
+      let t = isRock ? DESIGN_PX * 3 : -DESIGN_PX * 3;
       let nx = 0;
       let ny = 0;
       let near = -1;
@@ -320,7 +341,7 @@ export function paintRockCell(m: RockMap, c: number, data: Uint8ClampedArray, st
         // ...but near the edge the smoothed mask decides, so corners round off and the outline wanders.
         const cov = coverage(m, x + u, y + v);
         const sd = cov > 0 && cov < 1 ? (cov - 0.5) * BLUR * P : isRock ? Math.max(half, dist) : -Math.max(half, dist);
-        t = sd + LIP_MIN + LIP_VAR * (vnoise(gx / 7, gy / 7, 21) * 0.75 + vnoise(gx / 2.5, gy / 2.5, 22) * 0.25);
+        t = sd / S + LIP_MIN + LIP_VAR * (vnoise(gx / 7, gy / 7, 21) * 0.75 + vnoise(gx / 2.5, gy / 2.5, 22) * 0.25);
       }
       if (t <= 0) {
         // Open ground: transparent, or the shade of a roofed tunnel.
@@ -333,10 +354,12 @@ export function paintRockCell(m: RockMap, c: number, data: Uint8ClampedArray, st
         if (near >= 0) a += 0.42 * Math.max(0, 1 + t / 6);
         if (carved) {
           // Chisel marks: short diagonal strokes in a loose grid.
-          const bx = gx >> 2;
-          const by = gy >> 2;
-          if (hash2(bx, by, 31) > 0.55 && ((gx + gy + ((hash2(bx, by, 32) * 4) | 0)) & 3) === 0) a += 0.14;
-          else if (hash2(gx, gy, 33) > 0.9) a -= 0.08;
+          const ix = gx | 0;
+          const iy = gy | 0;
+          const bx = ix >> 2;
+          const by = iy >> 2;
+          if (hash2(bx, by, 31) > 0.55 && ((ix + iy + ((hash2(bx, by, 32) * 4) | 0)) & 3) === 0) a += 0.14;
+          else if (hash2(ix, iy, 33) > 0.9) a -= 0.08;
         }
         a = Math.min(0.88, Math.max(0, a));
         data[o] = 9 * a;
@@ -352,8 +375,8 @@ export function paintRockCell(m: RockMap, c: number, data: Uint8ClampedArray, st
       let b: number;
       let a = 1;
       if (t < outline) {
-        // The crisp outline, anti-aliased on its outer side; thicker on the cliff side, away from the light.
-        a = Math.min(1, t * 1.6);
+        // The crisp outline, anti-aliased over about a real pixel on its outer side; thicker on the cliff side, away from the light.
+        a = Math.min(1, t * 1.6 * S);
         r = OUTLINE_RGB[0];
         g = OUTLINE_RGB[1];
         b = OUTLINE_RGB[2];
