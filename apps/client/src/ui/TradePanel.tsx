@@ -118,7 +118,10 @@ export function OutgoingOffers({ event, to }: { event: 'trade' | 'pact_offer'; t
         return (
           <p key={c.id} className="small">
             <span className="muted">Waiting on {who?.name ?? 'them'}:</span> {event === 'trade' ? c.text.replace(/ ".*"$/, '') : `${c.title}.`}{' '}
-            <span className="muted">{who && !who.connected ? '(they are offline: it waits for them)' : `(${hours}h left)`}</span>
+            <span className="muted">{who && !who.connected ? '(they are offline: it waits for them)' : `(${hours}h left)`}</span>{' '}
+            <button className="link" onClick={() => command({ c: 'withdraw', choice: c.id })} title="Take the offer back before they answer">
+              Withdraw
+            </button>
           </p>
         );
       })}

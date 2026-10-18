@@ -15,6 +15,7 @@ import {
   snapshot,
   MAX_SPEED,
   TICKS_PER_SECOND,
+  type Choice,
   type Command,
   type Delta,
   type GameMessage,
@@ -143,14 +144,17 @@ export interface CrashReport {
 /** Letters a colony may read: its own and those for everybody. */
 const mine = (faction: number) => (m: GameMessage) => m.faction === 0 || (faction > 0 && m.faction === faction);
 
+/** Decisions a colony may see: its own, and offers it sent that are still waiting. */
+const seesChoice = (faction: number) => (c: Choice) => faction > 0 && (c.faction === faction || c.from === faction);
+
 /** A delta as one colony sees it: other colonies' letters and decisions left out. */
 export function deltaFor(d: WireDelta, faction: number): WireDelta {
-  return { ...d, msgs: d.msgs.filter(mine(faction)), ...(d.choices ? { choices: d.choices.filter((c) => c.faction === faction) } : {}) };
+  return { ...d, msgs: d.msgs.filter(mine(faction)), ...(d.choices ? { choices: d.choices.filter(seesChoice(faction)) } : {}) };
 }
 
 /** A snapshot as one colony sees it: only its own open decisions. */
 export function snapshotFor(s: Snapshot, faction: number): Snapshot {
-  return { ...s, choices: s.choices.filter((c) => c.faction === faction) };
+  return { ...s, choices: s.choices.filter(seesChoice(faction)) };
 }
 
 /** True when a delta carries nothing, so a paused server can skip sending it. Taking it clears the changes, so this must see every field. */

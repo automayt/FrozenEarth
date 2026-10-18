@@ -396,6 +396,8 @@ export type Command =
   | { c: 'updateBill'; bench: EntityId; bill: number; mode?: BillMode; target?: number; suspended?: boolean }
   | { c: 'removeBill'; bench: EntityId; bill: number }
   | { c: 'choose'; choice: number; option: string }
+  /** Take back an offer you sent another player, before they answer. */
+  | { c: 'withdraw'; choice: number }
   | { c: 'offerTrade'; to: number; give: [string, number][]; want: [string, number][]; note?: string }
   | { c: 'settlementTrade'; settlement: number; give: [string, number][]; want: [string, number][] }
   | { c: 'deliverRequest'; settlement: number; request: number }

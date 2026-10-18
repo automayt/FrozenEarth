@@ -102,7 +102,7 @@ export function differences(m: Mirror, w: World, faction: number): string[] {
       }
     }
   }
-  if (!same(m.choices, [...w.choices.values()].filter((c) => c.faction === faction))) out.push('choices differ');
+  if (!same(m.choices, [...w.choices.values()].filter((c) => c.faction === faction || c.from === faction))) out.push('choices differ');
   if (!same(m.conditions, w.conditions)) out.push('conditions differ');
   return out;
 }

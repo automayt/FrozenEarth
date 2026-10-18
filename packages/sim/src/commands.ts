@@ -7,7 +7,7 @@ import { releasePrisoner } from './raids';
 import { bedFor, findStorageCell } from './work';
 import { DESIG } from './types';
 import { NEIGHBORS4, rk, unreachableKey, type World } from './world';
-import { resolveChoice } from './choices';
+import { resolveChoice, withdrawChoice } from './choices';
 import { siteProblem } from './setup';
 import { offerTrade } from './trade';
 import { deliverRequest, settlementTrade } from './settlements';
@@ -60,6 +60,8 @@ export function wellFormed(cmd: unknown): cmd is Command {
       return has(WORK_TYPE_SET, o.work) && typeof o.prio === 'number';
     case 'diplomacy':
       return DIPLOMACY_ACTS.includes(o.act as string) && typeof o.target === 'number';
+    case 'withdraw':
+      return typeof o.choice === 'number';
   }
   return true;
 }
@@ -147,6 +149,9 @@ export function applyCommand(w: World, faction: number, cmd: Command): void {
     }
     case 'choose':
       resolveChoice(w, Number(cmd.choice), String(cmd.option), faction);
+      return;
+    case 'withdraw':
+      withdrawChoice(w, cmd.choice, faction);
       return;
     case 'steal': {
       // Send one colonist (drafted or not, awake at any hour) to carry off an item from a settlement's or colony's stores.

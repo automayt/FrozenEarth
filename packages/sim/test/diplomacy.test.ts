@@ -231,6 +231,18 @@ describe('colony and colony', () => {
     expect(lastMsg(w)).toContain('your ally');
   });
 
+  it('the sender can withdraw an offer before it is answered, and nobody else can', () => {
+    const { w } = twoColonies();
+    send(w, { c: 'diplomacy', act: 'ally', target: 9 });
+    const offer = [...w.choices.values()].find((c) => c.event === 'pact_offer')!;
+    send(w, { c: 'withdraw', choice: offer.id }, 9);
+    expect(w.choices.has(offer.id)).toBe(true);
+    send(w, { c: 'withdraw', choice: offer.id });
+    expect(w.choices.has(offer.id)).toBe(false);
+    expect(w.dirty.msgs.some((m) => m.faction === 9 && m.text.includes('withdrew'))).toBe(true);
+    expect(allied(w, 2, 9)).toBe(false);
+  });
+
   it('war makes colonists fight on sight; peace brings a truce that runs out', () => {
     const { w } = twoColonies();
     expect(hostile(w, 2, 9)).toBe(false);

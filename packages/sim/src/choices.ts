@@ -71,3 +71,15 @@ export function tickChoices(w: World): void {
 export function choiceOnHold(w: { online?: Set<number> }, c: Choice): boolean {
   return !!c.from && !!w.online && !w.online.has(c.faction);
 }
+
+/** The sender of an offer takes it back before it's answered. */
+export function withdrawChoice(w: World, id: number, faction: number): void {
+  const c = w.choices.get(id);
+  if (!c || c.from !== faction) return;
+  w.choices.delete(id);
+  w.choiceData.delete(id);
+  w.dirty.choices = true;
+  const from = w.factions.get(faction)?.name ?? 'Another colony';
+  w.message(c.faction, `${from} withdrew their offer (${c.title}).`, 'neutral');
+  w.message(faction, `You withdrew your offer to ${w.factions.get(c.faction)?.name ?? 'them'}.`, 'neutral');
+}
