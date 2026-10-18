@@ -15,11 +15,12 @@ import {
   TICKS_PER_SECOND,
   type Command,
   type Delta,
+  type GameMessage,
   type Pawn,
   type World,
 } from '@fe/sim';
 import { EVENTS } from '@fe/defs';
-import { decode, encode, PROTOCOL_VERSION, type ClientMsg, type PlayerInfo, type ServerMsg, type TimeState } from '@fe/protocol';
+import { decode, encode, PROTOCOL_VERSION, type ChatMsg, type ClientMsg, type PlayerInfo, type ServerMsg, type TimeState } from '@fe/protocol';
 import { loadWorldFile, saveWorldFile, type StoredPlayer } from './persistence';
 
 /** Real seconds of pause each player gets per in-game day, and the most they can bank. */
@@ -36,6 +37,11 @@ const CMD_RATE = 40;
 const STATS_MS = 30_000;
 /** Distinct players a world will register (each new name gets a colony that is kept forever). */
 const MAX_PLAYERS = 64;
+/** Letters and chat lines kept to replay to players who join or come back. */
+const KEEP_LETTERS = 400;
+const KEEP_CHAT = 40;
+/** How many of them a joining player is sent. */
+const SEND_LETTERS = 100;
 
 interface Player extends StoredPlayer {
   speed: number;
@@ -98,6 +104,9 @@ export class GameServer {
   private log: (msg: string) => void;
   /** Rolling tick cost, for monitoring. */
   tickMs = 0;
+  /** Recent letters (every faction's) and chat, so a player who was away can catch up. */
+  private letters: GameMessage[] = [];
+  private chatLog: ChatMsg[] = [];
 
   constructor(opts: GameOptions) {
     this.opts = opts;
@@ -107,6 +116,8 @@ export class GameServer {
       this.world = deserializeWorld(file.save);
       for (const p of file.players) this.players.set(p.id, { ...p, speed: 1, resumeSpeed: 1, ping: 0, ws: null, cmdTokens: CMD_RATE });
       this.nextPlayerId = file.nextPlayerId;
+      this.letters = file.letters ?? [];
+      this.chatLog = file.chat ?? [];
       this.log(`Loaded world from ${opts.savePath} (day ${this.world.day()}, ${this.players.size} players)`);
       // Worlds from before settlements existed get some now.
       if (![...this.world.factions.values()].some((f) => f.settlement)) {
@@ -127,6 +138,7 @@ export class GameServer {
       this.save();
     }
     this.lastDay = this.world.day();
+    this.refreshOnline();
     // Nobody is online after a restart, so nobody is steering anyone.
     for (const f of this.world.factions.values()) if (f.isPlayer) this.releaseControl(f.id);
   }
@@ -144,6 +156,18 @@ export class GameServer {
       this.world.enqueue(faction, { c: 'possess', pawn: p.id, on: false });
       this.world.enqueue(faction, { c: 'draft', pawns: [p.id], on: false });
     }
+  }
+
+  /** Tell the sim whose players are here, so offers from friends wait for an absent recipient. */
+  private refreshOnline(): void {
+    this.world.online = new Set(this.connected().map((p) => p.faction).filter((f) => f > 0));
+  }
+
+  /** Keep a delta's letters for players who join later. */
+  private remember(msgs: GameMessage[]): void {
+    if (!msgs.length) return;
+    this.letters.push(...msgs);
+    if (this.letters.length > KEEP_LETTERS) this.letters.splice(0, this.letters.length - KEEP_LETTERS);
   }
 
   start(): void {
@@ -190,6 +214,7 @@ export class GameServer {
     if (now - this.lastBroadcast >= BROADCAST_MS) {
       this.lastBroadcast = now;
       const d = this.world.takeDelta();
+      this.remember(d.msgs);
       if (!deltaIsEmpty(d) || timeChanged || !time.paused) this.broadcast({ t: 'delta', d, time });
     }
     if (timeChanged || now - this.lastPlayers >= PLAYERS_MS) {
@@ -269,6 +294,8 @@ export class GameServer {
     ws.on('close', () => {
       if (player && player.ws === ws) {
         player.ws = null;
+        player.lastSeen = this.world.tick;
+        this.refreshOnline();
         this.releaseControl(player.faction);
         this.system(`${player.name} left.`);
         this.broadcastPlayers();
@@ -315,6 +342,8 @@ export class GameServer {
     p.ws = ws;
     p.speed = 1;
     p.away = false;
+    this.refreshOnline();
+    const mine = p.faction;
     this.send(ws, {
       t: 'welcome',
       playerId: p.id,
@@ -322,6 +351,9 @@ export class GameServer {
       token: p.token,
       snap: snapshot(this.world),
       sites: p.faction ? undefined : suggestSites(this.world),
+      msgs: this.letters.filter((m) => m.faction === 0 || (mine && m.faction === mine)).slice(-SEND_LETTERS),
+      chat: this.chatLog,
+      lastSeen: p.lastSeen,
     });
     this.system(`${p.name} joined.`);
     this.broadcastPlayers();
@@ -348,8 +380,18 @@ export class GameServer {
             return;
           }
         }
+        // "Let fate decide": one of the good spots, never frozen or crowding someone (the plain fallback
+        // spawn picks the outer band, which a late joiner would find already frozen).
+        if (!at) {
+          const sites = suggestSites(this.world, 5);
+          if (sites.length) {
+            const s = sites[Math.floor(Math.random() * sites.length)];
+            at = { x: s.x, y: s.y };
+          }
+        }
         const faction = addPlayerFaction(this.world, `${p.name}'s colony`, 3, at);
         p.faction = faction.id;
+        this.refreshOnline();
         this.log(`${p.name} settled at ${faction.home.x},${faction.home.y} (faction ${faction.id})`);
         this.send(p.ws!, { t: 'settled', faction: faction.id });
         this.broadcastPlayers();
@@ -383,7 +425,10 @@ export class GameServer {
         const text = (typeof msg.text === 'string' ? msg.text : '').slice(0, 300).trim();
         if (!text) return;
         const color = this.world.factions.get(p.faction)?.color ?? 0xffffff;
-        this.broadcast({ t: 'chat', from: p.name, color, text, at: Date.now() });
+        const line: ChatMsg = { from: p.name, color, text, at: Date.now() };
+        this.chatLog.push(line);
+        if (this.chatLog.length > KEEP_CHAT) this.chatLog.shift();
+        this.broadcast({ t: 'chat', ...line });
         return;
       }
       case 'ping':
@@ -457,8 +502,10 @@ export class GameServer {
     this.lastSave = performance.now();
     const bytes = saveWorldFile(this.opts.savePath, {
       save: serializeWorld(this.world),
-      players: [...this.players.values()].map(({ id, name, token, faction, pauseBudget, admin }) => ({ id, name, token, faction, pauseBudget, admin })),
+      players: [...this.players.values()].map(({ id, name, token, faction, pauseBudget, admin, lastSeen }) => ({ id, name, token, faction, pauseBudget, admin, lastSeen })),
       nextPlayerId: this.nextPlayerId,
+      letters: this.letters,
+      chat: this.chatLog,
     });
     this.log(`Saved ${(bytes / 1024).toFixed(0)} KB to ${this.opts.savePath}`);
   }

@@ -7,7 +7,8 @@ export type TradeLine = [item: string, count: number];
 
 const MAX_LINES = 4;
 const MAX_PENDING = 3;
-const OFFER_HOURS = 8;
+/** As long as an alliance offer: at 3x speed eight hours ran out in under a minute. */
+export const TRADE_OFFER_HOURS = 24;
 
 function text(lines: TradeLine[]): string {
   return lines.length ? lines.map(([d, n]) => `${n} ${ITEMS[d]?.label.toLowerCase() ?? d}`).join(', ') : 'nothing';
@@ -45,7 +46,7 @@ export function offerTrade(w: World, from: number, to: number, give: unknown, wa
     return;
   }
   const msg = typeof note === 'string' && note.trim() ? ` "${note.trim().slice(0, 140)}"` : '';
-  offerChoice(
+  const c = offerChoice(
     w,
     to,
     'trade',
@@ -55,10 +56,12 @@ export function offerTrade(w: World, from: number, to: number, give: unknown, wa
       { key: 'accept', label: 'Accept' },
       { key: 'decline', label: 'Decline' },
     ],
-    OFFER_HOURS,
+    TRADE_OFFER_HOURS,
     { from, give: g, want: wa },
   );
-  w.message(from, `Your offer to ${b.name} has been sent.`, 'neutral');
+  c.from = from;
+  const away = w.online && !w.online.has(to) ? ` ${b.name} is offline: it will wait for them.` : ` They have ${TRADE_OFFER_HOURS} in-game hours to answer.`;
+  w.message(from, `Your offer to ${b.name} has been sent.${away}`, 'neutral');
 }
 
 registerChoice('trade', (w, c, option, d) => {
@@ -69,7 +72,7 @@ registerChoice('trade', (w, c, option, d) => {
   const b = w.factions.get(c.faction);
   if (!a || !b) return;
   if (option !== 'accept') {
-    w.message(from, `${b.name} declined your trade offer.`, 'neutral');
+    w.message(from, d.expired ? `${b.name} didn't answer your trade offer in time.` : `${b.name} declined your trade offer.`, 'neutral');
     return;
   }
   // Goods only move if both sides can still pay right now.

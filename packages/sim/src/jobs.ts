@@ -435,6 +435,10 @@ function haul(w: World, p: Pawn, j: J<'haul'>): JobResult {
     const r = goTo(w, p, cell, false);
     if (r !== 'arrived') return r === 'fail' ? 'fail' : 'continue';
     const owner = w.zoneAt(cell)?.faction ?? 0;
+    // Only goods marked for stealing are fair game. Something that was lying loose when the hauler
+    // set out, and that its owner has since zoned into their stockpile, is left where it is:
+    // otherwise an ordinary hauler turns thief, and gets "caught stealing", without anyone asking.
+    if (canStealFrom(w, p.faction, owner) && !(w.map.desig[cell] === DESIG.steal && w.map.desigFaction[cell] === p.faction)) return 'fail';
     pickUp(w, p, it, Math.min(it.count, w.roomFor(j.dest, it.def) || ITEMS[it.def].stackLimit));
     // Ordinary hauling never touches another faction's stockpile, so this is theft.
     if (canStealFrom(w, p.faction, owner)) {

@@ -269,4 +269,43 @@ describe('game server', () => {
     expect(back.take('welcome')).toHaveLength(1);
     g.stop();
   });
+
+  it('a player who comes back gets the letters and chat they missed, and offers wait for them', () => {
+    const g = new GameServer({ savePath: worldPath(dir, 'catchup'), seed: 9, size: 120, log: () => {} });
+    const ann = new FakeSocket();
+    const bob = new FakeSocket();
+    g.onConnect(ann as unknown as WebSocket);
+    ann.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Ann' });
+    ann.say({ t: 'settle' });
+    const fa = ann.take('settled')[0].faction;
+    g.onConnect(bob as unknown as WebSocket);
+    bob.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Bob' });
+    const first = bob.take('welcome')[0];
+    expect(first.lastSeen).toBeUndefined();
+    bob.say({ t: 'settle' });
+    const fb = bob.take('settled')[0].faction;
+    expect(Math.hypot(g.world.factions.get(fa)!.home.x - g.world.factions.get(fb)!.home.x, g.world.factions.get(fa)!.home.y - g.world.factions.get(fb)!.home.y)).toBeGreaterThan(30);
+    pump(g);
+    bob.close();
+    ann.say({ t: 'chat', text: 'want to be allies?' });
+    ann.say({ t: 'cmd', cmd: { c: 'diplomacy', act: 'ally', target: fb } });
+    for (let i = 0; i < 3; i++) g.world.step();
+    const offer = [...g.world.choices.values()].find((c) => c.event === 'pact_offer');
+    expect(offer?.from).toBe(fa);
+    // Bob is offline, so the offer holds however long he's gone.
+    for (let i = 0; i < 30_000; i++) g.world.step();
+    pump(g);
+    expect(g.world.choices.has(offer!.id)).toBe(true);
+    const back = new FakeSocket();
+    g.onConnect(back as unknown as WebSocket);
+    back.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Bob', token: first.token });
+    const w = back.take('welcome')[0];
+    expect(w.lastSeen).toBeGreaterThan(0);
+    expect(w.chat?.some((c) => c.text === 'want to be allies?' && c.from === 'Ann')).toBe(true);
+    expect(w.msgs?.some((m) => m.faction === fb && m.text.includes('proposes an alliance'))).toBe(true);
+    // Nobody else's private letters.
+    expect(w.msgs?.every((m) => m.faction === 0 || m.faction === fb)).toBe(true);
+    expect(w.snap.choices.some((c) => c.id === offer!.id)).toBe(true);
+    g.stop();
+  });
 });

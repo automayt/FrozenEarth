@@ -1,4 +1,4 @@
-import type { Command, Delta, Snapshot } from '@fe/sim';
+import type { Command, Delta, GameMessage, Snapshot } from '@fe/sim';
 
 /** Bump when the wire format changes incompatibly. */
 export const PROTOCOL_VERSION = 8;
@@ -33,6 +33,14 @@ export interface Site {
   region: string;
 }
 
+/** A line of chat as the server broadcasts it. `from` is empty for server notices. */
+export interface ChatMsg {
+  from: string;
+  color: number;
+  text: string;
+  at: number;
+}
+
 export type ClientMsg =
   | { t: 'hello'; v: number; name: string; token?: string; password?: string }
   | { t: 'cmd'; cmd: Command }
@@ -47,7 +55,20 @@ export type ClientMsg =
 
 export type ServerMsg =
   /** faction 0 means the player hasn't settled yet; `sites` are suggestions. */
-  | { t: 'welcome'; playerId: number; faction: number; token: string; snap: Snapshot; sites?: Site[] }
+  | {
+      t: 'welcome';
+      playerId: number;
+      faction: number;
+      token: string;
+      snap: Snapshot;
+      sites?: Site[];
+      /** Recent letters for this player (theirs and everyone's), so nothing that happened while they were gone is lost. */
+      msgs?: GameMessage[];
+      /** Recent chat. */
+      chat?: ChatMsg[];
+      /** Tick when this player last left, for "while you were away". Absent on a first join. */
+      lastSeen?: number;
+    }
   | { t: 'settled'; faction: number }
   | { t: 'delta'; d: Delta; time: TimeState }
   | { t: 'players'; players: PlayerInfo[]; time: TimeState }

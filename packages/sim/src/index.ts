@@ -3,7 +3,7 @@ export * from './types';
 export { World, Dirty, NEIGHBORS4, NEIGHBORS8 } from './world';
 export { GameMap } from './map';
 export { Rng, hash2 } from './rng';
-export { createWorld, addPlayerFaction, findSpawn, siteProblem, suggestSites, regionOf, MIN_COLONY_GAP, type WorldOptions } from './setup';
+export { createWorld, addPlayerFaction, findSpawn, siteProblem, suggestSites, regionOf, MIN_COLONY_GAP, SITE_MIN_FROST_DAYS, type WorldOptions } from './setup';
 export { serializeWorld, deserializeWorld, snapshot, hashWorld, SAVE_VERSION, type SaveData } from './save';
 export { findPath } from './pathfinding';
 export { fireEvent, eligibleEvents } from './storyteller';
@@ -14,7 +14,7 @@ export { startRaid, raidPoints, colonyWealth, takePrisoner, releasePrisoner } fr
 export { damageBuilding, repairBuilding, breachJob } from './siege';
 export { BREACH, breachCost, type Breach } from './pathfinding';
 export { startFire, strike, fuelAt } from './fire';
-export { resolveChoice } from './choices';
+export { resolveChoice, choiceOnHold } from './choices';
 export { scheduleEvent } from './schedule';
 export { canPlace, rectCells } from './commands';
 export { FACTION_COLORS } from './names';
@@ -28,3 +28,4 @@ export { placeSettlements, foundSettlement, dispositionOf, goodwillOf, priceFact
 export { ALLY_AT, DIPLO, TRUCE_DAYS, PLAYER_TRUCE_DAYS, MEDIATE_COOLDOWN_DAYS, stanceOf, envoySocial, peacePrice, mediationChance, allianceProblem, attackRefusal, type Stance } from './diplomacy';
 export { pactOf, allied, atWar, type RelView } from './pacts';
 export { computeRoof, rockDepth, THICK_ROOF_DEPTH } from './mapgen';
+export { TRADE_OFFER_HOURS } from './trade';
