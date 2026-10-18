@@ -453,7 +453,7 @@ export class GameServer {
     const s = this.lastSaveStats;
     return (
       `day ${this.world.day()} · ${this.connected().length} online · ${this.world.entities.size} entities · ${this.tickMs.toFixed(2)} ms/tick · ` +
-      `${(this.bytesOut / 1024 / (STATS_MS / 1000)).toFixed(1)} KB/s out · rss ${(mem.rss / 1048576).toFixed(0)} MB heap ${(mem.heapUsed / 1048576).toFixed(0)} MB · ` +
+      `${(this.bytesOut / 1024 / (STATS_MS / 1000)).toFixed(1)} KB/s out · rss ${(mem.rss / 1048576).toFixed(0)} MB heap ${(mem.heapUsed / 1048576).toFixed(0)} MB ext ${(mem.external / 1048576).toFixed(0)} MB · ` +
       `save ${(s.bytes / 1024).toFixed(0)} KB in ${s.ms.toFixed(0)} ms · ${process.getActiveResourcesInfo().length} handles`
     );
   }
