@@ -148,6 +148,50 @@ describe('save files', () => {
   });
 });
 
+describe('players who never settle', () => {
+  it('are not the host; the first to found a colony is', () => {
+    const g = new GameServer({ savePath: worldPath(dir, 'firsthost'), seed: 7, size: 70, ...quiet });
+    const tab = join_(g, 'Tab');
+    const ann = join_(g, 'Ann');
+    const bob = join_(g, 'Bob');
+    const admin = (n: string) => g.playerInfo().find((p) => p.name === n)!.admin;
+    expect(admin('Tab')).toBe(false);
+    ann.say({ t: 'settle' });
+    ann.take('settled');
+    bob.say({ t: 'settle' });
+    bob.take('settled');
+    expect(admin('Ann')).toBe(true);
+    expect(admin('Bob')).toBe(false);
+    expect(admin('Tab')).toBe(false);
+    tab.close();
+    g.stop();
+  });
+
+  it('are forgotten a while after they leave, and on restart', () => {
+    const path = worldPath(dir, 'forget');
+    const g = new GameServer({ savePath: path, seed: 7, size: 70, ...quiet });
+    const tab = join_(g, 'Tab');
+    const ann = join_(g, 'Ann');
+    ann.say({ t: 'settle' });
+    ann.take('settled');
+    const names = () => g.playerInfo().map((p) => p.name).sort();
+    tab.close();
+    (g as unknown as { forgetUnsettled(): void }).forgetUnsettled();
+    expect(names()).toEqual(['Ann', 'Tab']);
+    const players = (g as unknown as { players: Map<number, { name: string; offlineSince?: number }> }).players;
+    for (const p of players.values()) if (p.name === 'Tab') p.offlineSince = Date.now() - 31 * 60_000;
+    (g as unknown as { forgetUnsettled(): void }).forgetUnsettled();
+    expect(names()).toEqual(['Ann']);
+    // Another stray, then a restart: only colonies (and bans) come back.
+    join_(g, 'Stray');
+    g.save();
+    g.stop();
+    const again = new GameServer({ savePath: path, ...quiet });
+    expect(again.playerInfo().map((p) => p.name)).toEqual(['Ann']);
+    again.stop();
+  });
+});
+
 describe('sim crashes', () => {
   it('a throw inside World.step rolls back to the restore point, writes a report, and keeps serving', () => {
     const path = worldPath(dir, 'crash');
@@ -190,6 +234,9 @@ describe('sim crashes', () => {
   it('stops the world after repeated crashes, and /resume starts it again', () => {
     const g = new GameServer({ savePath: worldPath(dir, 'crashloop'), seed: 7, size: 70, ...quiet });
     const ann = join_(g, 'Ann');
+    // Founding the first colony makes Ann the host.
+    ann.say({ t: 'settle' });
+    ann.take('settled');
     const inner = g as unknown as Inner;
     for (let i = 0; i < 3; i++) {
       g.world.step = () => {

@@ -82,6 +82,8 @@ const AUTH_FAILS_GLOBAL = 40;
 const AUTH_WINDOW_MS = 10 * 60_000;
 /** How long a released name waits for its owner to come back from a new browser. */
 const RELEASE_MS = 15 * 60_000;
+/** A name that never founded a colony is forgotten this long after its player leaves (and on restart). */
+const UNSETTLED_FORGET_MS = 30 * 60_000;
 /** Most journal entries kept between checkpoints (a crash report replays them). */
 const JOURNAL_MAX = 200_000;
 
@@ -98,6 +100,8 @@ interface Player extends StoredPlayer {
   ip?: string;
   /** Until then, anyone joining with this name (and the server password) takes this colony over. */
   releasedUntil?: number;
+  /** When they last disconnected (wall clock), to forget names that never settled. */
+  offlineSince?: number;
 }
 
 export interface GameOptions {
@@ -278,7 +282,8 @@ export class GameServer {
       // A copy from before this version touched it, so an upgrade that goes wrong can be undone.
       backupWorld(opts.savePath, 'startup', opts.keepBackups ?? 48);
       this.world = deserializeWorld(file.save);
-      for (const p of file.players) this.players.set(p.id, this.livePlayer(p));
+      // Names that never founded a colony hold nothing: forget them (bans stay).
+      for (const p of file.players) if (p.faction || p.banned) this.players.set(p.id, this.livePlayer(p));
       this.nextPlayerId = file.nextPlayerId;
       this.letters = file.letters ?? [];
       this.chatLog = file.chat ?? [];
@@ -353,6 +358,16 @@ export class GameServer {
       if (p.faction !== faction || !p.possessed) continue;
       this.enqueue(faction, { c: 'possess', pawn: p.id, on: false });
       this.enqueue(faction, { c: 'draft', pawns: [p.id], on: false });
+    }
+  }
+
+  /** Drop names that joined, never founded a colony, and left a while ago: they hold nothing. */
+  private forgetUnsettled(): void {
+    const now = Date.now();
+    for (const p of [...this.players.values()]) {
+      if (p.ws || p.faction || p.banned || p.offlineSince === undefined || now - p.offlineSince < UNSETTLED_FORGET_MS) continue;
+      this.players.delete(p.id);
+      this.log(`Forgot ${p.name}, who never founded a colony`);
     }
   }
 
@@ -501,6 +516,7 @@ export class GameServer {
     }
     if (now - this.lastStats >= STATS_MS) {
       this.lastStats = now;
+      this.forgetUnsettled();
       const online = this.connected().length;
       if (online) this.log(this.statsLine());
       this.bytesOut = 0;
@@ -711,6 +727,7 @@ export class GameServer {
       if (player && player.ws === ws) {
         player.ws = null;
         player.lastSeen = this.world.tick;
+        player.offlineSince = Date.now();
         this.refreshOnline();
         this.releaseControl(player.faction);
         this.system(`${player.name} left.`);
@@ -752,7 +769,7 @@ export class GameServer {
         if (this.players.size >= (this.opts.maxPlayers ?? MAX_PLAYERS)) return fail('This server is full.');
         // New players pick where to settle before their colony exists.
         p = {
-          ...this.livePlayer({ id: this.nextPlayerId++, name, token: randomUUID(), faction: 0, pauseBudget: PAUSE_MAX, admin: this.players.size === 0 }),
+          ...this.livePlayer({ id: this.nextPlayerId++, name, token: randomUUID(), faction: 0, pauseBudget: PAUSE_MAX, admin: false }),
         };
         this.players.set(p.id, p);
         this.log(`New player ${name}`);
@@ -763,6 +780,7 @@ export class GameServer {
       p.ws.close();
     }
     p.ws = ws;
+    p.offlineSince = undefined;
     p.ip = ip;
     // Coming back keeps their speed vote (a wifi blip shouldn't drop everyone to 1x, and the client
     // doesn't resend it), but not a pause: they weren't there to hold it.
@@ -822,6 +840,11 @@ export class GameServer {
         this.record(['f', name, at]);
         const faction = addPlayerFaction(this.world, name, 3, at);
         p.faction = faction.id;
+        // The first to actually found a colony is the host (a tab that only looked at the map isn't).
+        if (![...this.players.values()].some((x) => x.admin && x.faction && !x.banned)) {
+          p.admin = true;
+          this.tell(p, 'You are the host of this world: type /help in chat for host commands.');
+        }
         this.refreshOnline();
         this.log(`${p.name} settled at ${faction.home.x},${faction.home.y} (faction ${faction.id})`);
         this.send(p.ws!, { t: 'settled', faction: faction.id });

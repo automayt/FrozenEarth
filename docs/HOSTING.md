@@ -23,7 +23,7 @@ FrozenEarth server on http://localhost:8090/  (world "friends", password protect
   host key for /claim: in saves/friends/host-key.txt
 ```
 
-Open the address, pick a name and enter the password. The first player to join a new world is a host. Stop the server with **Ctrl+C**: it saves first.
+Open the address, pick a name and enter the password. The first player to found a colony in a new world is a host (someone who only looks at the map is not). Stop the server with **Ctrl+C**: it saves first.
 
 Prefer `FE_PASSWORD` to `--password`, because command-line arguments are visible to other users of the machine in the process list. The password is stored with the world as a salted hash, so after the first start you can leave it out. `--password` or `FE_PASSWORD` replaces the stored password, and `--clear-password` removes it.
 
@@ -201,4 +201,4 @@ Older worlds are migrated when they load. The start-up backup is made before tha
 - **Origin check.** Only pages served by this server (same host, or a localhost dev server) can open the websocket, so another website can't make a visitor's browser join or flood your server. If you serve the page from somewhere else, list that origin with `--allow-origin`. This check can't stop a DNS-rebinding page, which looks like it comes from this server; a password can.
 - **Limits.** Messages are capped at 64 KB. Each player gets 40 commands a second and 2 chat lines a second (bursts up to 6). A socket sending thousands of messages a second is dropped. A connection that doesn't log in within 15 s is closed. There are at most 32 sockets, and 12 per address.
 - **Exposure.** The server serves only the built client and `/healthz`, and never lists files. Bind it to `127.0.0.1` behind a proxy or tunnel, so the only way in is through the proxy.
-- **Admin.** The first player of a new world is a host. The host key in `host-key.txt` gives host rights to whoever can read the server's files, from any account. Don't share it, and regenerate it by deleting the file and restarting.
+- **Admin.** The first player to found a colony in a new world is a host. Names that join but never found a colony are forgotten 30 minutes after they leave, and on restart. The host key in `host-key.txt` gives host rights to whoever can read the server's files, from any account. Don't share it, and regenerate it by deleting the file and restarting.
