@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { calendar, daysUntilFrost, frostRadius, outdoorTempAt, TICKS_PER_HOUR } from '@fe/sim';
+import { calendar, daysUntilFrost, frostRadius, outdoorTempAt, pactOf, TICKS_PER_HOUR } from '@fe/sim';
 import { EVENTS } from '@fe/defs';
 import { myPlayer, setSpeed } from '../actions';
 import { store, useStore } from '../store';
@@ -55,6 +55,10 @@ export function TopBar() {
   const slow = held ? s.players.filter((p) => p.connected && p.id !== me?.id && p.speed === s.time.speed) : [];
   const heldBy = (slow.some((p) => !p.away) ? slow.filter((p) => !p.away) : slow).map((p) => p.name);
   const bar = useWrapOffset();
+  // Who is holding the pause, and how long their budget lets them.
+  const pausers = s.time.paused ? s.players.filter((p) => p.connected && p.speed === 0) : [];
+  const pauseText = pausers.map((p) => (p.id === me?.id ? `you (${p.pauseBudget}s left)` : `${p.name} (${p.pauseBudget}s left)`)).join(', ');
+  const online = s.players.filter((p) => p.connected).length;
   return (
     <div className="topbar panel" ref={bar}>
       <div className="clock">
@@ -84,24 +88,39 @@ export function TopBar() {
         ))}
         <div className="speed-state" title={`${s.time.paused ? 'Paused' : `${s.time.speed}×`} ${s.time.reason}`.trim()}>
           {s.time.paused ? <b>Paused</b> : <b>{s.time.speed}×</b>}
-          {held ? <span className="held-by"> held by {heldBy.join(', ')}</span> : <span className="muted"> {s.time.reason}</span>}
-          {me && s.players.filter((p) => p.connected).length > 1 && <span className="muted"> · {me.pauseBudget}s pause left</span>}
+          {held ? (
+            <span className="held-by"> held by {heldBy.join(', ')}</span>
+          ) : pausers.length && online > 1 ? (
+            <span className="held-by"> by {pauseText}</span>
+          ) : (
+            <span className="muted"> {s.time.paused && pausers.length ? '' : s.time.reason}</span>
+          )}
+          {me && online > 1 && !pausers.some((p) => p.id === me.id) && <span className="muted"> · {pausers.length ? `you have ${me.pauseBudget}s` : `${me.pauseBudget}s pause left`}</span>}
         </div>
       </div>
       <div className="players">
         {s.players
           .filter((p) => p.connected || p.id === s.me?.playerId)
-          .map((p) => (
-            <span
-              key={p.id}
-              className={`player ${p.away ? 'away' : ''}`}
-              title={`${p.name}${p.admin ? ' (host)' : ''} · votes ${p.speed === 0 ? 'pause' : p.speed + '×'}${p.away ? ' · away (tab in the background), so their speed vote is ignored' : ''}`}
-            >
-              <i style={{ background: hex(p.color) }} />
-              {p.name}
-              <small>{p.speed === 0 ? '❚❚' : `${p.speed}×`}</small>
-            </span>
-          ))}
+          .map((p) => {
+            const f = p.faction ? m.factions.get(p.faction) : undefined;
+            const mine = p.id === me?.id;
+            const pact = !mine && me?.faction && p.faction ? pactOf(m, me.faction, p.faction)?.kind : undefined;
+            const stance = pact === 'ally' ? 'ally' : pact === 'war' ? 'at war' : pact === 'truce' ? 'truce' : '';
+            return (
+              <button
+                key={p.id}
+                className={`player ${p.away ? 'away' : ''} ${pact ?? ''}`}
+                disabled={!f}
+                onClick={() => f && store.set({ focus: { x: f.home.x, y: f.home.y } })}
+                title={`${p.name}${mine ? ' (you)' : ''}${p.admin ? ' (host)' : ''}${f ? ` · ${f.name}` : ' · choosing where to settle'}${stance ? ` · ${stance}` : ''} · votes ${p.speed === 0 ? 'pause' : p.speed + '×'}${p.away ? ' · away (tab in the background), so their speed vote is ignored' : ''}${f ? ' · click to show their colony' : ''}`}
+              >
+                <i style={{ background: hex(p.color) }} />
+                {p.name}
+                {stance && <em className="stance-tag">{stance}</em>}
+                <small>{p.speed === 0 ? '❚❚' : `${p.speed}×`}</small>
+              </button>
+            );
+          })}
         {s.players.some((p) => !p.connected) && (
           <span
             className="player offline"

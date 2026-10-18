@@ -1,7 +1,7 @@
 import { Application, BitmapText, Container, Graphics, GraphicsContext, Sprite, TextStyle } from 'pixi.js';
 import { ANIMALS, BUILDINGS, maxHp, PLANTS, ROCKS, TERRAINS, WEAPON_KEYS, weaponOf, type TerrainDef } from '@fe/defs';
 import { pawnPosition } from '@fe/protocol';
-import { DESIG, FROST_BAND, MIN_COLONY_GAP, SHOT_FIELDS, bleedRate, calendar, dispositionOf, GUARD_REACH, hostile, NOISE, SETTLEMENT_WATCH, stealthMult, frostLevel, frostRadius, hash2, outdoorTempAt, weaponFor, woundTotal, type Construct, type Entity, type Pawn, type World } from '@fe/sim';
+import { DESIG, FROST_BAND, MIN_COLONY_GAP, pactOf, SHOT_FIELDS, bleedRate, calendar, dispositionOf, GUARD_REACH, hostile, NOISE, SETTLEMENT_WATCH, stealthMult, frostLevel, frostRadius, hash2, outdoorTempAt, weaponFor, woundTotal, type Construct, type Entity, type Pawn, type World } from '@fe/sim';
 import { ease, Particles, Tweens, Weather, type Precip } from './fx';
 import { sound } from '../audio';
 import { fog } from './fog';
@@ -144,6 +144,8 @@ export class GameRenderer {
   private frostRing = new Graphics();
   ui = new Graphics();
   private settlementLabels = new Map<number, BitmapText>();
+  /** Names over other players' colonies. */
+  private colonyLabels = new Map<number, BitmapText>();
   private settlementGfx = new Graphics();
   private settlementKey = '';
   private night = new Graphics();
@@ -1099,6 +1101,9 @@ export class GameRenderer {
     label.anchor.set(0.5, 0);
     label.position.set(0, TILE * 0.42);
     label.visible = this.lod !== 0;
+    // Everyone else's people are named in their faction's colour (lightened to stay readable), so
+    // yours and theirs tell apart at a glance in a crowd.
+    if (e.faction !== store.me?.faction) label.tint = lighten(color, 0.45);
     v.label = label;
     root.addChild(label);
   }
@@ -1150,6 +1155,7 @@ export class GameRenderer {
     this.drawCover(performance.now());
     const m = store.mirror;
     this.drawSettlements();
+    this.drawColonyLabels();
     const steering = this.controlled();
     if (steering) this.drawWatchers(g, steering);
     if (store.me?.faction === 0) {
@@ -1265,6 +1271,38 @@ export class GameRenderer {
       if (seen.has(id)) continue;
       label.destroy();
       this.settlementLabels.delete(id);
+    }
+  }
+
+  /** Other players' colonies: their name over their home, in their colour, with how you stand. */
+  private drawColonyLabels(): void {
+    const m = store.mirror;
+    const me = store.me?.faction ?? 0;
+    const z = this.world.scale.x;
+    const scale = Math.max(14, Math.min(19, LABEL_STYLE.fontSize * 0.75 * z)) / (LABEL_STYLE.fontSize * z);
+    const seen = new Set<number>();
+    for (const f of m.factions.values()) {
+      if (!f.isPlayer || f.id === me) continue;
+      seen.add(f.id);
+      let label = this.colonyLabels.get(f.id);
+      if (!label) {
+        label = new BitmapText({ text: '', style: LABEL_TEXT });
+        label.anchor.set(0.5, 1);
+        this.layers.ui.addChild(label);
+        this.colonyLabels.set(f.id, label);
+      }
+      const pact = me ? pactOf(m, me, f.id)?.kind : undefined;
+      const owner = store.players.find((p) => p.faction === f.id);
+      const text = `${f.name}${pact === 'ally' ? ' (ally)' : pact === 'war' ? ' (at war)' : pact === 'truce' ? ' (truce)' : ''}${owner && !owner.connected ? ' · offline' : ''}`;
+      if (label.text !== text) label.text = text;
+      label.tint = lighten(f.color, 0.3);
+      label.scale.set(scale);
+      label.position.set((f.home.x + 0.5) * TILE, (f.home.y - 3.2) * TILE);
+    }
+    for (const [id, label] of this.colonyLabels) {
+      if (seen.has(id)) continue;
+      label.destroy();
+      this.colonyLabels.delete(id);
     }
   }
 
@@ -1728,4 +1766,10 @@ function isWall(e: Entity | undefined): boolean {
   if (!e || e.kind !== 'building') return false;
   const d = BUILDINGS[e.def];
   return !!d?.wall && !d.door;
+}
+
+/** Mix a colour toward white by `t` (0..1). */
+function lighten(c: number, t: number): number {
+  const ch = (v: number) => Math.round(v + (255 - v) * t);
+  return (ch((c >> 16) & 255) << 16) | (ch((c >> 8) & 255) << 8) | ch(c & 255);
 }

@@ -317,7 +317,7 @@ export class GameServer {
       const name = (typeof msg.name === 'string' ? msg.name : '').replace(/[^\p{L}\p{N} _'-]/gu, '').trim().slice(0, 20);
       if (!name) return fail('Pick a name.');
       if (this.players.size >= (this.opts.maxPlayers ?? MAX_PLAYERS)) return fail('This server is full.');
-      if ([...this.players.values()].some((x) => x.name.toLowerCase() === name.toLowerCase())) return fail('That name is taken on this server.');
+      if ([...this.players.values()].some((x) => x.name.toLowerCase() === name.toLowerCase())) return fail('That name is taken on this server. If it is yours, enter your rejoin code (in the game on your first device: ? then "Play on another device").');
       // New players pick where to settle before their colony exists.
       p = {
         id: this.nextPlayerId++,

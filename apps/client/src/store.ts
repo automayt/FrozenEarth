@@ -71,6 +71,8 @@ class Store {
   tradeWith: number | null = null;
   /** Faction the Diplomacy panel shows. */
   diploWith: number | null = null;
+  /** Tick we last left this world (from the server), for "while you were away". Null on a first visit or once read. */
+  lastSeen: number | null = null;
   private nextToast = 1;
 
   private lastTick = 0;
@@ -94,7 +96,7 @@ class Store {
     this.lastTickAt = performance.now();
   }
 
-  set(patch: Partial<Pick<Store, 'status' | 'error' | 'me' | 'players' | 'time' | 'tool' | 'selected' | 'squad' | 'selectedCell' | 'panel' | 'menu' | 'hoverCell' | 'focus' | 'ping' | 'sites' | 'settlePick' | 'help' | 'tradeWith' | 'diploWith'>>): void {
+  set(patch: Partial<Pick<Store, 'status' | 'error' | 'me' | 'players' | 'time' | 'tool' | 'selected' | 'squad' | 'selectedCell' | 'panel' | 'menu' | 'hoverCell' | 'focus' | 'ping' | 'sites' | 'settlePick' | 'help' | 'tradeWith' | 'diploWith' | 'lastSeen'>>): void {
     Object.assign(this, patch);
     this.emit();
   }

@@ -1,5 +1,5 @@
 import { BUILDINGS, CONDITIONS, ITEMS } from '@fe/defs';
-import { calendar, daysUntilFrost, DAYS_PER_SEASON, requestText, stageOf, TICKS_PER_DAY, type Building, type Item, type Pawn } from '@fe/sim';
+import { allied, atWar, calendar, daysUntilFrost, DAYS_PER_SEASON, requestText, stageOf, TICKS_PER_DAY, type Building, type Item, type Pawn } from '@fe/sim';
 import { store, useStore } from '../store';
 
 export type Severity = 'critical' | 'warning' | 'info';
@@ -13,7 +13,12 @@ export interface Alert {
   focus?: { x: number; y: number; select?: number };
   /** Also open the Trade panel on this partner when clicked. */
   trade?: number;
+  /** Also open the Diplomacy panel on this faction when clicked. */
+  diplo?: number;
 }
+
+/** How close (cells from your home) another colony's people count as "at your door" in a war. */
+const WAR_NEAR = 30;
 
 const ORDER: Record<Severity, number> = { critical: 0, warning: 1, info: 2 };
 
@@ -74,6 +79,39 @@ export function computeAlerts(): Alert[] {
       siege: "They're dug in out there. Stay behind cover; they'll give up.",
     }[goal];
     out.push({ key: `raid-${f.id}`, severity: 'critical', title: `${f.name}: ${what.toLowerCase()} (${raiders.length})`, detail: how, focus: { x: raiders[0].x, y: raiders[0].y } });
+  }
+
+  // Raids on allies: you can't stop them from the alert, but you can go and help.
+  for (const f of m.factions.values()) {
+    const raid = f.raid;
+    if (!raid || raid.fled || raid.target === me || !allied(m, me, raid.target)) continue;
+    const ally = m.factions.get(raid.target);
+    if (!ally?.isPlayer) continue;
+    const raiders = [...m.entities.values()].filter((e): e is Pawn => e.kind === 'pawn' && e.faction === f.id && !e.downed);
+    if (!raiders.length) continue;
+    out.push({ key: `allyraid-${f.id}`, severity: 'warning', title: `Your ally ${ally.name} is being raided (${raiders.length})`, detail: `${f.name} is attacking them. Draft colonists (R) and send help, if you can spare them.`, focus: { x: raiders[0].x, y: raiders[0].y } });
+  }
+
+  // Wars with other colonies: always listed, and urgent once their people are at your door.
+  const myHome = m.factions.get(me)?.home;
+  for (const f of m.factions.values()) {
+    if (!f.isPlayer || f.id === me || !atWar(m, me, f.id)) continue;
+    const near = myHome ? [...m.entities.values()].filter((e): e is Pawn => e.kind === 'pawn' && e.faction === f.id && !e.downed && !e.prisoner && Math.max(Math.abs(e.x - myHome.x), Math.abs(e.y - myHome.y)) <= WAR_NEAR) : [];
+    if (near.length) {
+      out.push({ key: `war-near-${f.id}`, severity: 'critical', title: `${f.name}: ${near.length} of theirs at your colony`, detail: "You're at war: their colonists and yours fight on sight. Draft (R) and get behind cover.", focus: { x: near[0].x, y: near[0].y } });
+    } else {
+      out.push({ key: `war-${f.id}`, severity: 'warning', title: `At war with ${f.name}`, detail: 'Your colonists and theirs fight on sight. Click to offer peace (Diplomacy).', focus: { x: f.home.x, y: f.home.y }, diplo: f.id });
+    }
+  }
+
+  // An ally's war reaching their door: the same as a raid on them, as far as you're concerned.
+  for (const a of m.factions.values()) {
+    if (!a.isPlayer || a.id === me || !allied(m, me, a.id)) continue;
+    for (const e of m.factions.values()) {
+      if (!e.isPlayer || e.id === me || e.id === a.id || !atWar(m, a.id, e.id)) continue;
+      const near = [...m.entities.values()].filter((p): p is Pawn => p.kind === 'pawn' && p.faction === e.id && !p.downed && !p.prisoner && Math.max(Math.abs(p.x - a.home.x), Math.abs(p.y - a.home.y)) <= WAR_NEAR);
+      if (near.length) out.push({ key: `allywar-${a.id}-${e.id}`, severity: 'warning', title: `Your ally ${a.name} is under attack (${near.length})`, detail: `${e.name}, at war with them, has people at their colony. Send help if you can spare it.`, focus: { x: near[0].x, y: near[0].y } });
+    }
   }
 
   // Promises to settlements.
@@ -151,6 +189,7 @@ export function Alerts() {
             onClick={() => {
               if (a.focus) store.set({ focus: { x: a.focus.x, y: a.focus.y }, selected: a.focus.select ?? store.selected });
               if (a.trade) store.openTrade(a.trade);
+              if (a.diplo) store.openDiplomacy(a.diplo);
             }}
           >
             <span>{a.title}</span>
