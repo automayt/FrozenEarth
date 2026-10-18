@@ -22,7 +22,7 @@ import {
 } from './settlements';
 import { cellDistance } from './combat';
 import { learn } from './pawns';
-import type { Command, DiplomacyAct, Faction, Pawn } from './types';
+import type { Command, DiplomacyAct, Faction, Item, Pawn } from './types';
 import type { World } from './world';
 
 /**
@@ -463,4 +463,101 @@ function feuds(w: World): void {
       }
     }
   }
+}
+
+// ---------------------------------------------------------------- caught red-handed
+
+/** A fine for a caught thief: what they tried to take, within these bounds. */
+const FINE_MIN = 20;
+const FINE_MAX = 400;
+
+export function fineFor(worth: number): number {
+  return Math.round(Math.max(FINE_MIN, Math.min(FINE_MAX, worth)));
+}
+
+/** Another colony's colonist was caught stealing from you: demand a fine, go to war, or let it go. */
+export function theftGrievance(w: World, victim: number, thief: number, worth: number): void {
+  const v = w.factions.get(victim);
+  const t = w.factions.get(thief);
+  if (!v || !t || atWar(w, victim, thief)) return;
+  // One grievance at a time between the same two colonies.
+  for (const c of w.choices.values()) {
+    if ((c.event === 'theft_grievance' || c.event === 'theft_fine') && [c.faction, Number(w.choiceData.get(c.id)?.other)].sort().join() === [victim, thief].sort().join()) return;
+  }
+  const fine = fineFor(worth);
+  offerChoice(
+    w,
+    victim,
+    'theft_grievance',
+    `${t.name} stole from you`,
+    `One of ${t.name}'s colonists was caught stealing from your stockpile (goods worth about ${Math.round(worth)}). The goods were dropped. What now?`,
+    [
+      { key: 'demand', label: `Demand a fine of ${fine}` },
+      { key: 'war', label: 'Declare war' },
+      { key: 'forgive', label: 'Let it go' },
+    ],
+    24,
+    { other: thief, fine },
+  );
+}
+
+registerChoice('theft_grievance', (w, c, option, d) => {
+  const v = w.factions.get(c.faction);
+  const t = w.factions.get(Number(d.other));
+  if (!v || !t) return;
+  if (option === 'war') return declareWar(w, v, t, false);
+  if (option !== 'demand') return;
+  const fine = Number(d.fine);
+  offerChoice(
+    w,
+    t.id,
+    'theft_fine',
+    `${v.name} demands a fine`,
+    `${v.name} caught one of your colonists stealing and demands goods worth ${fine} from your stockpiles. If you refuse, they may well declare war.`,
+    [
+      { key: 'pay', label: `Pay ${fine}` },
+      { key: 'refuse', label: 'Refuse' },
+    ],
+    24,
+    { other: v.id, fine },
+  );
+  w.message(v.id, `You demanded a fine of ${fine} from ${t.name}.`, 'neutral');
+});
+
+registerChoice('theft_fine', (w, c, option, d) => {
+  const t = w.factions.get(c.faction);
+  const v = w.factions.get(Number(d.other));
+  if (!v || !t) return;
+  const fine = Number(d.fine);
+  if (option === 'pay' && payGoods(w, t.id, v, fine)) {
+    w.message(v.id, `${t.name} paid the fine: goods worth ${fine} are by your home.`, 'good', w.map.idx(v.home.x, v.home.y));
+    w.message(t.id, `You paid ${v.name}'s fine.`, 'neutral');
+    return;
+  }
+  w.message(v.id, option === 'pay' ? `${t.name} couldn't pay the fine.` : `${t.name} refuses to pay the fine. You can declare war from Diplomacy (G).`, 'bad');
+  if (option === 'pay') w.message(t.id, `You don't have goods worth ${fine} in your stockpiles.`, 'bad');
+});
+
+/** Move goods worth `value` from a colony's stockpiles to another's home, cheapest kinds first. False if it can't cover it. */
+function payGoods(w: World, from: number, to: Faction, value: number): boolean {
+  const stock = new Map<string, number>();
+  for (const id of w.kinds.item) {
+    const it = w.get<Item>(id)!;
+    const z = w.zoneAt(w.cellOf(it));
+    if (z && z.faction === from && z.kind === 'stockpile') stock.set(it.def, (stock.get(it.def) ?? 0) + it.count);
+  }
+  const total = [...stock.entries()].reduce((a, [d, n]) => a + (ITEMS[d]?.marketValue ?? 0) * n, 0);
+  if (total < value) return false;
+  const order = [...stock.entries()].sort((a, b) => (ITEMS[a[0]].category === 'resource' ? 0 : 1) - (ITEMS[b[0]].category === 'resource' ? 0 : 1) || ITEMS[a[0]].marketValue - ITEMS[b[0]].marketValue);
+  let owed = value;
+  const drop = w.map.idx(to.home.x, to.home.y);
+  for (const [def, have] of order) {
+    if (owed <= 0) break;
+    const per = ITEMS[def].marketValue;
+    const n = Math.min(have, Math.ceil(owed / per));
+    const got = takeStored(w, from, def, n);
+    if (got > 0) w.placeItemNear(def, got, drop);
+    owed -= got * per;
+  }
+  return true;
 }

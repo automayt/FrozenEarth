@@ -417,7 +417,7 @@ function wander(w: World, p: Pawn, j: J<'wander'>): JobResult {
 export function theftTick(w: World, p: Pawn, j: { stolen?: number; stolenAt?: number }): 'ok' | 'dropped' {
   if (!j.stolen || !p.carrying || (w.tick + p.id) % 15 !== 0) return 'ok';
   const victim = j.stolen;
-  const verdict = thiefCheck(w, p, victim, j.stolenAt ?? w.cellOf(p), () => caughtStealing(w, victim, p.faction));
+  const verdict = thiefCheck(w, p, victim, j.stolenAt ?? w.cellOf(p), () => caughtStealing(w, victim, p.faction, (ITEMS[p.carrying!.def]?.marketValue ?? 1) * p.carrying!.count));
   if (verdict === 'clear') {
     noticeTheft(w, victim, p.carrying.def, p.carrying.count, j.stolenAt ?? w.cellOf(p));
     j.stolen = undefined;

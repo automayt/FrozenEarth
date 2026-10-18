@@ -25,6 +25,7 @@ import {
   type World,
 } from '../src';
 import { wellFormed } from '../src/commands';
+import { caughtStealing } from '../src/settlements';
 import { addPawn, flatWorld, run } from './helpers';
 
 /** A flat world with colony 2 at (10, 10), and towns of the given tempers spread along y = 40. */
@@ -241,6 +242,29 @@ describe('colony and colony', () => {
     expect(w.choices.has(offer.id)).toBe(false);
     expect(w.dirty.msgs.some((m) => m.faction === 9 && m.text.includes('withdrew'))).toBe(true);
     expect(allied(w, 2, 9)).toBe(false);
+  });
+
+  it('a colony that catches a thief can demand a fine (paid from the thief’s stockpiles), declare war, or let it go', () => {
+    const { w } = twoColonies();
+    stockpile(w, 9, 130, 12, 'steel', 60);
+    caughtStealing(w, 2, 9, 57);
+    const grievance = [...w.choices.values()].find((c) => c.event === 'theft_grievance')!;
+    expect(grievance.faction).toBe(2);
+    // Only one at a time between the two.
+    caughtStealing(w, 2, 9, 57);
+    expect([...w.choices.values()].filter((c) => c.event === 'theft_grievance').length).toBe(1);
+    resolveChoice(w, grievance.id, 'demand', 2);
+    const fine = [...w.choices.values()].find((c) => c.event === 'theft_fine')!;
+    expect(fine.faction).toBe(9);
+    const steelAt2 = () => [...w.kinds.item].map((id) => w.get(id)!).filter((e) => e.kind === 'item' && e.def === 'steel' && Math.hypot(e.x - 10, e.y - 10) < 6).reduce((a, e) => a + (e.kind === 'item' ? e.count : 0), 0);
+    resolveChoice(w, fine.id, 'pay', 9);
+    expect(steelAt2() * 1.9).toBeGreaterThanOrEqual(57);
+
+    const other = twoColonies();
+    caughtStealing(other.w, 2, 9, 30);
+    const g2 = [...other.w.choices.values()].find((c) => c.event === 'theft_grievance')!;
+    resolveChoice(other.w, g2.id, 'war', 2);
+    expect(atWar(other.w, 2, 9)).toBe(true);
   });
 
   it('war makes colonists fight on sight; peace brings a truce that runs out', () => {

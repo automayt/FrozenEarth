@@ -8,6 +8,7 @@ import { findSleep } from './pawns';
 import { offerChoice, registerChoice } from './choices';
 import { storedCount, takeStored } from './eventHandlers';
 import { allied, setPact, type RelView } from './pacts';
+import { theftGrievance } from './diplomacy';
 import { hash2 } from './rng';
 import type { Building, Faction, Item, Job, Pawn, SettlementRequest, SettlementState } from './types';
 import { NEIGHBORS4, type World } from './world';
@@ -931,7 +932,8 @@ export function deliverRequest(w: World, faction: number, settlement: number, re
 // ---------------------------------------------------------------- theft
 
 /** One of their people caught a colony's colonist stealing from them. */
-export function caughtStealing(w: World, owner: number, thiefFaction: number): void {
+export function caughtStealing(w: World, owner: number, thiefFaction: number, worth = 0): void {
   const f = w.factions.get(owner);
   if (f?.settlement) shiftGoodwill(w, f, thiefFaction, GOODWILL.caughtStealing, 'Caught stealing from us');
+  else if (f?.isPlayer && w.factions.get(thiefFaction)?.isPlayer) theftGrievance(w, owner, thiefFaction, worth);
 }
