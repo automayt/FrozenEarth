@@ -1,7 +1,8 @@
-import type { Command, Delta, GameMessage, Snapshot } from '@fe/sim';
+import type { Command, GameMessage, Snapshot } from '@fe/sim';
+import type { WireDelta } from './packer';
 
 /** Bump when the wire format changes incompatibly. */
-export const PROTOCOL_VERSION = 8;
+export const PROTOCOL_VERSION = 9;
 
 export interface PlayerInfo {
   id: number;
@@ -70,7 +71,7 @@ export type ServerMsg =
       lastSeen?: number;
     }
   | { t: 'settled'; faction: number }
-  | { t: 'delta'; d: Delta; time: TimeState }
+  | { t: 'delta'; d: WireDelta; time: TimeState }
   | { t: 'players'; players: PlayerInfo[]; time: TimeState }
   | { t: 'chat'; from: string; color: number; text: string; at: number }
   | { t: 'error'; msg: string; fatal: boolean }

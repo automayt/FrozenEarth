@@ -34,6 +34,12 @@ let ws: WebSocket | null = null;
 let retry = 0;
 let joinArgs: { name: string; password?: string } | null = null;
 let pingTimer: number | undefined;
+/**
+ * The server sends at least the player list every second, so this long without a word means the
+ * link died without closing (wifi gone, a sleeping laptop). Browsers can take minutes to notice
+ * that on their own; reconnect instead.
+ */
+const SILENT_MS = 10_000;
 
 /** This browser's rejoin code for a name: paste it on another device to play the same colony. */
 export function rejoinCode(name: string): string | null {
@@ -55,18 +61,31 @@ function open(): void {
   sock.binaryType = 'arraybuffer';
   ws = sock;
   let fatal = false;
+  let heard = performance.now();
   sock.onopen = () => {
     retry = 0;
+    heard = performance.now();
     send({ t: 'hello', v: PROTOCOL_VERSION, name: joinArgs!.name, password: joinArgs!.password, token: readLocal(tokenKey(joinArgs!.name)) ?? undefined });
     clearInterval(pingTimer);
-    pingTimer = window.setInterval(() => send({ t: 'ping', at: performance.now() }), 3000);
+    pingTimer = window.setInterval(() => {
+      if (performance.now() - heard > SILENT_MS) {
+        // Give up on this socket without waiting for a close that may never come.
+        sock.onclose = null;
+        sock.onmessage = null;
+        sock.close();
+        dropped();
+        return;
+      }
+      send({ t: 'ping', at: performance.now() });
+    }, 3000);
   };
   sock.onmessage = (ev) => {
+    heard = performance.now();
     const msg = decode<ServerMsg>(ev.data as ArrayBuffer);
     if (msg.t === 'error' && msg.fatal) fatal = true;
     handle(msg);
   };
-  sock.onclose = () => {
+  const dropped = () => {
     clearInterval(pingTimer);
     if (ws !== sock) return;
     ws = null;
@@ -76,6 +95,7 @@ function open(): void {
     store.set({ status: 'connecting', error: 'Connection lost. Reconnecting…' });
     setTimeout(open, delay);
   };
+  sock.onclose = dropped;
 }
 
 function handle(msg: ServerMsg): void {

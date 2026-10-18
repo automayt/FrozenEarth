@@ -1,6 +1,6 @@
 import { Application, BitmapText, Container, Graphics, GraphicsContext, Sprite, TextStyle } from 'pixi.js';
 import { ANIMALS, BUILDINGS, maxHp, PLANTS, ROCKS, TERRAINS, WEAPON_KEYS, weaponOf, type TerrainDef } from '@fe/defs';
-import { pawnPosition } from '@fe/protocol';
+import { PawnGlide, pawnPosition } from '@fe/protocol';
 import { DESIG, FROST_BAND, MIN_COLONY_GAP, pactOf, SHOT_FIELDS, bleedRate, calendar, dispositionOf, GUARD_REACH, hostile, NOISE, SETTLEMENT_WATCH, stealthMult, frostLevel, frostRadius, hash2, outdoorTempAt, weaponFor, woundTotal, type Construct, type Entity, type Pawn, type World } from '@fe/sim';
 import { ease, Particles, Tweens, Weather, type Precip } from './fx';
 import { sound } from '../audio';
@@ -158,6 +158,7 @@ export class GameRenderer {
   /** Shared geometry for the small shapes on entity views (see shape()). */
   private shapes = new Map<string, GraphicsContext>();
   private pawnIds = new Set<number>();
+  private pawnGlide = new PawnGlide();
   /** Static entity views are grouped into CHUNK x CHUNK cell containers so off-screen ones can be hidden. */
   private chunks = new Map<string, Container>();
   tex!: TextureBank;
@@ -354,7 +355,8 @@ export class GameRenderer {
       const e = m.entities.get(id);
       const v = this.views.get(id);
       if (!e || e.kind !== 'pawn' || !v) continue;
-      const pos = pawnPosition(e, tick, m.w);
+      // Small late corrections glide instead of popping (see PawnGlide).
+      const pos = this.pawnGlide.at(id, pawnPosition(e, tick, m.w), now);
       v.root.position.set((pos.x + 0.5) * TILE, (pos.y + 0.5) * TILE);
       // Lower on screen draws in front. Only re-sorts the pawn layer, and only when the order can change.
       v.root.zIndex = Math.round(v.root.y);
@@ -726,6 +728,7 @@ export class GameRenderer {
     if (!v) return;
     this.views.delete(id);
     this.pawnIds.delete(id);
+    this.pawnGlide.forget(id);
     const root = v.root;
     if (!leaving || !this.built || !root.visible || !root.parent?.visible) {
       root.destroy({ children: true });

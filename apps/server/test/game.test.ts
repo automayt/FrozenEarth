@@ -18,6 +18,10 @@ class FakeSocket extends EventEmitter {
   readyState = 1;
   bufferedAmount = 0;
   inbox: ServerMsg[] = [];
+  pings = 0;
+  ping(): void {
+    this.pings++;
+  }
   send(bytes: Uint8Array): void {
     this.inbox.push(decode<ServerMsg>(bytes));
   }
@@ -238,6 +242,132 @@ describe('game server', () => {
     expect(h.world.get<Pawn>(other.id)!.possessed).toBe(false);
     h.stop();
   });
+  it('someone still choosing where to settle does not hold everyone at their speed', () => {
+    const g = new GameServer({ savePath: worldPath(dir, 'settling'), seed: 4, size: 80, log: () => {} });
+    const ann = new FakeSocket();
+    g.onConnect(ann as unknown as WebSocket);
+    ann.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Ann' });
+    ann.say({ t: 'settle' });
+    ann.say({ t: 'speed', speed: 3 });
+    expect(g.computeTime().speed).toBe(3);
+    // Bob joins and looks at the map for a while before settling, at the default 1x.
+    const bob = new FakeSocket();
+    g.onConnect(bob as unknown as WebSocket);
+    bob.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Bob' });
+    expect(g.computeTime().speed).toBe(3);
+    // A pause still counts.
+    bob.say({ t: 'speed', speed: 0 });
+    expect(g.computeTime().paused).toBe(true);
+    bob.say({ t: 'speed', speed: 1 });
+    // Once settled, his vote counts like anyone's.
+    bob.say({ t: 'settle' });
+    expect(g.computeTime().speed).toBe(1);
+    g.stop();
+  });
+
+  it('drops a link that has gone silent, so a dead connection stops holding everyone at its speed', () => {
+    const g = new GameServer({ savePath: worldPath(dir, 'heartbeat'), seed: 4, size: 80, log: () => {} });
+    const ann = new FakeSocket();
+    const bob = new FakeSocket();
+    g.onConnect(ann as unknown as WebSocket);
+    ann.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Ann' });
+    g.onConnect(bob as unknown as WebSocket);
+    bob.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Bob' });
+    ann.say({ t: 'speed', speed: 3 });
+    // Bob's wifi dies with his vote at 1x: no close, no messages, no pongs.
+    expect(g.computeTime().speed).toBe(1);
+    const t0 = performance.now();
+    for (let s = 0; s <= 20; s += 4) {
+      g.heartbeat(t0 + 5000 + s * 1000);
+      // Ann's browser answers pings.
+      if (ann.pings) ann.emit('pong');
+    }
+    expect(ann.pings).toBeGreaterThan(0);
+    // Ann is fine; Bob was cut loose and no longer counts.
+    expect(ann.readyState).toBe(1);
+    expect(bob.readyState).toBe(3);
+    expect(g.playerInfo().find((p) => p.name === 'Bob')?.connected).toBe(false);
+    expect(g.computeTime().speed).toBe(3);
+    g.stop();
+  });
+
+  it('a player who reconnects keeps their speed vote, but not a pause', () => {
+    const g = new GameServer({ savePath: worldPath(dir, 'revote'), seed: 4, size: 80, log: () => {} });
+    const ann = new FakeSocket();
+    const bob = new FakeSocket();
+    g.onConnect(ann as unknown as WebSocket);
+    ann.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Ann' });
+    g.onConnect(bob as unknown as WebSocket);
+    bob.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Bob' });
+    const token = bob.take('welcome')[0].token;
+    ann.say({ t: 'speed', speed: 3 });
+    bob.say({ t: 'speed', speed: 3 });
+    expect(g.computeTime().speed).toBe(3);
+    // A wifi blip: Bob's client reconnects with its token and doesn't resend its vote.
+    bob.close();
+    const back = new FakeSocket();
+    g.onConnect(back as unknown as WebSocket);
+    back.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Bob', token });
+    expect(g.computeTime().speed).toBe(3);
+    // Paused when the link went: back at the speed he had before pausing.
+    back.say({ t: 'speed', speed: 0 });
+    expect(g.computeTime().paused).toBe(true);
+    back.close();
+    const again = new FakeSocket();
+    g.onConnect(again as unknown as WebSocket);
+    again.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Bob', token });
+    expect(g.computeTime()).toMatchObject({ paused: false, speed: 3 });
+    g.stop();
+  });
+
+  it('tells clients when ticks passed with nothing visible changing, even while paused', () => {
+    const g = new GameServer({ savePath: worldPath(dir, 'quiet'), seed: 4, size: 80, log: () => {} });
+    const ws = new FakeSocket();
+    g.onConnect(ws as unknown as WebSocket);
+    ws.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Ann' });
+    ws.say({ t: 'speed', speed: 0 });
+    pump(g);
+    pump(g);
+    ws.take('delta');
+    // Ticks that ran in a loop iteration between a resume and a pause, with nothing to show for them.
+    g.world.step();
+    g.world.step();
+    g.world.takeDelta();
+    pump(g);
+    expect(ws.take('delta').at(-1)?.d.tick).toBe(g.world.tick);
+    // And nothing more while nothing happens.
+    pump(g);
+    expect(ws.take('delta')).toEqual([]);
+    g.stop();
+  });
+
+  it('sends a changed entity as a patch, and in full again to everyone after someone joins', () => {
+    const g = new GameServer({ savePath: worldPath(dir, 'patch'), seed: 4, size: 80, log: () => {} });
+    const ann = new FakeSocket();
+    g.onConnect(ann as unknown as WebSocket);
+    ann.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Ann' });
+    ann.say({ t: 'settle' });
+    ann.say({ t: 'speed', speed: 0 });
+    pump(g);
+    const fa = ann.take('settled')[0].faction;
+    const p = [...g.world.kinds.pawn].map((id) => g.world.get<Pawn>(id)!).find((x) => x.faction === fa)!;
+    const send = () => {
+      p.sneaking = !p.sneaking;
+      g.world.markDirty(p);
+      pump(g);
+      return ann.take('delta').at(-1)!.d;
+    };
+    send();
+    expect(send().patches?.map((x) => x.id)).toEqual([p.id]);
+    const bob = new FakeSocket();
+    g.onConnect(bob as unknown as WebSocket);
+    bob.say({ t: 'hello', v: PROTOCOL_VERSION, name: 'Bob' });
+    const d = send();
+    expect(d.ents.map((e) => e.id)).toContain(p.id);
+    expect(d.patches ?? []).toEqual([]);
+    g.stop();
+  });
+
   it('throttles chat and speed floods, and turns away new players once the world is full', () => {
     const g = new GameServer({ savePath: worldPath(dir, 'flood'), seed: 8, size: 80, maxPlayers: 2, log: () => {} });
     const ann = new FakeSocket();

@@ -20,7 +20,7 @@ import {
   type World,
 } from '@fe/sim';
 import { EVENTS } from '@fe/defs';
-import { decode, encode, PROTOCOL_VERSION, type ChatMsg, type ClientMsg, type PlayerInfo, type ServerMsg, type TimeState } from '@fe/protocol';
+import { decode, DeltaPacker, encode, packSnapshot, PROTOCOL_VERSION, type ChatMsg, type ClientMsg, type PlayerInfo, type ServerMsg, type TimeState, type WireDelta } from '@fe/protocol';
 import { loadWorldFile, saveWorldFile, type StoredPlayer } from './persistence';
 
 /** Real seconds of pause each player gets per in-game day, and the most they can bank. */
@@ -35,6 +35,9 @@ const MAX_TICKS_PER_LOOP = 60;
 const MAX_BUFFERED = 16 * 1024 * 1024;
 const CMD_RATE = 40;
 const STATS_MS = 30_000;
+/** How often the server pings each client, and how many pings in a row may go unanswered before the link counts as gone. */
+const HEARTBEAT_MS = 4000;
+const DEAD_BEATS = 3;
 /** Distinct players a world will register (each new name gets a colony that is kept forever). */
 const MAX_PLAYERS = 64;
 /** Letters and chat lines kept to replay to players who join or come back. */
@@ -68,9 +71,10 @@ export interface GameOptions {
 }
 
 /** True when a delta carries nothing, so a paused server can skip sending it. Taking it clears the changes, so this must see every field. */
-export function deltaIsEmpty(d: Delta): boolean {
+export function deltaIsEmpty(d: Delta | WireDelta): boolean {
   return (
     !d.ents.length &&
+    !(d as WireDelta).patches?.length &&
     !d.removed.length &&
     !d.cells.length &&
     !d.zones.length &&
@@ -98,6 +102,12 @@ export class GameServer {
   private lastSave = performance.now();
   private lastStats = performance.now();
   private bytesOut = 0;
+  private lastHeartbeat = 0;
+  /** Heartbeats each socket has let pass without a sign of life (a message or a pong). */
+  private silent = new WeakMap<WebSocket, number>();
+  /** Tick and time state of the last delta sent, so a change in either always goes out. */
+  private sentTick = -1;
+  private sentTime: TimeState | null = null;
   private lastDay: number;
   private timer: NodeJS.Timeout | null = null;
   private time: TimeState = { speed: 0, paused: true, reason: 'No players online' };
@@ -107,6 +117,8 @@ export class GameServer {
   /** Recent letters (every faction's) and chat, so a player who was away can catch up. */
   private letters: GameMessage[] = [];
   private chatLog: ChatMsg[] = [];
+  /** Sends changed entities as field patches. Must be reset whenever a snapshot goes out. */
+  readonly packer = new DeltaPacker();
 
   constructor(opts: GameOptions) {
     this.opts = opts;
@@ -213,10 +225,18 @@ export class GameServer {
 
     if (now - this.lastBroadcast >= BROADCAST_MS) {
       this.lastBroadcast = now;
-      const d = this.world.takeDelta();
+      const d = this.packer.pack(this.world.takeDelta(), this.world.map.w);
       this.remember(d.msgs);
-      if (!deltaIsEmpty(d) || timeChanged || !time.paused) this.broadcast({ t: 'delta', d, time });
+      // Also when only the clock moved, or speed or pause changed and changed back since the last send:
+      // otherwise a client never learns that ticks passed with nothing visible happening.
+      const st = this.sentTime;
+      if (!deltaIsEmpty(d) || d.tick !== this.sentTick || !st || st.speed !== time.speed || st.paused !== time.paused || st.reason !== time.reason) {
+        this.sentTick = d.tick;
+        this.sentTime = time;
+        this.broadcast({ t: 'delta', d, time });
+      }
     }
+    this.heartbeat(now);
     if (timeChanged || now - this.lastPlayers >= PLAYERS_MS) {
       this.lastPlayers = now;
       this.broadcastPlayers();
@@ -258,8 +278,11 @@ export class GameServer {
     if (online.length === 0) return { speed: 0, paused: true, reason: 'No players online' };
     const pausers = online.filter((p) => p.speed === 0);
     if (pausers.length > 0) return { speed: 0, paused: true, reason: `Paused by ${pausers.map((p) => p.name).join(', ')}` };
-    // A tab left in the background doesn't hold everyone at its speed (pauses still count: they are deliberate and budgeted).
-    const voters = online.some((p) => !p.away) ? online.filter((p) => !p.away) : online;
+    // A tab left in the background doesn't hold everyone at its speed (pauses still count: they are deliberate and budgeted),
+    // and nor does someone still picking where to settle: their colony doesn't exist yet.
+    const playing = online.filter((p) => p.faction);
+    const pool = playing.length ? playing : online;
+    const voters = pool.some((p) => !p.away) ? pool.filter((p) => !p.away) : pool;
     const speed = Math.min(...voters.map((p) => p.speed));
     const slowest = voters.filter((p) => p.speed === speed).map((p) => p.name);
     return { speed, paused: false, reason: online.length > 1 && speed < MAX_SPEED ? `Speed ${speed} set by ${slowest.join(', ')}` : '' };
@@ -267,9 +290,35 @@ export class GameServer {
 
   // ---------------------------------------------------------------- connections
 
+  /**
+   * Ping every client now and then, and drop any that has gone silent. A link that dies without
+   * closing (wifi gone, laptop lid shut) otherwise keeps its player online for many minutes,
+   * holding everyone at their speed vote, or paused.
+   */
+  heartbeat(now: number): void {
+    if (now - this.lastHeartbeat < HEARTBEAT_MS) return;
+    this.lastHeartbeat = now;
+    for (const p of this.players.values()) {
+      const ws = p.ws;
+      if (!ws || ws.readyState !== ws.OPEN) continue;
+      const beats = (this.silent.get(ws) ?? 0) + 1;
+      if (beats > DEAD_BEATS) {
+        this.log(`${p.name} went silent for ${((DEAD_BEATS * HEARTBEAT_MS) / 1000).toFixed(0)} s; dropping the connection`);
+        ws.terminate();
+        continue;
+      }
+      this.silent.set(ws, beats);
+      if (typeof ws.ping === 'function') ws.ping();
+    }
+  }
+
   onConnect(ws: WebSocket): void {
     let player: Player | null = null;
+    const alive = () => this.silent.set(ws, 0);
+    alive();
+    ws.on('pong', alive);
     ws.on('message', (raw, isBinary) => {
+      alive();
       if (!isBinary) return;
       let msg: ClientMsg;
       try {
@@ -340,7 +389,9 @@ export class GameServer {
       p.ws.close();
     }
     p.ws = ws;
-    p.speed = 1;
+    // Coming back keeps their speed vote (a wifi blip shouldn't drop everyone to 1x, and the client
+    // doesn't resend it), but not a pause: they weren't there to hold it.
+    p.speed = p.resumeSpeed || 1;
     p.away = false;
     this.refreshOnline();
     const mine = p.faction;
@@ -349,12 +400,14 @@ export class GameServer {
       playerId: p.id,
       faction: p.faction,
       token: p.token,
-      snap: snapshot(this.world),
+      snap: packSnapshot(snapshot(this.world)),
       sites: p.faction ? undefined : suggestSites(this.world),
       msgs: this.letters.filter((m) => m.faction === 0 || (mine && m.faction === mine)).slice(-SEND_LETTERS),
       chat: this.chatLog,
       lastSeen: p.lastSeen,
     });
+    // The new client has the world as it is now, not as everyone else was last sent it.
+    this.packer.reset();
     this.system(`${p.name} joined.`);
     this.broadcastPlayers();
     return p;
