@@ -8,12 +8,23 @@ import { fleeJob, raiderThink } from './raids';
 import { settlerThink } from './settlements';
 import { animalThink, speciesOf } from './wildlife';
 import { SNEAK_SPEED } from './stealth';
+import { shelterJob, shouldShelter, threatTo } from './shelter';
 import type { Building, Item, Job, Pawn } from './types';
 import { NEIGHBORS8, rk, type World } from './world';
 
 export function tickPawn(w: World, p: Pawn): void {
   if (p.downed) return;
   tickMovement(w, p);
+  // A few times a second, colonists look up from their work for danger.
+  if ((w.tick + p.id) % 30 === 0 && shouldShelter(w, p)) {
+    const threat = threatTo(w, p);
+    const job = threat && shelterJob(w, p, threat);
+    if (job) {
+      endJob(w, p);
+      p.job = job;
+      w.markDirty(p);
+    }
+  }
   if (!p.job) {
     think(w, p);
     if (!p.job) return;
@@ -154,7 +165,12 @@ function think(w: World, p: Pawn): void {
   const n = p.needs;
   const e = effectsOf(w, p);
   let job: Job | null = null;
-  if (n.food < 0.3 || (e.binge && n.food < 0.95)) job = findFood(w, p);
+  // Danger close by comes before everything.
+  if (shouldShelter(w, p)) {
+    const threat = threatTo(w, p);
+    if (threat) job = shelterJob(w, p, threat);
+  }
+  if (!job && n.food < 0.3 || (e.binge && n.food < 0.95)) job = findFood(w, p);
   // Severe exposure beats everything else: get somewhere survivable first.
   if (!job && exposureSeverity(p) > 0.3 && needsWarmth(w, p, e)) job = warmthJob(w, p, e);
   if (!job && e.bedRest) job = findSleep(w, p, true);

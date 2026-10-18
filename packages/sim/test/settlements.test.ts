@@ -86,9 +86,16 @@ describe('settlements', () => {
       const { w, s, player } = withSettlement(temper);
       const visitor = addPawn(w, 40, 50, player);
       expect(hostile(w, s.id, player)).toBe(fights);
-      run(w, 600);
-      const attacking = residents(w, s.id).some((p) => p.job?.type === 'attack' && p.job.target === visitor.id);
-      expect(attacking || (fights && visitor.downed)).toBe(fights);
+      // (The visitor, not drafted, runs for it once they come at them.)
+      let attacked = false;
+      let ran = false;
+      for (let t = 0; t < 600; t++) {
+        w.step();
+        attacked ||= residents(w, s.id).some((p) => p.job?.type === 'attack' && p.job.target === visitor.id);
+        ran ||= visitor.job?.type === 'shelter';
+      }
+      expect(attacked).toBe(fights);
+      expect(ran).toBe(fights);
     }
   });
 

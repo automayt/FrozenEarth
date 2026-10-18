@@ -155,6 +155,8 @@ interface JobBase {
 
 export type Job =
   | (JobBase & { type: 'wander'; dest: number; until: number })
+  /** Getting away from a raider, predator or enemy colonist: run to dest, wait there until the danger passes. */
+  | (JobBase & { type: 'shelter'; dest: number; from: EntityId; until: number })
   | (JobBase & { type: 'haul'; item: EntityId; dest: number; /** Settlement or colony the goods were taken from, while the thief is still at risk. */ stolen?: number; /** Where they were taken from. */ stolenAt?: number })
   | (JobBase & { type: 'deliver'; item: EntityId; target: EntityId; count: number })
   | (JobBase & { type: 'build'; target: EntityId })

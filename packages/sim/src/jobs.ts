@@ -13,6 +13,7 @@ import { canStealFrom, noticeTheft, theftPickupNoise, thiefCheck } from './steal
 import { coverSpot, seeksCover, weaponFor } from './combat';
 import { startFire } from './fire';
 import { controlTick } from './control';
+import { threatTo } from './shelter';
 import type { World } from './world';
 
 export type JobResult = 'continue' | 'done' | 'fail';
@@ -25,6 +26,8 @@ export const EAT_TICKS = 150;
 export function runJob(w: World, p: Pawn): JobResult {
   const j = p.job!;
   switch (j.type) {
+    case 'shelter':
+      return shelter(w, p, j);
     case 'wander':
       return wander(w, p, j);
     case 'haul':
@@ -377,6 +380,15 @@ function pickUp(w: World, p: Pawn, it: Item, n: number): void {
   const got = w.takeFromItem(it, n);
   p.carrying = { def, count: got, rot };
   w.markDirty(p);
+}
+
+/** Run for cover, then wait there; done once nothing hostile is close any more. */
+function shelter(w: World, p: Pawn, j: J<'shelter'>): JobResult {
+  if ((w.tick + p.id) % 30 === 0 && !threatTo(w, p)) return 'done';
+  const r = goTo(w, p, j.dest, false);
+  if (r === 'fail') return 'done';
+  if (r === 'arrived' && w.tick >= j.until) return 'done';
+  return 'continue';
 }
 
 function wander(w: World, p: Pawn, j: J<'wander'>): JobResult {
