@@ -1,6 +1,6 @@
 import { BUILDINGS, MIN_MOVE_COST, ROCKS, TERRAINS } from '@fe/defs';
 import { PAWN_TICKS_PER_CELL } from './constants';
-import type { Building, PathState } from './types';
+import type { Building, PathState, Room } from './types';
 import type { World } from './world';
 
 /** How a path may treat obstacles: walk around them, smash walls and doors, or also dig rock. */
@@ -136,6 +136,45 @@ export function maybeReachable(w: World, start: number, goal: number, adj: boole
   return false;
 }
 
+/** Door cells around each room, worked out once per room (rooms are rebuilt as new objects when walls change). */
+const roomDoors = new WeakMap<Room, number[]>();
+
+/**
+ * A goal inside a room whose every door is locked to this faction (and the start isn't in that
+ * room already). The map's reachability check ignores doors, so without this a path to a
+ * neighbour's storeroom floods the whole map before failing.
+ */
+export function sealedFrom(w: World, start: number, goal: number, faction: number): boolean {
+  const m = w.map;
+  const id = m.roomAt[goal];
+  if (!id || m.roomAt[start] === id) return false;
+  const room = w.rooms.get(id);
+  if (!room) return false;
+  let doors = roomDoors.get(room);
+  if (!doors) {
+    const found = new Set<number>();
+    for (const c of room.cells) {
+      const x = m.cx(c);
+      const y = m.cy(c);
+      for (const [dx, dy] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ]) {
+        if (!m.inBounds(x + dx, y + dy)) continue;
+        const n = m.idx(x + dx, y + dy);
+        // A door: part of the wall, but not solid (owned or not; abandoned ones open to anyone).
+        if (m.wall[n] && !m.solid[n]) found.add(n);
+      }
+    }
+    doors = [...found];
+    roomDoors.set(room, doors);
+  }
+  for (const d of doors) if (w.passable(d, faction)) return false;
+  return true;
+}
+
 /**
  * A* from start to goal (or any cell next to it when adj). 8-directional, no corner cutting.
  * Returns the cells to walk through, excluding start, or null if unreachable.
@@ -153,7 +192,7 @@ export function findPath(
 ): number[] | null {
   const m = w.map;
   if (atGoal(w, start, goal, adj)) return [];
-  if (!breach && !maybeReachable(w, start, goal, adj)) return null;
+  if (!breach && (!maybeReachable(w, start, goal, adj) || sealedFrom(w, start, goal, faction))) return null;
   const b = getBuffers(m.n);
   b.gen++;
   if (b.gen === 0xffffffff) {
