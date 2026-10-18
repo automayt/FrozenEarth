@@ -225,6 +225,10 @@ export class GameServer {
   /** Last save: compressed size and how long it blocked the loop. */
   lastSaveStats = { bytes: 0, ms: 0, serializeMs: 0 };
   saveFailures = 0;
+  private savedTick = -1;
+  /** Commands enqueued since the queue was last applied. */
+  private queued = false;
+  private backupTick = -1;
 
   constructor(opts: GameOptions) {
     this.opts = opts;
@@ -330,6 +334,7 @@ export class GameServer {
 
   private enqueue(faction: number, cmd: Command): void {
     this.record(['c', faction, cmd]);
+    this.queued = true;
     this.world.enqueue(faction, cmd);
   }
 
@@ -365,6 +370,7 @@ export class GameServer {
 
   /** Run n ticks, journaled, as the loop does. Throws whatever the sim throws. */
   stepTicks(n: number): void {
+    this.queued = false;
     for (let i = 0; i < n; i++) {
       this.record(['s', 1]);
       this.world.step();
@@ -384,7 +390,9 @@ export class GameServer {
       this.acc = 0;
     } else if (time.paused) {
       this.acc = 0;
-      this.record(['a']);
+      // Applying an empty queue does nothing, so the journal only notes the ones that had commands.
+      if (this.queued) this.record(['a']);
+      this.queued = false;
       this.world.applyCommands();
     } else {
       this.acc += (dtMs / 1000) * TICKS_PER_SECOND * time.speed;
@@ -416,11 +424,21 @@ export class GameServer {
       p.cmdTokens = Math.min(CMD_RATE, p.cmdTokens + (dtMs / 1000) * CMD_RATE);
       p.chatTokens = Math.min(CHAT_BURST, p.chatTokens + (dtMs / 1000) * CHAT_RATE);
     }
-    if (now - this.lastSave >= AUTOSAVE_MS) this.save();
-    else if (!this.halted && now - this.lastCheckpoint >= CHECKPOINT_MS) this.takeCheckpoint();
+    // An empty server sits paused: nothing to save, restore or back up until someone comes back.
+    const idle = this.connected().length === 0 && this.world.tick === this.savedTick && !this.journal.length;
+    if (now - this.lastSave >= AUTOSAVE_MS) {
+      if (idle) this.lastSave = now;
+      else this.save();
+    } else if (!this.halted && now - this.lastCheckpoint >= CHECKPOINT_MS) {
+      if (this.journal.length || this.world.tick !== this.checkpoint?.tick) this.takeCheckpoint();
+      else this.lastCheckpoint = now;
+    }
     if (now - this.lastBackup >= BACKUP_MS) {
       this.lastBackup = now;
-      this.backup('auto');
+      if (this.world.tick !== this.backupTick) {
+        this.backupTick = this.world.tick;
+        this.backup('auto');
+      }
     }
     if (now - this.lastStats >= STATS_MS) {
       this.lastStats = now;
@@ -1020,6 +1038,7 @@ export class GameServer {
       if (!this.halted) this.takeCheckpoint(save);
       const st = saveWorldFileStats(this.opts.savePath, this.worldFile(save));
       this.lastSaveStats = { bytes: st.bytes, ms: serializeMs + st.packMs + st.writeMs, serializeMs };
+      this.savedTick = this.world.tick;
       this.saveFailures = 0;
       this.log(`Saved ${(st.bytes / 1024).toFixed(0)} KB to ${this.opts.savePath} in ${this.lastSaveStats.ms.toFixed(0)} ms`);
       return true;

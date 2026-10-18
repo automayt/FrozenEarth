@@ -224,6 +224,16 @@ describe('sim crashes', () => {
     }
     ann.say({ t: 'admin', action: 'event', key: 'raid' });
     g.stepTicks(400);
+    // Orders given while paused are applied by the loop without a tick.
+    for (const p of g.players.values()) (p as unknown as { cmdTokens: number }).cmdTokens = 40;
+    ann.say({ t: 'speed', speed: 0 });
+    expect(g.computeTime().paused).toBe(true);
+    ann.say({ t: 'cmd', cmd: { c: 'draft', pawns: [pawns[2].id], on: true } });
+    inner.loop();
+    expect(inner.journal.filter((op) => op[0] === 'a')).toHaveLength(1);
+    for (let i = 0; i < 5; i++) inner.loop();
+    expect(inner.journal.filter((op) => op[0] === 'a')).toHaveLength(1);
+    g.stepTicks(100);
     const out = replayJournal(inner.checkpoint!.save, inner.journal);
     expect(out.error).toBeUndefined();
     expect(hashWorld(out.world)).toBe(hashWorld(g.world));
