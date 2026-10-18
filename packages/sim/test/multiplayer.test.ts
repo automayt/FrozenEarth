@@ -6,6 +6,9 @@ import {
   SITE_MIN_FROST_DAYS,
   START_TICK,
   suggestSites,
+  addPlayerFaction,
+  siteProblem,
+  MIN_COLONY_GAP,
   TICKS_PER_DAY,
   TICKS_PER_HOUR,
   type Item,
@@ -97,6 +100,17 @@ describe('hauling near other colonies', () => {
 });
 
 describe('joining late', () => {
+  it('suggests a spot next to an existing colony, for friends who want to be neighbours', () => {
+    const w = createWorld({ seed: 6, width: 160, height: 160 });
+    const ann = addPlayerFaction(w, "Ann's colony", 3);
+    const near = suggestSites(w, 5).filter((s) => s.region === `next to ${ann.name}`);
+    expect(near.length).toBe(1);
+    const d = Math.hypot(near[0].x - ann.home.x, near[0].y - ann.home.y);
+    expect(d).toBeGreaterThanOrEqual(MIN_COLONY_GAP);
+    expect(d).toBeLessThan(MIN_COLONY_GAP + 20);
+    expect(siteProblem(w, near[0].x, near[0].y)).toBeNull();
+  });
+
   it('suggested sites leave a newcomer at least a week before the frost', () => {
     const w = createWorld({ seed: 6, width: 160, height: 160 });
     w.tick = START_TICK + 30 * TICKS_PER_DAY;

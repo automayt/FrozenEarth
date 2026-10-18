@@ -29,6 +29,16 @@ export function createWorld(opts: WorldOptions = {}): World {
 
 /** Score a candidate home cell: open, buildable ground away from other colonies. */
 function spawnScore(w: World, cx: number, cy: number): number {
+  const ground = groundScore(w, cx, cy);
+  if (ground < 0) return -1;
+  let minDist = Infinity;
+  for (const f of w.factions.values()) if (f.isPlayer) minDist = Math.min(minDist, Math.hypot(f.home.x - cx, f.home.y - cy));
+  if (minDist < 45) return -1;
+  return ground + Math.min(minDist, 100) / 200;
+}
+
+/** Open, buildable ground around a spot plus rock and trees within reach; -1 if too cramped. */
+function groundScore(w: World, cx: number, cy: number): number {
   const m = w.map;
   let open = 0;
   let total = 0;
@@ -41,9 +51,6 @@ function spawnScore(w: World, cx: number, cy: number): number {
     }
   }
   if (open / total < 0.8) return -1;
-  let minDist = Infinity;
-  for (const f of w.factions.values()) if (f.isPlayer) minDist = Math.min(minDist, Math.hypot(f.home.x - cx, f.home.y - cy));
-  if (minDist < 45) return -1;
   // Nearby rock and trees are good for an early colony.
   let resources = 0;
   for (let y = cy - 18; y <= cy + 18; y += 3) {
@@ -54,7 +61,7 @@ function spawnScore(w: World, cx: number, cy: number): number {
       if (m.plantAt[i]) resources += 0.5;
     }
   }
-  return open / total + Math.min(resources, 40) / 40 + Math.min(minDist, 100) / 200;
+  return open / total + Math.min(resources, 40) / 40;
 }
 
 /** Minimum distance between a new colony and existing ones, when a player picks the spot. */
@@ -140,6 +147,35 @@ export function suggestSites(w: World, count = 5): { x: number; y: number; regio
     if (out.length >= count) break;
     if (out.some((o) => Math.hypot(o.x - c.x, o.y - c.y) < 30)) continue;
     out.push({ x: c.x, y: c.y, region: regionOf(w, c.x, c.y) });
+  }
+  return [...out, ...neighbourSites(w, rng, out)];
+}
+
+/** Players who want to settle together: a good spot just past the minimum gap from up to two colonies. */
+function neighbourSites(w: World, rng: Rng, taken: { x: number; y: number }[]): { x: number; y: number; region: string }[] {
+  const m = w.map;
+  const out: { x: number; y: number; region: string }[] = [];
+  const colonies = [...w.factions.values()].filter((f) => f.isPlayer).sort((a, b) => a.id - b.id);
+  for (const f of colonies) {
+    if (out.length >= 2) break;
+    let best: { x: number; y: number; score: number } | null = null;
+    const turn = rng.next() * Math.PI * 2;
+    for (const r of [MIN_COLONY_GAP + 4, MIN_COLONY_GAP + 10, MIN_COLONY_GAP + 16]) {
+      for (let k = 0; k < 16; k++) {
+        const a = turn + (k / 16) * Math.PI * 2;
+        const x = Math.round(f.home.x + Math.cos(a) * r);
+        const y = Math.round(f.home.y + Math.sin(a) * r);
+        if (siteProblem(w, x, y)) continue;
+        if ([...taken, ...out].some((o) => Math.hypot(o.x - x, o.y - y) < 20)) continue;
+        const ground = groundScore(w, x, y);
+        if (ground < 0) continue;
+        // Prefer the side away from the frost, and closer neighbours.
+        const days = daysUntilFrost(x, y, m.w, m.h, w.tick, w.frost, SITE_MIN_FROST_DAYS);
+        const score = ground + Math.min(days, 30) / 30 - r / 200;
+        if (!best || score > best.score) best = { x, y, score };
+      }
+    }
+    if (best) out.push({ x: best.x, y: best.y, region: `next to ${f.name}` });
   }
   return out;
 }
