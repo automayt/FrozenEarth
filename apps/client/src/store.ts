@@ -91,6 +91,12 @@ class Store {
     this.clock.setServerTick(tick);
   }
 
+  /** A fresh snapshot (a join, or a server rollback): the clock starts over, even backwards. */
+  restartClock(tick: number): void {
+    this.clock.setTime(this.time);
+    this.clock.restart(tick);
+  }
+
   set(patch: Partial<Pick<Store, 'status' | 'error' | 'me' | 'players' | 'time' | 'tool' | 'selected' | 'squad' | 'selectedCell' | 'panel' | 'menu' | 'hoverCell' | 'focus' | 'ping' | 'sites' | 'settlePick' | 'help' | 'tradeWith' | 'diploWith' | 'lastSeen'>>): void {
     Object.assign(this, patch);
     this.emit();

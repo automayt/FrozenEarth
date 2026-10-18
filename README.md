@@ -21,14 +21,14 @@ Open http://localhost:5180 and pick a name. Open a second browser tab with a dif
 
 ```bash
 npm run build
-npm start -- --world myworld --password hunter2
+FE_PASSWORD=hunter22 npm start -- --world myworld
 ```
 
-This serves the game and the websocket on one port (default 8090; change it with `--port` or `FE_PORT`). Friends join at `http://<your-ip>:8090` over LAN, a VPS, or a tunnel such as Tailscale or `cloudflared`. The world autosaves every minute, when the last player leaves, and when the server stops, to `saves/<world>/world.bin`.
+This serves the game and the websocket on one port (default 8090; change it with `--port` or `FE_PORT`). Friends join at `http://<your-ip>:8090/` over LAN, or through Tailscale, a Cloudflare tunnel, or a reverse proxy on a VPS (`https`/`wss` and path prefixes work). The world autosaves every minute and when the server stops (Ctrl+C), with atomic writes, the previous save kept, and hourly backups in `saves/<world>/backups/`. A bug inside the game simulation rolls the world back a few seconds and writes a crash report instead of taking the server down.
 
-Server options: `--world <name>`, `--port <n>`, `--password <pw>`, `--seed <n>`, `--size <cells>` (default 200), `--saves <dir>`.
+The first player to join a new world is the host. Host commands (`kick`, `ban`, `password`, `backup`, `restore`, `who`, and more) can be typed in the server terminal, or as `/commands` in the game chat. Rejoining with the same name in the same browser brings you back to your colony.
 
-The first player to join a new world is the host (admin). Rejoining with the same name in the same browser brings you back to your colony.
+**See [docs/HOSTING.md](docs/HOSTING.md)** for Tailscale, cloudflared, Caddy and nginx setups, every server option, backups and restoring, upgrades, and security notes.
 
 ### Controls
 

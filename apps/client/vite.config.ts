@@ -6,6 +6,8 @@ const root = fileURLToPath(new URL('.', import.meta.url));
 
 export default defineConfig({
   root,
+  // Relative asset URLs, so one build works at the site root and under a reverse-proxy prefix (example.com/frozen/).
+  base: './',
   plugins: [react()],
   server: {
     // Listen on all interfaces so other devices on the network can join.

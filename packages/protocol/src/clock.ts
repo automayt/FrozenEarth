@@ -86,6 +86,12 @@ export class TickClock {
   }
 
   /** A delta (or snapshot) for `tick` just arrived. */
+  /** A whole new world state (a join, or the server rolling back): start again from this tick, even if it is behind. */
+  restart(tick: number): void {
+    this.started = false;
+    this.setServerTick(tick);
+  }
+
   setServerTick(tick: number): void {
     const now = this.now();
     const rate = this.rate();

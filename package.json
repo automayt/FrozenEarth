@@ -15,6 +15,7 @@
     "dev:client": "vite --config apps/client/vite.config.ts",
     "build": "vite build --config apps/client/vite.config.ts",
     "start": "tsx apps/server/src/main.ts",
+    "replay": "tsx apps/server/src/replay.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint .",
