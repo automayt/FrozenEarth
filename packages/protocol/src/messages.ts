@@ -1,7 +1,8 @@
-import type { Command, Delta, Snapshot } from '@fe/sim';
+import type { Command, Snapshot } from '@fe/sim';
+import type { WireDelta } from './packer';
 
 /** Bump when the wire format changes incompatibly. */
-export const PROTOCOL_VERSION = 8;
+export const PROTOCOL_VERSION = 9;
 
 export interface PlayerInfo {
   id: number;
@@ -49,7 +50,7 @@ export type ServerMsg =
   /** faction 0 means the player hasn't settled yet; `sites` are suggestions. */
   | { t: 'welcome'; playerId: number; faction: number; token: string; snap: Snapshot; sites?: Site[] }
   | { t: 'settled'; faction: number }
-  | { t: 'delta'; d: Delta; time: TimeState }
+  | { t: 'delta'; d: WireDelta; time: TimeState }
   | { t: 'players'; players: PlayerInfo[]; time: TimeState }
   | { t: 'chat'; from: string; color: number; text: string; at: number }
   | { t: 'error'; msg: string; fatal: boolean }

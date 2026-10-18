@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
-import { Mirror, type PlayerInfo, type Site, type TimeState } from '@fe/protocol';
-import { TICKS_PER_SECOND, type ZoneKind } from '@fe/sim';
+import { Mirror, TickClock, type PlayerInfo, type Site, type TimeState } from '@fe/protocol';
+import type { ZoneKind } from '@fe/sim';
 
 export type Tool =
   | { kind: 'select' }
@@ -73,25 +73,20 @@ class Store {
   diploWith: number | null = null;
   private nextToast = 1;
 
-  private lastTick = 0;
-  private lastTickAt = 0;
+  private clock = new TickClock();
   private version = 0;
   private listeners = new Set<() => void>();
   private pending = false;
 
-  /** Estimated current server tick, extrapolated between deltas for smooth movement. */
+  /** The tick the world is drawn at: just behind the newest delta, extrapolated smoothly, never backwards (see TickClock). */
   estTick(): number {
-    if (this.time.paused) return this.lastTick;
-    const elapsed = (performance.now() - this.lastTickAt) / 1000;
-    const ahead = Math.min(elapsed, 0.3) * TICKS_PER_SECOND * this.time.speed;
-    return this.lastTick + ahead;
+    this.clock.setTime(this.time);
+    return this.clock.estTick();
   }
 
   setServerTick(tick: number): void {
-    // Never step backwards visually: blend toward the authoritative tick.
-    const est = this.estTick();
-    this.lastTick = Math.abs(est - tick) > 120 ? tick : Math.max(tick, Math.min(est, tick + 20));
-    this.lastTickAt = performance.now();
+    this.clock.setTime(this.time);
+    this.clock.setServerTick(tick);
   }
 
   set(patch: Partial<Pick<Store, 'status' | 'error' | 'me' | 'players' | 'time' | 'tool' | 'selected' | 'squad' | 'selectedCell' | 'panel' | 'menu' | 'hoverCell' | 'focus' | 'ping' | 'sites' | 'settlePick' | 'help' | 'tradeWith' | 'diploWith'>>): void {

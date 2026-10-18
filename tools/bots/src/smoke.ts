@@ -16,10 +16,10 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import WebSocket from 'ws';
 import { decode, encode, Mirror, PROTOCOL_VERSION, type ClientMsg, type ServerMsg } from '@fe/protocol';
-import { deserializeWorld, Rng, type Pawn, type World } from '@fe/sim';
+import { deserializeWorld, Rng, type Pawn } from '@fe/sim';
 import { loadWorldFile, worldPath } from '../../../apps/server/src/persistence';
 import { Chaos, type ChaosKind } from './chaos';
-import { visibleEntity, visibleFaction } from './visible';
+import { differences } from './visible';
 
 const { values: args } = parseArgs({
   options: {
@@ -112,8 +112,8 @@ function connect(url: string, name: string): Promise<Client> {
       } else if (msg.t === 'delta') {
         c.mirror.applyDelta(msg.d);
         if (c.faction && c.mirror.factions.has(c.faction)) res(c);
-        for (const e of msg.d.ents) {
-          if (e.kind !== 'pawn') continue;
+        for (const e of [...msg.d.ents, ...(msg.d.patches ?? []).map((p) => c.mirror.get(p.id)!)]) {
+          if (e?.kind !== 'pawn') continue;
           if (e.possessed) c.seen.add('possessed');
           if (e.sneaking) c.seen.add('sneaking');
           if (e.hunted) c.seen.add('hunted');
@@ -128,36 +128,6 @@ function connect(url: string, name: string): Promise<Client> {
     });
     ws.on('error', rej);
   });
-}
-
-/** Everything one client's mirror gets wrong about the server's world. */
-function differences(m: Mirror, w: World): string[] {
-  const out: string[] = [];
-  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-  if (m.tick !== w.tick) out.push(`tick ${m.tick} vs ${w.tick}`);
-  for (const e of w.entities.values()) {
-    const mine = m.entities.get(e.id);
-    if (!mine) out.push(`missing ${e.kind} ${e.id}`);
-    else if (!same(visibleEntity(mine), visibleEntity(e))) out.push(`${e.kind} ${e.id} differs:\n  client ${JSON.stringify(visibleEntity(mine))}\n  server ${JSON.stringify(visibleEntity(e))}`);
-  }
-  for (const id of m.entities.keys()) if (!w.entities.has(id)) out.push(`stale entity ${id}`);
-  for (const f of w.factions.values()) {
-    const mine = m.factions.get(f.id);
-    if (!mine || !same(visibleFaction(mine), visibleFaction(f))) out.push(`faction ${f.id} (${f.name}) differs`);
-  }
-  for (const k of ['terrain', 'rock', 'desig', 'desigFaction', 'fire', 'zoneAt', 'roomAt', 'itemAt', 'buildingAt', 'plantAt', 'constructAt'] as const) {
-    const a = m[k];
-    const b = w.map[k];
-    for (let i = 0; i < b.length; i++) {
-      if (a[i] !== b[i]) {
-        out.push(`${k}[${i}] ${a[i]} vs ${b[i]}`);
-        break;
-      }
-    }
-  }
-  if (!same(m.choices, [...w.choices.values()])) out.push('choices differ');
-  if (!same(m.conditions, w.conditions)) out.push('conditions differ');
-  return out;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

@@ -1,5 +1,6 @@
 import { CELL_FIELDS, DEFAULT_FROST, type FrostParams, type Choice, type Condition, type Delta, type Entity, type Faction, type GameMessage, type Pawn, type Room, type Snapshot, type Zone } from '@fe/sim';
 import { toU8 } from './codec';
+import type { WireDelta } from './packer';
 
 /**
  * A client's read-only replica of the world, built from a snapshot and kept current by deltas.
@@ -35,6 +36,8 @@ export class Mirror {
   /** Frost line settings, from the snapshot. */
   frost: FrostParams = { ...DEFAULT_FROST };
   messages: GameMessage[] = [];
+  /** Patches for entities this mirror doesn't have: zero unless deltas were lost or applied out of order. */
+  missedPatches = 0;
   /** Attacks since the renderer last drained them, flattened SHOT_FIELDS tuples. */
   shots: number[] = [];
 
@@ -80,10 +83,24 @@ export class Mirror {
     this.zonesChanged = true;
   }
 
-  applyDelta(d: Delta): void {
+  applyDelta(d: Delta | WireDelta): void {
     this.tick = Math.max(this.tick, d.tick);
     for (const id of d.removed) this.remove(id);
     for (const e of d.ents) this.upsert(e);
+    const patches = (d as WireDelta).patches;
+    if (patches) {
+      for (const p of patches) {
+        const old = this.entities.get(p.id);
+        // Patches only go to clients that have the entity; a miss means a lost delta, not a new entity.
+        if (!old) {
+          this.missedPatches++;
+          continue;
+        }
+        const e = { ...old, ...p.set } as Record<string, unknown>;
+        if (p.del) for (const k of p.del) delete e[k];
+        this.upsert(e as unknown as Entity);
+      }
+    }
     const c = d.cells;
     for (let k = 0; k < c.length; k += CELL_FIELDS) {
       const i = c[k];

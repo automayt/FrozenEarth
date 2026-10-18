@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { addPlayerFaction, createWorld, fireEvent, Rng, snapshot, TICKS_PER_HOUR, type Faction, type Pawn, type World } from '@fe/sim';
 import { T } from '@fe/defs';
-import { decode, encode, Mirror, type ServerMsg } from '../src';
+import { decode, DeltaPacker, encode, Mirror, type ServerMsg } from '../src';
 import { Chaos } from '../../../tools/bots/src/chaos';
 import { visibleEntity, visibleFaction } from '../../../tools/bots/src/visible';
 
@@ -117,6 +117,8 @@ describe('replication with every system running', () => {
       },
     });
     w.takeDelta();
+    // As the server does it: field patches, with the packer reset whenever a snapshot goes out.
+    const packer = new DeltaPacker();
     const early = join(w);
     let late: Mirror | null = null;
     const events: [number, string, number][] = [
@@ -140,11 +142,11 @@ describe('replication with every system running', () => {
       for (const c of w.choices.values()) if (c.event === 'settlement_request') w.enqueue(c.faction, { c: 'choose', choice: c.id, option: 'accept' });
       w.step();
       if (t % 4 === 0) {
-        const msg = wire<DeltaMsg>({ t: 'delta', d: w.takeDelta(), time: { speed: 1, paused: false, reason: '' } });
+        const msg = wire<DeltaMsg>({ t: 'delta', d: packer.pack(w.takeDelta()), time: { speed: 1, paused: false, reason: '' } });
         early.applyDelta(msg.d);
         late?.applyDelta(msg.d);
         for (let k = 0; k < msg.d.cells.length; k += 6) if (msg.d.cells[k + 1] === T.ice) seen.ice = true;
-        for (const e of msg.d.ents) {
+        for (const e of [...msg.d.ents, ...(msg.d.patches ?? []).map((p) => early.get(p.id)!)]) {
           if (e.kind !== 'pawn') continue;
           seen.possessed ||= !!e.possessed;
           seen.sneaking ||= !!e.sneaking;
@@ -155,18 +157,24 @@ describe('replication with every system running', () => {
           seen.requests ||= !!f.settlement?.requests?.length;
         }
       }
-      if (t === 4000) late = join(w);
+      if (t === 4000) {
+        late = join(w);
+        packer.reset();
+      }
       // Check along the way too, not just at the end: a field left stale for a while is still a bug.
       if (t % 1500 === 0 && t > 0) {
         expectInSync(early, w);
         if (late) expectInSync(late, w);
       }
     }
-    const final = wire<DeltaMsg>({ t: 'delta', d: w.takeDelta(), time: { speed: 1, paused: false, reason: '' } }).d;
+    const final = wire<DeltaMsg>({ t: 'delta', d: packer.pack(w.takeDelta()), time: { speed: 1, paused: false, reason: '' } }).d;
     early.applyDelta(final);
     late!.applyDelta(final);
     expectInSync(early, w);
     expectInSync(late!, w);
+    expect(early.missedPatches + late!.missedPatches).toBe(0);
+    // Most changes went out as patches, not whole entities.
+    expect(packer.patched).toBeGreaterThan(packer.full);
     expect(seen).toEqual({ ice: true, possessed: true, sneaking: true, hunted: true, goal: true, requests: true });
   });
 });
