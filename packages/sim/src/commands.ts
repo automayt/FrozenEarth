@@ -1,4 +1,5 @@
-import { BUILDINGS, ITEM_CATEGORIES, ITEMS, PLANTS, RECIPES, TERRAINS, WEAPONS, WORK_TYPES } from '@fe/defs';
+import { BUILDINGS, ITEM_CATEGORIES, ITEMS, kitKey, packable, PLANTS, RECIPES, TERRAINS, WEAPONS, WORK_TYPES } from '@fe/defs';
+import { storedCount } from './eventHandlers';
 import { MAX_COMMAND_AREA } from './constants';
 import type { Building, Command, Construct, EntityId, Item, Pawn, Plant, Rect, Zone } from './types';
 import { canUseItem, endJob, setDrafted } from './pawns';
@@ -91,7 +92,7 @@ export function applyCommand(w: World, faction: number, cmd: Command): void {
         const z = w.zoneAt(c);
         if (z && z.faction === faction) w.removeZoneCell(c);
       }
-      deconstruct(w, faction, cmd);
+      packUp(w, faction, cmd);
       designate(w, faction, 'cancel', cmd);
       return;
     case 'setHome': {
@@ -418,7 +419,37 @@ export function canPlace(w: World, faction: number, def: string, c: number): boo
 function build(w: World, faction: number, def: string, hollow: boolean, r: Rect): void {
   if (!Object.hasOwn(BUILDINGS, def) || BUILDINGS[def].special) return;
   const cells = rectCells(w, r, hollow && !!BUILDINGS[def].wall);
-  for (const c of cells) if (canPlace(w, faction, def, c)) w.spawnConstruct(def, c, faction);
+  // Packed kits in the stockpiles go first (those not already spoken for by another blueprint).
+  let kits = packable(def) ? storedCount(w, faction, kitKey(def)) - pendingKits(w, faction, def) : 0;
+  for (const c of cells) {
+    if (!canPlace(w, faction, def, c)) continue;
+    const con = w.spawnConstruct(def, c, faction);
+    if (kits > 0) {
+      con.kit = true;
+      kits--;
+    }
+  }
+}
+
+/** Blueprints of this building already waiting on one of the colony's kits. */
+function pendingKits(w: World, faction: number, def: string): number {
+  let n = 0;
+  for (const id of w.kinds.construct) {
+    const con = w.get<Construct>(id)!;
+    if (con.faction === faction && con.def === def && con.kit) n++;
+  }
+  return n;
+}
+
+/** Take a site down to move on: furniture, benches and heaters fold into kits; walls and floors come apart. */
+function packUp(w: World, faction: number, r: Rect): void {
+  for (const c of rectCells(w, r)) {
+    const b = w.map.buildingAt[c] ? w.get<Building>(w.map.buildingAt[c]) : undefined;
+    if (!b || b.faction !== faction || !packable(b.def)) continue;
+    w.despawn(b.id);
+    w.placeItemNear(kitKey(b.def), 1, c);
+  }
+  deconstruct(w, faction, r);
 }
 
 function zone(w: World, faction: number, kind: Zone['kind'], plant: string | undefined, r: Rect): void {

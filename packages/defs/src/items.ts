@@ -1,4 +1,4 @@
-export type ItemCategory = 'resource' | 'raw_food' | 'meal' | 'apparel' | 'weapon';
+export type ItemCategory = 'resource' | 'raw_food' | 'meal' | 'apparel' | 'weapon' | 'kit' | 'gear';
 
 export interface ItemDef {
   key: string;
@@ -36,6 +36,9 @@ export const ITEMS: Record<string, ItemDef> = {
   club: { key: 'club', label: 'Club', category: 'weapon', stackLimit: 5, color: 0x8a6a40, marketValue: 18 },
   bow: { key: 'bow', label: 'Short bow', category: 'weapon', stackLimit: 5, color: 0xd8c8a0, marketValue: 60 },
   rifle: { key: 'rifle', label: 'Bolt rifle', category: 'weapon', stackLimit: 5, color: 0x5a5a60, marketValue: 160 },
+  // Gear for the road: a colonist pulling a sledge carries several times what they could on their back.
+  sledge: { key: 'sledge', label: 'Sledge', category: 'gear', stackLimit: 1, color: 0x8a6a40, marketValue: 70 },
+  // Packed buildings (kit_*) are added from the building list in kits.ts.
 };
 
 export const ITEM_CATEGORIES: { key: ItemCategory; label: string }[] = [
@@ -44,4 +47,9 @@ export const ITEM_CATEGORIES: { key: ItemCategory; label: string }[] = [
   { key: 'meal', label: 'Meals' },
   { key: 'apparel', label: 'Clothing' },
   { key: 'weapon', label: 'Weapons' },
+  { key: 'kit', label: 'Packed buildings' },
+  { key: 'gear', label: 'Gear' },
 ];
+
+/** Every category, for a stockpile that takes anything. */
+export const ALL_CATEGORIES: ItemCategory[] = ['resource', 'raw_food', 'meal', 'apparel', 'weapon', 'kit', 'gear'];

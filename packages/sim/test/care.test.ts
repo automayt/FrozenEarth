@@ -260,7 +260,7 @@ describe('save format 5', () => {
     const save = serializeWorld(w);
     save.version = 4;
     const b = deserializeWorld(save);
-    expect(SAVE_VERSION).toBe(6);
+    expect(SAVE_VERSION).toBe(7);
     run(b, 300);
   });
 });

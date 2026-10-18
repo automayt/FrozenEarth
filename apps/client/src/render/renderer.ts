@@ -1,7 +1,7 @@
 import { Application, BitmapText, Container, Graphics, GraphicsContext, Sprite, TextStyle } from 'pixi.js';
 import { ANIMALS, BUILDINGS, maxHp, PLANTS, ROCKS, TERRAINS, WEAPON_KEYS, weaponOf, type TerrainDef } from '@fe/defs';
 import { PawnGlide, pawnPosition } from '@fe/protocol';
-import { DESIG, FROST_BAND, MIN_COLONY_GAP, pactOf, SHOT_FIELDS, bleedRate, calendar, dispositionOf, GUARD_REACH, hostile, NOISE, SETTLEMENT_WATCH, stealthMult, frostLevel, frostRadius, hash2, outdoorTempAt, weaponFor, woundTotal, type Construct, type Entity, type Pawn, type World } from '@fe/sim';
+import { DESIG, FROST_BAND, MIN_COLONY_GAP, pactOf, SHOT_FIELDS, bleedRate, calendar, dispositionOf, GUARD_REACH, hostile, NOISE, SETTLEMENT_WATCH, stealthMult, frostLevel, frostRadius, hash2, outdoorTempAt, weaponFor, woundTotal, type Construct, type Entity, type Pawn, type World, constructCost, constructWork } from '@fe/sim';
 import { ease, Particles, Tweens, Weather, type Precip } from './fx';
 import { sound } from '../audio';
 import { fog } from './fog';
@@ -816,9 +816,9 @@ export class GameRenderer {
         return isWall(e) ? `b:${e.def}:${e.faction}:${this.wallMask(e.x, e.y)}:${dmg}` : `b:${e.def}:${e.faction}:${dmg}`;
       }
       case 'construct': {
-        const total = Object.values(BUILDINGS[e.def].cost).reduce((a, b) => a + b, 0);
+        const total = Object.values(constructCost(e)).reduce((a, b) => a + b, 0);
         const got = Object.values(e.delivered).reduce((a, b) => a + b, 0);
-        return `c:${e.def}:${got}/${total}:${Math.floor((e.progress / BUILDINGS[e.def].work) * 10)}`;
+        return `c:${e.def}:${got}/${total}:${Math.floor((e.progress / constructWork(e)) * 10)}:${e.kit ? 'k' : ''}`;
       }
       case 'pawn':
         return `w:${e.faction}:${e.name}:${e.asleep ? 1 : 0}:${e.carrying?.def ?? ''}:${e.weapon}:${e.drafted ? 1 : 0}:${e.downed ? 1 : 0}:${Math.ceil(woundTotal(e) * 20)}:${bleedRate(e) > 0 ? 1 : 0}:${e.prisoner}`;
@@ -974,7 +974,7 @@ export class GameRenderer {
 
   private drawConstruct(root: Container, e: Construct): void {
     const d = BUILDINGS[e.def];
-    const cost = d.cost;
+    const cost = constructCost(e);
     const total = Object.values(cost).reduce((a, b) => a + b, 0);
     const got = Object.values(e.delivered).reduce((a, b) => a + b, 0);
     const ready = got >= total;

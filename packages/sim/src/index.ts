@@ -29,3 +29,4 @@ export { ALLY_AT, DIPLO, TRUCE_DAYS, PLAYER_TRUCE_DAYS, MEDIATE_COOLDOWN_DAYS, s
 export { pactOf, allied, atWar, type RelView } from './pacts';
 export { computeRoof, rockDepth, THICK_ROOF_DEPTH } from './mapgen';
 export { TRADE_OFFER_HOURS } from './trade';
+export { constructCost, constructWork } from './jobs';

@@ -1,5 +1,5 @@
 import { ANIMALS, APPAREL, BUILDINGS, CONDITIONS, DOWNED_PAIN, ITEM_CATEGORIES, ITEMS, MAX_SKILL, maxHp, WEAPONS, PLANTS, RECIPES, ROCKS, SKILL_LABELS, SKILLS, SOWABLE_PLANTS, TERRAINS, TRAITS, weaponOf } from '@fe/defs';
-import { bleedRate, CAVE_TEMP, describeJob, ROOF_SHELTER, dispositionOf, goodwillOf, outdoorTempAt, painOf, stageOf, TICKS_PER_HOUR, woundTotal, type Building, type Construct, type Entity, type Pawn, type Zone } from '@fe/sim';
+import { bleedRate, CAVE_TEMP, describeJob, ROOF_SHELTER, dispositionOf, goodwillOf, outdoorTempAt, painOf, stageOf, TICKS_PER_HOUR, woundTotal, type Building, type Construct, type Entity, type Pawn, type Zone, constructCost, constructWork } from '@fe/sim';
 import { helpers } from '../actions';
 import { command } from '../net';
 import { store, useStore } from '../store';
@@ -342,12 +342,13 @@ function ConstructInfo({ c }: { c: Construct }) {
     <>
       <h3>{d.label} (blueprint)</h3>
       {factionTag(c.faction)}
-      {Object.entries(d.cost).map(([k, n]) => (
+      {c.kit && <p className="small good">From a packed kit: quick to set up.</p>}
+      {Object.entries(constructCost(c)).map(([k, n]) => (
         <p key={k} className="muted">
           {ITEMS[k].label}: {c.delivered[k] ?? 0} / {n}
         </p>
       ))}
-      <Bar label="Built" v={c.progress / d.work} warn={0} />
+      <Bar label="Built" v={c.progress / constructWork(c)} warn={0} />
     </>
   );
 }

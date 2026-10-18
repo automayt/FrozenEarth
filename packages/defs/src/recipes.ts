@@ -21,6 +21,7 @@ export const RECIPES: Record<string, RecipeDef> = {
   make_duster: { key: 'make_duster', label: 'Sew a duster', work: 1000, workType: 'craft', ingredients: [{ of: 'cloth', count: 35 }], product: { item: 'duster', count: 1 } },
   make_tuque: { key: 'make_tuque', label: 'Knit a tuque', work: 450, workType: 'craft', ingredients: [{ of: 'cloth', count: 15 }], product: { item: 'tuque', count: 1 } },
   make_sun_hat: { key: 'make_sun_hat', label: 'Weave a sun hat', work: 400, workType: 'craft', ingredients: [{ of: 'cloth', count: 12 }], product: { item: 'sun_hat', count: 1 } },
+  make_sledge: { key: 'make_sledge', label: 'Build a sledge', work: 900, workType: 'craft', ingredients: [{ of: 'wood', count: 40 }], product: { item: 'sledge', count: 1 } },
   make_club: { key: 'make_club', label: 'Carve a club', work: 400, workType: 'craft', ingredients: [{ of: 'wood', count: 20 }], product: { item: 'club', count: 1 } },
   make_knife: { key: 'make_knife', label: 'Forge a knife', work: 700, workType: 'craft', ingredients: [{ of: 'steel', count: 20 }], product: { item: 'knife', count: 1 } },
   make_bow: {

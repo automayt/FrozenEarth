@@ -225,7 +225,7 @@ describe('moving a colony', () => {
     expect(a.home).toEqual({ x: site.x, y: site.y });
   });
 
-  it('packing up removes zones and buildings and refunds materials', () => {
+  it('packing up removes zones and buildings: the bed folds into a kit, the wall comes apart', () => {
     const w = flatWorld();
     addPawn(w, 5, 5);
     w.enqueue(1, { c: 'zone', kind: 'stockpile', ...rect(10, 10, 12, 12) });
@@ -237,7 +237,8 @@ describe('moving a colony', () => {
     run(w, 2);
     expect(w.zones.size).toBe(0);
     expect(w.kinds.building.size).toBe(0);
-    // 75% of a bed (25 wood) plus a wall (5 wood) comes back.
-    expect(total(itemsOf(w, 'wood'))).toBe(Math.floor(25 * 0.75) + Math.floor(5 * 0.75));
+    // The bed is packed whole; 75% of the wall's 5 wood comes back.
+    expect(total(itemsOf(w, 'kit_bed'))).toBe(1);
+    expect(total(itemsOf(w, 'wood'))).toBe(Math.floor(5 * 0.75));
   });
 });

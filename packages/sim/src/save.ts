@@ -6,7 +6,7 @@ import { SKILLS } from '@fe/defs';
 import { computeRoof } from './mapgen';
 import { Dirty, rkFromString, rkToString, unreachableKey, World } from './world';
 
-export const SAVE_VERSION = 6;
+export const SAVE_VERSION = 7;
 
 export interface SaveData {
   version: number;
@@ -125,6 +125,14 @@ function migrate(data: SaveData): SaveData {
   if (d.version === 5) {
     // Mountain roofs: deserializeWorld derives them from the rock when the save has none.
     d.version = 6;
+  }
+  if (d.version === 6) {
+    // Packed buildings and sledges: stockpiles that took everything take these too.
+    for (const z of d.zones) {
+      if (z.kind !== 'stockpile' || !['resource', 'raw_food', 'meal', 'apparel', 'weapon'].every((c) => z.allow.includes(c as never))) continue;
+      for (const c of ['kit', 'gear'] as const) if (!z.allow.includes(c)) z.allow.push(c);
+    }
+    d.version = 7;
   }
   return d;
 }

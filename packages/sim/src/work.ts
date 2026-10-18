@@ -1,5 +1,5 @@
 import { BUILDINGS, ITEMS, PLANTS, RECIPES, TERRAINS, WORK_TYPES, type RecipeDef, type WorkType } from '@fe/defs';
-import { fullyDelivered } from './jobs';
+import { fullyDelivered, constructCost } from './jobs';
 import { maybeReachable } from './pathfinding';
 import { canUseItem, endJob, findFoodItem, portion } from './pawns';
 import { bedBound, effectsOf, hoursToBleedOut, inBed, needsTending, type Effects } from './health';
@@ -425,7 +425,7 @@ function giveBuild(w: World, p: Pawn): Job | null {
       return { type: 'build', stage: 0, target: con.id };
     }
     if (w.reservedByOther(rk.d(con.id), p.id)) continue;
-    const cost = BUILDINGS[con.def].cost;
+    const cost = constructCost(con);
     for (const def in cost) {
       const rem = cost[def] - (con.delivered[def] ?? 0);
       if (rem <= 0) continue;

@@ -55,6 +55,8 @@ export interface Construct extends Base {
   def: string;
   delivered: Record<string, number>;
   progress: number;
+  /** Set up from a packed kit: needs the kit instead of materials, and a quarter of the work. */
+  kit?: true;
 }
 
 export interface PathState {

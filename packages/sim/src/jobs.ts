@@ -1,4 +1,4 @@
-import { APPAREL, BUILDINGS, CONDITIONS, ITEMS, maxHp, PLANTS, RECIPES, ROCKS, T, WEAPON_KEYS, WEAPONS } from '@fe/defs';
+import { APPAREL, BUILDINGS, CONDITIONS, ITEMS, maxHp, PLANTS, RECIPES, ROCKS, T, WEAPON_KEYS, WEAPONS, KIT_WORK, kitKey } from '@fe/defs';
 import { dropWeapon, goTo, needsWarmth, pawnSpeed, pushOut, workSpeed } from './pawns';
 import { addCondition, bedBound, effectsOf, inBed, needsTending } from './health';
 import { hostileInReach, inReach, isRaider, strike, warmup } from './combat';
@@ -492,7 +492,7 @@ function deliver(w: World, p: Pawn, j: J<'deliver'>): JobResult {
   const r = goTo(w, p, w.cellOf(con), true);
   if (r !== 'arrived') return r === 'fail' ? 'fail' : 'continue';
   const c = p.carrying;
-  const need = (BUILDINGS[con.def].cost[c.def] ?? 0) - (con.delivered[c.def] ?? 0);
+  const need = (constructCost(con)[c.def] ?? 0) - (con.delivered[c.def] ?? 0);
   const put = Math.max(0, Math.min(need, c.count));
   con.delivered[c.def] = (con.delivered[c.def] ?? 0) + put;
   c.count -= put;
@@ -503,8 +503,18 @@ function deliver(w: World, p: Pawn, j: J<'deliver'>): JobResult {
   return 'done';
 }
 
+/** What a blueprint needs brought to it: the building's materials, or its packed kit. */
+export function constructCost(con: Construct): Record<string, number> {
+  return con.kit ? { [kitKey(con.def)]: 1 } : BUILDINGS[con.def].cost;
+}
+
+/** Work to finish a blueprint: much less when it's a kit being set up again. */
+export function constructWork(con: Construct): number {
+  return Math.max(1, Math.round(BUILDINGS[con.def].work * (con.kit ? KIT_WORK : 1)));
+}
+
 export function fullyDelivered(con: Construct): boolean {
-  const cost = BUILDINGS[con.def].cost;
+  const cost = constructCost(con);
   for (const k in cost) if ((con.delivered[k] ?? 0) < cost[k]) return false;
   return true;
 }
@@ -517,7 +527,7 @@ function build(w: World, p: Pawn, j: J<'build'>): JobResult {
     if (r !== 'arrived') return r === 'fail' ? 'fail' : 'continue';
     j.stage = 1;
   }
-  const total = BUILDINGS[con.def].work;
+  const total = constructWork(con);
   const before = con.progress;
   con.progress += workSpeed(w, p, 'construction');
   bumpProgress(w, con, before, con.progress, total);

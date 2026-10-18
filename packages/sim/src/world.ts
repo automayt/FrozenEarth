@@ -1,5 +1,5 @@
 import { allied } from './pacts';
-import { BUILDINGS, DEFAULT_PRIORITY, ITEMS, maxHp, PLANTS, RANDOM_TRAITS, SKILLS, START_PRIORITY, TERRAINS, TREE_COVER, WALL_COVER, WEATHER, WORK_TYPES, type SkillKey, type WorkType } from '@fe/defs';
+import { BUILDINGS, DEFAULT_PRIORITY, ITEMS, maxHp, PLANTS, RANDOM_TRAITS, SKILLS, START_PRIORITY, TERRAINS, TREE_COVER, WALL_COVER, WEATHER, WORK_TYPES, type SkillKey, type WorkType, ALL_CATEGORIES } from '@fe/defs';
 import * as C from './constants';
 import { GameMap } from './map';
 import { Rng } from './rng';
@@ -619,7 +619,7 @@ export class World {
       kind,
       cells: [],
       plant,
-      allow: ['resource', 'raw_food', 'meal', 'apparel', 'weapon'],
+      allow: [...ALL_CATEGORIES],
     };
     this.zones.set(z.id, z);
     this.dirty.zones.add(z.id);

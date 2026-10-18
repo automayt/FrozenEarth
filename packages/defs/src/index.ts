@@ -13,3 +13,4 @@ export * from './apparel';
 export * from './skills';
 export * from './weapons';
 export * from './animals';
+export * from './kits';
