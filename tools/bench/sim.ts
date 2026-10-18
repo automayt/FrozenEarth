@@ -35,7 +35,8 @@ const ticks = Number(args.days) * TICKS_PER_DAY;
 for (let i = 0; i < ticks; i++) {
   const s = performance.now();
   w.step();
-  worst = Math.max(worst, performance.now() - s);
+  // The first ticks pay for JIT warm-up and the first room flood fill: not a spike worth reporting.
+  if (i > 100) worst = Math.max(worst, performance.now() - s);
   if (i % 4 === 0) {
     deltaBytes += encode({ t: 'delta', d: w.takeDelta(), time: { speed: 3, paused: false, reason: '' } }).length;
     deltas++;
