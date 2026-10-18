@@ -29,7 +29,7 @@ export class TextureBank {
 
   async loadArt(): Promise<number> {
     try {
-      const res = await fetch('/sprites/manifest.json', { cache: 'no-cache' });
+      const res = await fetch(`${import.meta.env.BASE_URL}sprites/manifest.json`, { cache: 'no-cache' });
       if (!res.ok) return 0;
       const manifest = (await res.json()) as Record<string, string>;
       this.manifest = manifest;
@@ -43,7 +43,7 @@ export class TextureBank {
           .filter(([key]) => !key.startsWith('terrain_') && !key.startsWith('rock_') && !ART_SKIP.has(key))
           .map(async ([key, file]) => {
           try {
-            const tex = await Assets.load<Texture>(`/sprites/${file}`);
+            const tex = await Assets.load<Texture>(`${import.meta.env.BASE_URL}sprites/${file}`);
             tex.source.scaleMode = 'linear';
             this.art.set(key, tex);
           } catch {
@@ -59,7 +59,7 @@ export class TextureBank {
 
   private async loadPixels(key: string, file: string): Promise<void> {
     try {
-      const blob = await (await fetch(`/sprites/${file}`)).blob();
+      const blob = await (await fetch(`${import.meta.env.BASE_URL}sprites/${file}`)).blob();
       const bmp = await createImageBitmap(blob);
       const c = new OffscreenCanvas(bmp.width, bmp.height);
       const ctx = c.getContext('2d')!;

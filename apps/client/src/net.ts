@@ -43,8 +43,10 @@ export function connect(name: string, password?: string): void {
 
 function open(): void {
   store.set({ status: 'connecting', error: '' });
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const sock = new WebSocket(`${proto}://${location.host}/ws`);
+  // Relative to the page, so the game also works under a proxy prefix (example.com/frozen/ws); wss on https.
+  const url = new URL('ws', document.baseURI);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  const sock = new WebSocket(url);
   sock.binaryType = 'arraybuffer';
   ws = sock;
   let fatal = false;
