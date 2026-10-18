@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { store, useStore } from '../store';
 import { myPlayer, setSpeed } from '../actions';
+import { rejoinCode } from '../net';
 
 /**
  * Pausing for help. Speed is shared and, with others online, every second paused comes out of a
@@ -65,6 +66,7 @@ const KEYS: { title: string; rows: [string, string][] }[] = [
 ];
 
 const HOWTO: [string, string][] = [
+  ['Playing with friends', "Game speed is the slowest vote among players with the game in front of them (a background tab doesn't count); hover a name at the top to see who votes what. Each player has a daily pause budget. Click a name to jump to their colony. Offers from other players (trade, alliance, peace) wait while you're offline, and when you come back the letters you missed are listed on the left. Allies see what each other's colonists see and walk through each other's doors."],
   ['The frost', 'Permanent winter creeps inward from the map edge; the ❄ chip at the top counts the days until it reaches you. To move inward: Orders → Move colony and hover the map (it shows how long each spot stays warm), click the new site, then Orders → Pack up the old one so haulers carry everything over.'],
   ['Settlements', 'Walled towns of non-player people; the ring around each is their land, coloured by their mood toward you. Click any of their people or buildings for goodwill, prices, what they want and what they have. To trade, open Trade (T) and get a colonist within 14 cells. Towns that know you sometimes ask for help in a letter: agree, gather the goods, then Deliver from the Trade panel.'],
   ['Diplomacy', 'Open Diplomacy (G) to see where every town and colony stands, with you and with each other, and why. Towns that like you enough (goodwill 60) will swear an alliance: they send fighters when you are raided. A hostile town takes tribute for a truce. Rival towns resent whoever helps the other side; a colonist with good Social skill can talk them into peace. Other players: propose an alliance or peace (they get a letter), or declare war. Attacking a colony without declaring war starts one anyway, and the towns hear of it.'],
@@ -150,8 +152,37 @@ export function Help() {
             ))}
           </div>
         </div>
+        <AnotherDevice />
         <p className="muted small">Press ? any time to open this again. Esc closes it.</p>
       </div>
     </div>
+  );
+}
+
+/** The rejoin code: the only way to reach your colony from a second device or browser. */
+function AnotherDevice() {
+  const me = myPlayer();
+  const [shown, setShown] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const code = me ? rejoinCode(me.name) : null;
+  if (!me || !code) return null;
+  const copy = () => {
+    navigator.clipboard?.writeText(code).then(
+      () => setCopied(true),
+      () => setShown(true),
+    );
+  };
+  return (
+    <section className="rejoin">
+      <h4>Play on another device</h4>
+      <p className="small">
+        On the join screen of the other device, enter <b>{me.name}</b> and this rejoin code. Keep it to yourself: anyone with it can play your colony.
+      </p>
+      <div className="rejoin-row">
+        <code>{shown ? code : '•'.repeat(12)}</code>
+        <button onClick={() => setShown(!shown)}>{shown ? 'Hide' : 'Show'}</button>
+        <button onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
+      </div>
+    </section>
   );
 }

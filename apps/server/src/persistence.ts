@@ -2,7 +2,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname, join } from 'node:path';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { Packr } from 'msgpackr';
-import type { SaveData } from '@fe/sim';
+import type { GameMessage, SaveData } from '@fe/sim';
+import type { ChatMsg } from '@fe/protocol';
 
 export interface StoredPlayer {
   id: number;
@@ -11,12 +12,17 @@ export interface StoredPlayer {
   faction: number;
   pauseBudget: number;
   admin: boolean;
+  /** World tick when they last disconnected. */
+  lastSeen?: number;
 }
 
 export interface WorldFile {
   save: SaveData;
   players: StoredPlayer[];
   nextPlayerId: number;
+  /** Recent letters and chat, replayed to whoever joins. Older files have none. */
+  letters?: GameMessage[];
+  chat?: ChatMsg[];
 }
 
 const packr = new Packr({ useRecords: false });

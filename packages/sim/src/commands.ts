@@ -165,6 +165,8 @@ export function applyCommand(w: World, faction: number, cmd: Command): void {
       w.unreachable.delete(unreachableKey(faction, w.cellOf(it)));
       w.reserve(rk.e(it.id), p.id);
       w.reserve(rk.c(dest), p.id);
+      // Marked like a designated theft, which is what tells the hauler these goods are meant to go.
+      w.setDesig(w.cellOf(it), DESIG.steal, faction);
       p.job = { type: 'haul', stage: 0, item: it.id, dest };
       w.markDirty(p);
       return;

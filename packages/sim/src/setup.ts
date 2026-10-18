@@ -3,7 +3,7 @@ import { generateMap } from './mapgen';
 import { FACTION_COLORS, pawnName } from './names';
 import type { Building, Faction } from './types';
 import { Rng } from './rng';
-import { FROST_MAX, frostLevel } from './frost';
+import { daysUntilFrost, FROST_MAX, frostLevel } from './frost';
 import { World } from './world';
 import { placeSettlements } from './settlements';
 import { populateWildlife } from './wildlife';
@@ -98,6 +98,9 @@ export function regionOf(w: World, x: number, y: number): 'outer band' | 'middle
   return edge < 0.4 ? 'outer band' : edge < 0.7 ? 'middle lands' : 'center';
 }
 
+/** Suggested starting spots have at least this many days before the frost reaches them, when the map allows. */
+export const SITE_MIN_FROST_DAYS = 8;
+
 /** A spread of good starting spots in the outer band, best first. Doesn't touch the world's RNG. */
 export function suggestSites(w: World, count = 5): { x: number; y: number; region: string }[] {
   const m = w.map;
@@ -128,8 +131,12 @@ export function suggestSites(w: World, count = 5): { x: number; y: number; regio
     if (score > 0) cands.push({ x, y, score });
   }
   cands.sort((a, b) => b.score - a.score);
+  // A late joiner shouldn't be offered land the frost reaches in a few days: they'd have to move
+  // before they had a roof up. Fall back to whatever there is if nothing has that long.
+  const roomy = cands.filter((c) => daysUntilFrost(c.x, c.y, m.w, m.h, w.tick, w.frost, SITE_MIN_FROST_DAYS) >= SITE_MIN_FROST_DAYS);
+  const pool = roomy.length >= Math.min(count, 2) ? roomy : cands;
   const out: { x: number; y: number; region: string }[] = [];
-  for (const c of cands) {
+  for (const c of pool) {
     if (out.length >= count) break;
     if (out.some((o) => Math.hypot(o.x - c.x, o.y - c.y) < 30)) continue;
     out.push({ x: c.x, y: c.y, region: regionOf(w, c.x, c.y) });

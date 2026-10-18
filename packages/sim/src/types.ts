@@ -359,6 +359,8 @@ export interface Choice {
   /** Tick at which the last option is chosen automatically. */
   expires: number;
   at?: number;
+  /** The colony that sent it, when it's an offer from another player (trade, alliance, peace). */
+  from?: number;
 }
 
 export interface Room {

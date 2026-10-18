@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ITEMS } from '@fe/defs';
-import { dispositionOf, goodwillOf, lineValue, priceFactor, requestText, TICKS_PER_DAY, TRADE_RANGE, type Faction, type Item, type Pawn } from '@fe/sim';
+import { dispositionOf, goodwillOf, lineValue, priceFactor, requestText, TICKS_PER_DAY, TICKS_PER_HOUR, TRADE_OFFER_HOURS, TRADE_RANGE, type Faction, type Item, type Pawn } from '@fe/sim';
 import { DISPOSITION_COLOR } from '../render/renderer';
 import { command } from '../net';
 import { store, useStore } from '../store';
@@ -102,12 +102,34 @@ export function sendEnvoy(f: Faction): void {
   );
 }
 
-type Partner = { faction: number; name: string; color: number; settlement: boolean };
+type Partner = { faction: number; name: string; color: number; settlement: boolean; online?: boolean };
+
+/** Offers of ours (trade, alliance, peace) still waiting on another player, optionally of one kind or to one colony. */
+export function OutgoingOffers({ event, to }: { event: 'trade' | 'pact_offer'; to?: number }) {
+  const s = useStore();
+  const me = s.me?.faction ?? 0;
+  const mine = s.mirror.choices.filter((c) => c.from === me && c.event === event && (to === undefined || c.faction === to));
+  if (!mine.length) return null;
+  return (
+    <div className="outgoing">
+      {mine.map((c) => {
+        const who = s.players.find((p) => p.faction === c.faction);
+        const hours = Math.max(1, Math.ceil((c.expires - s.mirror.tick) / TICKS_PER_HOUR));
+        return (
+          <p key={c.id} className="small">
+            <span className="muted">Waiting on {who?.name ?? 'them'}:</span> {event === 'trade' ? c.text.replace(/ ".*"$/, '') : `${c.title}.`}{' '}
+            <span className="muted">{who && !who.connected ? '(they are offline: it waits for them)' : `(${hours}h left)`}</span>
+          </p>
+        );
+      })}
+    </div>
+  );
+}
 
 export function TradePanel() {
   const s = useStore();
   const me = s.me?.faction ?? 0;
-  const colonies: Partner[] = s.players.filter((p) => p.faction && p.faction !== me).map((p) => ({ faction: p.faction, name: p.name, color: p.color, settlement: false }));
+  const colonies: Partner[] = s.players.filter((p) => p.faction && p.faction !== me).map((p) => ({ faction: p.faction, name: p.name, color: p.color, settlement: false, online: p.connected }));
   const settlements: Partner[] = [...s.mirror.factions.values()]
     .filter((f) => f.settlement && f.settlement.state !== 'fallen')
     .map((f) => ({ faction: f.id, name: f.name, color: f.color, settlement: true }));
@@ -149,8 +171,8 @@ export function TradePanel() {
   const send = () => {
     if (st) command({ c: 'settlementTrade', settlement: target.faction, give: lines(give), want: lines(want) });
     else {
+      // The server's reply ("sent", or why not) pops up as a toast.
       command({ c: 'offerTrade', to: target.faction, give: lines(give), want: lines(want), note });
-      store.toast(`Offer sent to ${target.name}. It expires in 8 in-game hours.`, 'neutral');
     }
     setGive([]);
     setWant([]);
@@ -262,8 +284,9 @@ export function TradePanel() {
           const mood = pst ? dispositionOf(pst, me) : null;
           const there = pf && pst ? traderNear(me, pf.home) : null;
           return (
-            <button key={p.faction} role="tab" aria-selected={p.faction === target.faction} className={p.faction === target.faction ? 'on' : ''} onClick={() => pick(p)} title={pst ? `Settlement (${mood})${there ? `, ${there} is there` : ''}` : 'Player colony'}>
+            <button key={p.faction} role="tab" aria-selected={p.faction === target.faction} className={p.faction === target.faction ? 'on' : ''} onClick={() => pick(p)} title={pst ? `Settlement (${mood})${there ? `, ${there} is there` : ''}` : `Player colony (${p.online ? 'online' : 'offline'})`}>
               <i style={{ background: hex(mood ? DISPOSITION_COLOR[mood] : p.color) }} /> {p.name}
+              {!pst && <small className="muted"> {p.online ? 'player' : 'offline'}</small>}
               {pst && <small className="muted"> {there ? '· colonist there' : pst.met.includes(me) ? 'settlement' : 'not met yet'}</small>}
             </button>
           );
@@ -272,7 +295,12 @@ export function TradePanel() {
       {st ? (
         settlementInfo
       ) : (
-        <p className="muted small">Goods move between stockpiles only if they accept and both sides can still pay. Offers expire after 8 in-game hours.</p>
+        <>
+          <p className="muted small">
+            Goods move between stockpiles only if they accept and both sides can still pay. {target.online ? `They have ${TRADE_OFFER_HOURS} in-game hours to answer.` : `${target.name} is offline: the offer waits until they're back.`}
+          </p>
+          <OutgoingOffers event="trade" to={target.faction} />
+        </>
       )}
       <div className="trade-sides">
         <LineEditor title="You give" lines={give} setLines={setGive} stock={myStock} empty="Nothing in your stockpiles yet." factor={1} />

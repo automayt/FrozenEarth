@@ -33,11 +33,20 @@ export function offerChoice(
   return c;
 }
 
-export function resolveChoice(w: World, id: number, option: string, faction?: number): void {
+/** While its recipient is offline, an offer from another player always has at least this long left... */
+const HOLD_MIN_HOURS = 4;
+/** ...topped back up to this, so the countdown isn't resent every tick. */
+const HOLD_TOPUP_HOURS = 8;
+
+/**
+ * `expired`: nobody answered in time and the default was taken. Resolvers see it as
+ * `data.expired`, so they can say "didn't answer" instead of "declined".
+ */
+export function resolveChoice(w: World, id: number, option: string, faction?: number, expired = false): void {
   const c = w.choices.get(id);
   if (!c || (faction !== undefined && c.faction !== faction)) return;
   if (!c.options.some((o) => o.key === option)) return;
-  const data = w.choiceData.get(id) ?? {};
+  const data = { ...(w.choiceData.get(id) ?? {}), ...(expired ? { expired: true } : {}) };
   w.choices.delete(id);
   w.choiceData.delete(id);
   w.dirty.choices = true;
@@ -46,6 +55,19 @@ export function resolveChoice(w: World, id: number, option: string, faction?: nu
 
 export function tickChoices(w: World): void {
   for (const c of [...w.choices.values()]) {
-    if (w.tick >= c.expires) resolveChoice(w, c.id, c.options[c.options.length - 1].key);
+    // A friend's offer waits for its recipient to come back rather than lapsing unseen.
+    if (c.from && w.online && !w.online.has(c.faction)) {
+      if (c.expires - w.tick < HOLD_MIN_HOURS * TICKS_PER_HOUR) {
+        c.expires = w.tick + HOLD_TOPUP_HOURS * TICKS_PER_HOUR;
+        w.dirty.choices = true;
+      }
+      continue;
+    }
+    if (w.tick >= c.expires) resolveChoice(w, c.id, c.options[c.options.length - 1].key, undefined, true);
   }
+}
+
+/** Is this offer from another player waiting on someone who is offline? */
+export function choiceOnHold(w: { online?: Set<number> }, c: Choice): boolean {
+  return !!c.from && !!w.online && !w.online.has(c.faction);
 }

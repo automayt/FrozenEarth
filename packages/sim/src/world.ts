@@ -103,6 +103,12 @@ export class World {
   private queue: { faction: number; cmd: Command }[] = [];
   /** Commands that threw while applying (a bug, logged). Not saved. */
   commandErrors = 0;
+  /**
+   * Player factions with someone connected right now, set by the server each loop. Offers from
+   * other players don't run out while their recipient is away from the game. Undefined (tests,
+   * tools): everyone counts as present. Not saved.
+   */
+  online?: Set<number>;
 
   constructor(seed: number, w: number, h: number) {
     this.seed = seed;

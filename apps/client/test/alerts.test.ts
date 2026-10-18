@@ -115,4 +115,22 @@ describe('alerts', () => {
     expect(m.fireCells.size).toBe(2);
     expect(computeAlerts().find((a) => a.key === 'fire')).toMatchObject({ severity: 'critical', focus: { x: 40, y: 40 } });
   });
+
+  it('a war with another colony is always listed, and urgent once their people reach you; allies hear when it reaches theirs', () => {
+    const { w } = colony();
+    w.factions.set(3, { id: 3, name: 'Rivals', color: 0x00ff00, home: { x: 55, y: 55 }, isPlayer: true, pacts: { [ME]: { kind: 'war', since: w.tick } } });
+    w.factions.get(ME)!.pacts = { 3: { kind: 'war', since: w.tick } };
+    load(w);
+    expect(computeAlerts().find((a) => a.key === 'war-3')).toMatchObject({ severity: 'warning', title: 'At war with Rivals', diplo: 3 });
+    w.spawnPawn(3, w.map.idx(35, 35), 'Foe One');
+    load(w);
+    expect(keys()).not.toContain('war-3');
+    expect(computeAlerts().find((a) => a.key === 'war-near-3')).toMatchObject({ severity: 'critical', title: 'Rivals: 1 of theirs at your colony' });
+    // Seen from a third colony allied with us: our war at our door is their alert too.
+    w.factions.set(4, { id: 4, name: 'Friends', color: 0x0000ff, home: { x: 5, y: 55 }, isPlayer: true, pacts: { [ME]: { kind: 'ally', since: w.tick } } });
+    w.factions.get(ME)!.pacts![4] = { kind: 'ally', since: w.tick };
+    load(w);
+    store.me = { playerId: 9, faction: 4 };
+    expect(computeAlerts().find((a) => a.key === `allywar-${ME}-3`)).toMatchObject({ severity: 'warning', title: 'Your ally Us is under attack (1)' });
+  });
 });

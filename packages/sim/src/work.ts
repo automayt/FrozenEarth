@@ -307,7 +307,8 @@ function giveHaul(w: World, p: Pawn): Job | null {
   const steal = giveSteal(w, p);
   if (steal) return steal;
   const cands: Item[] = [];
-  for (const it of looseItems(w)) if (canUseItem(w, p, it)) cands.push(it);
+  const others = otherColonyHomes(w, p.faction);
+  for (const it of looseItems(w)) if (canUseItem(w, p, it) && !nearOtherColony(w, others, it)) cands.push(it);
   for (const it of nearest(w, p, cands, (i) => w.cellOf(i), false, 12)) {
     const dest = findStorageCell(w, p.faction, it, p.id);
     if (dest < 0) continue;
@@ -316,6 +317,23 @@ function giveHaul(w: World, p: Pawn): Job | null {
     return { type: 'haul', stage: 0, item: it.id, dest };
   }
   return null;
+}
+
+/** Loose goods this close to another colony's home are theirs (starting supplies, trade goods), not a neighbour's to tidy away. */
+const CLAIM_RADIUS = 15;
+
+function otherColonyHomes(w: World, faction: number): { x: number; y: number }[] {
+  const out: { x: number; y: number }[] = [];
+  for (const f of w.factions.values()) if (f.isPlayer && f.id !== faction) out.push(f.home);
+  return out;
+}
+
+function nearOtherColony(w: World, homes: { x: number; y: number }[], it: Item): boolean {
+  if (!homes.length) return false;
+  const c = w.cellOf(it);
+  const x = w.map.cx(c);
+  const y = w.map.cy(c);
+  return homes.some((h) => Math.max(Math.abs(h.x - x), Math.abs(h.y - y)) <= CLAIM_RADIUS);
 }
 
 /** Goods marked for stealing from a settlement's or another colony's stores, carried home to our stockpile. Only after dark. */

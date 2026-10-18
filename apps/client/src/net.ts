@@ -35,9 +35,16 @@ let retry = 0;
 let joinArgs: { name: string; password?: string } | null = null;
 let pingTimer: number | undefined;
 
-export function connect(name: string, password?: string): void {
+/** This browser's rejoin code for a name: paste it on another device to play the same colony. */
+export function rejoinCode(name: string): string | null {
+  return readLocal(tokenKey(name));
+}
+
+/** `code` is a rejoin code from another device; it replaces whatever this browser remembers for the name. */
+export function connect(name: string, password?: string, code?: string): void {
   joinArgs = { name, password };
   writeLocal(NAME_KEY, name);
+  if (code) writeLocal(tokenKey(name), code);
   open();
 }
 
@@ -77,7 +84,10 @@ function handle(msg: ServerMsg): void {
       writeLocal(tokenKey(joinArgs!.name), msg.token);
       store.mirror.applySnapshot(msg.snap);
       store.setServerTick(msg.snap.tick);
-      store.set({ status: 'playing', error: '', me: { playerId: msg.playerId, faction: msg.faction }, sites: msg.sites ?? [] });
+      // What happened while we were gone: letters (the mirror only collects them live) and chat.
+      if (msg.msgs?.length) store.mirror.messages = msg.msgs.slice();
+      if (msg.chat?.length && !store.chat.length) store.chat.push(...msg.chat);
+      store.set({ status: 'playing', error: '', me: { playerId: msg.playerId, faction: msg.faction }, sites: msg.sites ?? [], lastSeen: msg.lastSeen ?? null });
       if (document.hidden) send({ t: 'away', away: true });
       if (!store.focus) {
         const f = store.mirror.factions.get(msg.faction);

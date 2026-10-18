@@ -1,13 +1,22 @@
 import { useEffect, useRef } from 'react';
 import { ROCKS, TERRAINS } from '@fe/defs';
-import { dispositionOf, frostLevel, frostRadius } from '@fe/sim';
+import { atWar, dispositionOf, frostLevel, frostRadius } from '@fe/sim';
 import { DISPOSITION_COLOR } from '../render/renderer';
-import { store } from '../store';
+import { store, useStore } from '../store';
 
 const SIZE = 180;
 
-/** A small overview: terrain, the frost line, settlements, colonists, fires and the camera. Click to jump there. */
+/** A small overview: terrain, the frost line, settlements, player colonies, colonists, fires and the camera. Click to jump there. */
+/** Player colonies by colour, for the tooltip (a canvas can't label its markers on hover). */
+function colonyList(): string {
+  const m = store.mirror;
+  const names = store.players.filter((p) => p.faction && m.factions.has(p.faction)).map((p) => `${p.name}${p.faction === store.me?.faction ? ' (you)' : ''}`);
+  return names.length ? ` Colonies: ${names.join(', ')}.` : '';
+}
+
 export function Minimap() {
+  // Re-render for the tooltip's colony list; the canvas redraws on its own timer.
+  useStore();
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = ref.current!;
@@ -81,6 +90,25 @@ export function Minimap() {
         }
         ctx.stroke();
       }
+      // Player colonies: a house in the colony's colour, outlined white for yours and red for enemies at war.
+      const mineF = store.me?.faction ?? 0;
+      for (const f of m.factions.values()) {
+        if (!f.isPlayer) continue;
+        const x = (f.home.x + 0.5) * sx;
+        const y = (f.home.y + 0.5) * sy;
+        ctx.beginPath();
+        ctx.moveTo(x, y - 6);
+        ctx.lineTo(x + 5, y - 1);
+        ctx.lineTo(x + 5, y + 4);
+        ctx.lineTo(x - 5, y + 4);
+        ctx.lineTo(x - 5, y - 1);
+        ctx.closePath();
+        ctx.fillStyle = `#${f.color.toString(16).padStart(6, '0')}`;
+        ctx.fill();
+        ctx.lineWidth = f.id === mineF ? 2 : 1.5;
+        ctx.strokeStyle = f.id === mineF ? '#fff' : mineF && atWar(m, mineF, f.id) ? '#ff4a4a' : '#000';
+        ctx.stroke();
+      }
       // Colonists, in their faction colour; yours drawn last and bigger.
       const mine = store.me?.faction;
       for (const pass of [0, 1]) {
@@ -117,7 +145,7 @@ export function Minimap() {
   };
 
   return (
-    <div className="panel minimap" title="Click to jump there">
+    <div className="panel minimap" title={`Click to jump there. Houses are player colonies (yours outlined white), diamonds are towns.${colonyList()}`}>
       <canvas ref={ref} width={SIZE} height={SIZE} onMouseDown={jump} />
     </div>
   );

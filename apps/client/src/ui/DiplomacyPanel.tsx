@@ -26,7 +26,7 @@ import {
 import { command } from '../net';
 import { store, useStore } from '../store';
 import { GoodwillMeter } from './SettlementCard';
-import { LineEditor, sendEnvoy, stockOf, type Line } from './TradePanel';
+import { LineEditor, OutgoingOffers, sendEnvoy, stockOf, type Line } from './TradePanel';
 import { envoyNear } from './trade';
 import { hex } from './util';
 
@@ -390,13 +390,32 @@ function ColonyDetail({ f }: { f: Faction }) {
   const pact = pactOf(m, me, f.id);
   const now = s.estTick();
   const owner = s.players.find((p) => p.faction === f.id);
+  const outgoing = m.choices.some((c) => c.event === 'pact_offer' && c.from === me && c.faction === f.id);
+  const incoming = m.choices.filter((c) => c.event === 'pact_offer' && c.from === f.id && c.faction === me);
+  // Their offer is waiting on you: answer it rather than send one back.
+  const waiting = outgoing || incoming.length > 0;
   return (
     <>
       <div className="sc-head">
         <b>{f.name}</b>
         <StanceChip stance={stanceOf(m, me, f.id)} />
-        <span className="muted small">{owner ? (owner.connected ? `${owner.name} is online` : `${owner.name} is away`) : 'another colony'}</span>
+        <span className="muted small">{owner ? (owner.connected ? `${owner.name} is ${owner.away ? 'away (tab in the background)' : 'online'}` : `${owner.name} is offline`) : 'another colony'}</span>
       </div>
+      {incoming.map((c) => (
+        <div key={c.id} className="incoming-offer">
+          <p className="small">
+            <b>{c.title}.</b> {Math.max(1, Math.ceil((c.expires - m.tick) / TICKS_PER_HOUR))}h to answer.
+          </p>
+          <div className="diplo-buttons">
+            {c.options.map((o, i) => (
+              <button key={o.key} className={i === 0 ? 'primary' : ''} onClick={() => command({ c: 'choose', choice: c.id, option: o.key })}>
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+      <OutgoingOffers event="pact_offer" to={f.id} />
       {!pact && (
         <p className="small">
           At peace. Neither side's colonists fight the other's unless ordered to. Attacking them without declaring war is a surprise attack: it starts a war, and every town that knows you thinks less of you ({DIPLO.treacheryRumor}).
@@ -411,12 +430,12 @@ function ColonyDetail({ f }: { f: Faction }) {
       )}
       <div className="diplo-buttons">
         {pact?.kind !== 'ally' && pact?.kind !== 'war' && (
-          <button className="primary" onClick={() => command({ c: 'diplomacy', act: 'ally', target: f.id })} title="They get a letter to accept or decline">
+          <button className="primary" disabled={waiting} onClick={() => command({ c: 'diplomacy', act: 'ally', target: f.id })} title={outgoing ? 'Waiting for their answer' : incoming.length ? 'They made you an offer: answer it above' : 'They get a letter to accept or decline'}>
             Propose an alliance
           </button>
         )}
         {pact?.kind === 'war' && (
-          <button className="primary" onClick={() => command({ c: 'diplomacy', act: 'peace', target: f.id })} title={`They get a letter; accepting starts a ${PLAYER_TRUCE_DAYS}-day truce`}>
+          <button className="primary" disabled={waiting} onClick={() => command({ c: 'diplomacy', act: 'peace', target: f.id })} title={outgoing ? 'Waiting for their answer' : incoming.length ? 'They made you an offer: answer it above' : `They get a letter; accepting starts a ${PLAYER_TRUCE_DAYS}-day truce`}>
             Offer peace
           </button>
         )}

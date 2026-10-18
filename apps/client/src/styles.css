@@ -2272,3 +2272,174 @@ button.danger {
     grid-template-columns: 1fr;
   }
 }
+
+/* ------------------------------------------------------------------ multiplayer */
+
+/* Player chips in the top bar are buttons: click to show their colony. */
+button.player {
+  background: none;
+  border: 1px solid transparent;
+  padding: 1px 5px;
+  border-radius: 10px;
+}
+
+button.player:hover:not(:disabled) {
+  border-color: var(--line-strong);
+}
+
+button.player:disabled {
+  opacity: 0.75;
+}
+
+button.player.away {
+  opacity: 0.5;
+}
+
+button.player.war {
+  border-color: rgba(255, 74, 74, 0.55);
+}
+
+button.player.ally {
+  border-color: rgba(79, 209, 139, 0.5);
+}
+
+.player .stance-tag {
+  font-style: normal;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+
+.player.war .stance-tag {
+  color: #ff6a5a;
+}
+
+.player.ally .stance-tag {
+  color: #4fd18b;
+}
+
+/* Letters from other players say who sent them. */
+.letter.choice.from-player {
+  border-left: 3px solid var(--ice);
+}
+
+.letter-from {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.letter-from i,
+.settle-friends i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.away-summary {
+  border-left: 3px solid var(--amber);
+}
+
+.away-summary p {
+  margin: 2px 0 4px;
+}
+
+.log-line.new {
+  background: rgba(240, 180, 60, 0.08);
+}
+
+.new-tag {
+  font-size: 9px;
+  text-transform: uppercase;
+  color: var(--amber);
+}
+
+/* Offers of ours still waiting on someone, and offers to us, in the Trade and Diplomacy panels. */
+.outgoing p {
+  margin: 2px 0;
+}
+
+.incoming-offer {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  margin: 4px 0 8px;
+}
+
+.incoming-offer p {
+  margin: 0 0 4px;
+}
+
+/* Settling: sites a friend took, and quick jumps to friends' colonies. */
+.settle .sites button.taken {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
+.settle-friends {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  margin-bottom: 8px;
+}
+
+.settle-friends .link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Help: the rejoin code. */
+.help .rejoin {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.rejoin-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.rejoin-row code {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 3px 6px;
+  border-radius: 4px;
+  user-select: all;
+  word-break: break-all;
+}
+
+/* The join card can be taller than a short window (800x450): scroll instead of cutting off the button.
+   Auto margins centre it when there is room and pin it to the top when there isn't. */
+.join {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.join-card {
+  margin: auto;
+  flex-shrink: 0;
+}
+
+@media (max-height: 560px) {
+  .join-card {
+    gap: 9px;
+    padding: 18px 22px;
+    margin: 12px auto;
+  }
+
+  .join-card h1 {
+    font-size: 26px;
+  }
+}

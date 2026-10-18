@@ -289,7 +289,7 @@ function colonyAct(w: World, me: Faction, them: Faction, act: DiplomacyAct, say:
 function sendOffer(w: World, me: Faction, them: Faction, kind: 'ally' | 'peace', say: (t: string) => void): void {
   const pending = [...w.choices.values()].some((c) => c.event === 'pact_offer' && c.faction === them.id && Number(w.choiceData.get(c.id)?.from) === me.id);
   if (pending) return say(`${them.name} hasn't answered your last offer yet.`);
-  offerChoice(
+  const c = offerChoice(
     w,
     them.id,
     'pact_offer',
@@ -304,7 +304,9 @@ function sendOffer(w: World, me: Faction, them: Faction, kind: 'ally' | 'peace',
     OFFER_HOURS,
     { from: me.id, kind },
   );
-  say(`Your ${kind === 'ally' ? 'offer of alliance' : 'offer of peace'} has been sent to ${them.name}.`);
+  c.from = me.id;
+  const away = w.online && !w.online.has(them.id) ? ` They're offline: it will wait for them.` : '';
+  say(`Your ${kind === 'ally' ? 'offer of alliance' : 'offer of peace'} has been sent to ${them.name}.${away}`);
 }
 
 registerChoice('pact_offer', (w, c, option, d) => {
@@ -313,7 +315,8 @@ registerChoice('pact_offer', (w, c, option, d) => {
   if (!from || !to) return;
   const kind = d.kind === 'peace' ? 'peace' : 'ally';
   if (option !== 'accept') {
-    w.message(from.id, `${to.name} declined your ${kind === 'ally' ? 'alliance' : 'offer of peace'}.`, 'neutral');
+    const what = kind === 'ally' ? 'alliance' : 'offer of peace';
+    w.message(from.id, d.expired ? `${to.name} didn't answer your ${what} in time.` : `${to.name} declined your ${what}.`, 'neutral');
     return;
   }
   if (kind === 'ally') {
