@@ -71,6 +71,8 @@ class Store {
   tradeWith: number | null = null;
   /** Faction the Diplomacy panel shows. */
   diploWith: number | null = null;
+  /** A journey being planned with the Move colony tool: destination, waypoints, who goes (null = all), what to take (null = everything). */
+  journey: { dest: { x: number; y: number } | null; via: { x: number; y: number }[]; members: number[] | null; take: string[] | null } | null = null;
   /** Tick we last left this world (from the server), for "while you were away". Null on a first visit or once read. */
   lastSeen: number | null = null;
   private nextToast = 1;
@@ -97,7 +99,7 @@ class Store {
     this.clock.restart(tick);
   }
 
-  set(patch: Partial<Pick<Store, 'status' | 'error' | 'me' | 'players' | 'time' | 'tool' | 'selected' | 'squad' | 'selectedCell' | 'panel' | 'menu' | 'hoverCell' | 'focus' | 'ping' | 'sites' | 'settlePick' | 'help' | 'tradeWith' | 'diploWith' | 'lastSeen'>>): void {
+  set(patch: Partial<Pick<Store, 'status' | 'error' | 'me' | 'players' | 'time' | 'tool' | 'selected' | 'squad' | 'selectedCell' | 'panel' | 'menu' | 'hoverCell' | 'focus' | 'ping' | 'sites' | 'settlePick' | 'help' | 'tradeWith' | 'diploWith' | 'journey' | 'lastSeen'>>): void {
     Object.assign(this, patch);
     this.emit();
   }

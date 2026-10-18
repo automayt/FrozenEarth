@@ -67,7 +67,7 @@ function groundScore(w: World, cx: number, cy: number): number {
 /** Minimum distance between a new colony and existing ones, when a player picks the spot. */
 export const MIN_COLONY_GAP = 35;
 /** Minimum distance between a colony and an NPC settlement. */
-const SETTLEMENT_GAP = 28;
+export const SETTLEMENT_GAP = 28;
 
 /**
  * Why a colony can't be founded (or moved) at (x, y), or null if it can.

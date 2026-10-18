@@ -30,12 +30,12 @@ function pawnOn(x: number, y: number): Pawn | undefined {
   return best;
 }
 
-function frostDays(x: number, y: number): number {
+export function frostDays(x: number, y: number): number {
   const m = store.mirror;
   return daysUntilFrost(x, y, m.w, m.h, store.estTick(), m.frost, 60);
 }
 
-const daysText = (d: number) => (d === 0 ? 'already frozen' : d === Infinity ? 'over 60 days away' : `about ${d} day${d === 1 ? '' : 's'} away`);
+export const daysText = (d: number) => (d === 0 ? 'already frozen' : d === Infinity ? 'over 60 days away' : `about ${d} day${d === 1 ? '' : 's'} away`);
 
 /** What a right-click (or the active tool) would do on this cell, and what it risks. Mirrors Input.order. */
 function preview(x: number, y: number): Preview | null {

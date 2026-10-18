@@ -1,7 +1,7 @@
 import type { Graphics } from 'pixi.js';
 import { BUILDINGS, ITEMS, WEAPONS } from '@fe/defs';
 import { pawnPosition } from '@fe/protocol';
-import { attackRefusal, atWar, dispositionOf, type Pawn, type Rect } from '@fe/sim';
+import { attackRefusal, atWar, dispositionOf, type Pawn, type Rect, MAX_VIA } from '@fe/sim';
 import { command } from '../net';
 import { store } from '../store';
 import { sound } from '../audio';
@@ -74,11 +74,14 @@ export class Input {
       return;
     }
     if (store.tool.kind === 'moveHome') {
+      // Planning a journey: a click picks where to go; shift-click adds a waypoint on the way.
       if (store.mirror.inBounds(cell.x, cell.y)) {
-        command({ c: 'setHome', x: cell.x, y: cell.y });
+        const j = store.journey ?? { dest: null, via: [], members: null, take: null };
+        if (e.shiftKey && j.dest && j.via.length < MAX_VIA) store.set({ journey: { ...j, via: [...j.via, j.dest], dest: { x: cell.x, y: cell.y } } });
+        else if (e.shiftKey && !j.dest) store.set({ journey: { ...j, dest: { x: cell.x, y: cell.y } } });
+        else store.set({ journey: { ...j, dest: { x: cell.x, y: cell.y } } });
         this.r.flashOrder(cell.x, cell.y, false);
       }
-      store.set({ tool: { kind: 'select' } });
       return;
     }
     // With the select tool a drag draws a box around colonists; a click selects what's under it.

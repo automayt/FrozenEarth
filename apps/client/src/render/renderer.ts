@@ -972,6 +972,42 @@ export class GameRenderer {
     return (at(x, y - 1) ? 1 : 0) | (at(x + 1, y) ? 2 : 0) | (at(x, y + 1) ? 4 : 0) | (at(x - 1, y) ? 8 : 0);
   }
 
+  /** The journey: the route being planned (home, waypoints, destination), or the caravan's route ahead and its goal. */
+  private drawJourney(g: Graphics): void {
+    const m = store.mirror;
+    const me = store.me?.faction ?? 0;
+    const f = m.factions.get(me);
+    if (!f) return;
+    const sw = 1 / this.world.scale.x;
+    const px = (x: number, y: number): [number, number] => [(x + 0.5) * TILE, (y + 0.5) * TILE];
+    const flag = (x: number, y: number, color: number) => {
+      const [fx, fy] = px(x, y);
+      g.moveTo(fx, fy).lineTo(fx, fy - TILE * 1.2).stroke({ width: 2.5 * sw, color: 0x2a2018, alpha: 0.9 });
+      g.poly([fx, fy - TILE * 1.2, fx + TILE * 0.7, fy - TILE * 0.95, fx, fy - TILE * 0.7]).fill({ color, alpha: 0.95 });
+    };
+    const c = f.caravan;
+    if (c) {
+      const from = Math.max(0, c.leg - 1);
+      const pts = (c.at !== undefined ? [c.at] : []).concat(c.route.slice(from));
+      if (pts.length > 1) {
+        const [x0, y0] = px(pts[0] % m.w, Math.floor(pts[0] / m.w));
+        g.moveTo(x0, y0);
+        for (const cell of pts.slice(1)) g.lineTo(...px(cell % m.w, Math.floor(cell / m.w)));
+        g.stroke({ width: 3 * sw, color: 0xf0d080, alpha: 0.55 });
+      }
+      flag(c.dest % m.w, Math.floor(c.dest / m.w), 0xf0c050);
+      return;
+    }
+    const j = store.journey;
+    if (store.tool.kind !== 'moveHome' || !j?.dest) return;
+    const pts = [f.home, ...j.via, j.dest];
+    g.moveTo(...px(pts[0].x, pts[0].y));
+    for (const p of pts.slice(1)) g.lineTo(...px(p.x, p.y));
+    g.stroke({ width: 3 * sw, color: 0xf0d080, alpha: 0.7 });
+    for (const v of j.via) g.circle(...px(v.x, v.y), TILE * 0.35).fill({ color: 0xf0d080, alpha: 0.8 });
+    flag(j.dest.x, j.dest.y, 0xf0c050);
+  }
+
   private drawConstruct(root: Container, e: Construct): void {
     const d = BUILDINGS[e.def];
     const cost = constructCost(e);
@@ -1165,6 +1201,7 @@ export class GameRenderer {
       this.drawSettleUi(g);
       return;
     }
+    this.drawJourney(g);
     if (store.tool.kind === 'moveHome') {
       // Picking a new home: show where other colonies keep their distance, and the spot under the cursor.
       const hc = store.hoverCell;

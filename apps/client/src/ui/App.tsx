@@ -19,6 +19,7 @@ import { ControlBar } from './ControlBar';
 import { Toasts } from './Toasts';
 import { Help } from './Help';
 import { OrderPreview } from './OrderPreview';
+import { CaravanCard, JourneyPanel } from './JourneyPanel';
 
 export function App() {
   const s = useStore();
@@ -44,6 +45,8 @@ export function App() {
           <Alerts />
           <Inspect />
           <ControlBar />
+          <CaravanCard />
+          <JourneyPanel />
           {s.panel === 'work' && <WorkPanel />}
           {s.panel === 'colonists' && <ColonistsPanel />}
           {s.panel === 'events' && <EventsPanel />}

@@ -67,7 +67,7 @@ function current(): Hint[] {
     out.push({
       key: 'move-tool',
       title: 'Moving your colony',
-      text: 'Hover the map: the card by the cursor says how many days each spot stays free of frost, compared with where you are now. Click to set the new home, then use Orders → Pack up on the old site so haulers carry everything over.',
+      text: 'First Pack up the old site (Orders → Pack up): beds, benches and heaters fold into kits. Then hover the map to see how long each spot stays free of frost, click the destination (shift-click for waypoints), choose who goes and what they take, and set out. A sledge from the Workbench carries far more.',
     });
   }
   if (tool.kind === 'hunt' && !mine.some((p) => !p.downed && p.weapon && !weaponOf(p.weapon).melee)) {

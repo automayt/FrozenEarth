@@ -12,7 +12,7 @@ const ORDERS: { label: string; tool: Tool; hint: string }[] = [
   { label: 'Hunt', tool: { kind: 'hunt' }, hint: 'Drag over animals to mark them. Hunters with a bow or rifle bring them down for meat and hides.' },
   { label: 'Deconstruct', tool: { kind: 'deconstruct' }, hint: 'Remove your buildings (refunds 75%)' },
   { label: 'Steal', tool: { kind: 'designate', what: 'steal' }, hint: "Mark goods in a settlement's or another colony's stockpile: your haulers sneak in after dark to carry them off. Locked doors keep them out. Anyone awake who sees it raises the alarm. To send someone right now, draft them and right-click the goods." },
-  { label: 'Move colony', tool: { kind: 'moveHome' }, hint: 'Pick a new home further in, away from the frost: hover to compare how long each spot stays warm, then click. Afterwards, Pack up the old site.' },
+  { label: 'Move colony', tool: { kind: 'moveHome' }, hint: 'Plan the journey inward: click where to go (shift-click for waypoints), pick who goes and what they take, then set out. Pack up the old site first to carry beds and benches as kits.' },
   { label: 'Pack up', tool: { kind: 'packUp' }, hint: 'Strip an area: remove zones, take down buildings (75% back), cancel blueprints' },
   { label: 'Cancel', tool: { kind: 'designate', what: 'cancel' }, hint: 'Cancel orders and blueprints' },
 ];
@@ -67,7 +67,8 @@ export function Architect() {
   const s = useStore();
   const open = s.menu as Cat | null;
   const setOpen = (menu: Cat | null) => store.set({ menu, panel: 'none' });
-  const pick = (tool: Tool) => store.set({ tool, selected: null });
+  // A fresh plan each time the Move colony tool is picked.
+  const pick = (tool: Tool) => store.set({ tool, selected: null, journey: null });
   const cats: { key: Cat; label: string; hotkey?: string }[] = [
     { key: 'orders', label: 'Orders', hotkey: 'O' },
     { key: 'zones', label: 'Zones', hotkey: 'Z' },

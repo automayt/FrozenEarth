@@ -338,39 +338,67 @@ function musterTick(w: World, f: Faction, c: Caravan): void {
 /** Order goods are loaded in: sledges (they add room), kits, food, clothes, weapons, then materials. */
 const LOAD_ORDER: ItemCategory[] = ['gear', 'kit', 'meal', 'raw_food', 'apparel', 'weapon', 'resource'];
 
-/** Take goods from the colony's stockpiles near the muster point, up to what the group can carry. */
-export function load(w: World, f: Faction, c: Caravan): void {
+/**
+ * How many of each stack a group of this size takes, filling up in LOAD_ORDER (best value first
+ * within a kind) until they can carry no more. Sledges add room for whoever pulls them. Shared
+ * with the client, which shows the plan before setting out.
+ */
+export function chooseLoad(stacks: { def: string; count: number }[], members: number, take: string[]): number[] {
+  const allowed = take.length ? new Set(take) : null;
+  const order = stacks
+    .map((s, i) => ({ s, i, cat: ITEMS[s.def]?.category }))
+    .filter((x) => x.cat && (!allowed || allowed.has(x.cat) || x.cat === 'gear'))
+    .sort((a, b) => LOAD_ORDER.indexOf(a.cat!) - LOAD_ORDER.indexOf(b.cat!) || ITEMS[b.s.def].marketValue - ITEMS[a.s.def].marketValue);
+  const out = stacks.map(() => 0);
+  let sledges = 0;
+  let bulk = 0;
+  for (const { s, i } of order) {
+    if (s.def === 'sledge') {
+      const n = Math.min(s.count, members - sledges);
+      out[i] = Math.max(0, n);
+      sledges += out[i];
+      continue;
+    }
+    const per = bulkOf(s.def, 1);
+    const room = carryCapacity(members, sledges) - bulk;
+    const n = per > 0 ? Math.max(0, Math.min(s.count, Math.floor(room / per))) : s.count;
+    out[i] = n;
+    bulk += n * per;
+  }
+  return out;
+}
+
+/** The goods a caravan could load: the colony's stockpiles near the muster, and its kits and sledges lying about there. */
+export function loadableNear(w: World, faction: number, muster: number): Item[] {
   const m = w.map;
-  const mx = m.cx(c.muster);
-  const my = m.cy(c.muster);
-  const allowed = c.take.length ? new Set(c.take) : null;
-  const near: Item[] = [];
+  const mx = m.cx(muster);
+  const my = m.cy(muster);
+  const out: Item[] = [];
   for (const id of w.kinds.item) {
     const it = w.get<Item>(id)!;
     if (Math.abs(it.x - mx) > LOAD_RADIUS || Math.abs(it.y - my) > LOAD_RADIUS) continue;
     const cat = ITEMS[it.def]?.category;
-    if (!cat || (allowed && !allowed.has(cat) && cat !== 'gear')) continue;
+    if (!cat || w.reservedByOther(rk.e(it.id), -1)) continue;
     const z = w.zoneAt(w.cellOf(it));
-    // Their own stockpiles; and their packed kits and sledges lying about the old site.
-    const ours = z && z.faction === f.id && z.kind === 'stockpile';
-    const packed = !z && (cat === 'kit' || cat === 'gear') && Math.hypot(it.x - mx, it.y - my) <= LOAD_RADIUS;
-    if (!ours && !packed) continue;
-    if (w.reservedByOther(rk.e(it.id), -1)) continue;
-    near.push(it);
+    const ours = z && z.faction === faction && z.kind === 'stockpile';
+    const packed = !z && (cat === 'kit' || cat === 'gear');
+    if (ours || packed) out.push(it);
   }
-  near.sort((a, b) => LOAD_ORDER.indexOf(ITEMS[a.def].category) - LOAD_ORDER.indexOf(ITEMS[b.def].category) || ITEMS[b.def].marketValue - ITEMS[a.def].marketValue);
-  for (const it of near) {
-    const cap = carryCapacity(c.members.length, sledgesIn(c.cargo));
-    const room = cap - cargoBulk(c.cargo);
-    const per = bulkOf(it.def, 1);
-    const n = it.def === 'sledge' ? (sledgesIn(c.cargo) < c.members.length ? 1 : 0) : per > 0 ? Math.min(it.count, Math.floor(room / per)) : it.count;
-    if (n <= 0) continue;
+  return out;
+}
+
+/** Take goods from near the muster point, up to what the group can carry. */
+export function load(w: World, f: Faction, c: Caravan): void {
+  const near = loadableNear(w, f.id, c.muster);
+  const counts = chooseLoad(near, c.members.length, c.take);
+  near.forEach((it, i) => {
+    if (counts[i] <= 0) return;
     const def = it.def;
-    const got = w.takeFromItem(it, n);
+    const got = w.takeFromItem(it, counts[i]);
     const line = c.cargo.find((l) => l[0] === def);
     if (line) line[1] += got;
     else c.cargo.push([def, got]);
-  }
+  });
 }
 
 function travelTick(w: World, f: Faction, c: Caravan): void {
@@ -436,7 +464,8 @@ function arrive(w: World, f: Faction, c: Caravan): void {
   f.home = { x: w.map.cx(c.dest), y: w.map.cy(c.dest) };
   if (w.story.frostNotice) w.story.frostNotice[f.id] = 0;
   w.dirty.factions.add(f.id);
-  w.message(f.id, `The caravan has arrived. ${n ? 'The goods are unpacked by the new home: make a stockpile, and place buildings you have kits for to set them up quickly.' : ''} This is home now.`, 'good', c.dest);
+  const goods = n ? ' The goods are unpacked by the new home: make a stockpile, and place buildings you have kits for to set them up quickly.' : '';
+  w.message(f.id, `The caravan has arrived. This is home now.${goods}`, 'good', c.dest);
 }
 
 /** Set the goods down around a cell and end the caravan. */

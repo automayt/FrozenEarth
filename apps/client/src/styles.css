@@ -2443,3 +2443,96 @@ button.player.ally {
     font-size: 26px;
   }
 }
+
+/* ------------------------------------------------------------------ the journey */
+
+.journey-panel {
+  width: min(640px, calc(100vw - 16px));
+}
+
+.journey-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 12px;
+}
+
+.journey-road {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.journey-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.journey-cols h4 {
+  margin: 0 0 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.75;
+}
+
+.journey-cols label.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.journey-load {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.load-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.load-bar i {
+  display: block;
+  height: 100%;
+  background: var(--amber, #e0b050);
+}
+
+/* While a caravan is out: a strip under the top bar, like the steering bar. */
+.caravan-card {
+  position: absolute;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  font-size: 12px;
+  pointer-events: auto;
+  border-color: #f0d080;
+}
+
+.hud:has(> .control-bar) .caravan-card {
+  top: 96px;
+}
+
+@media (max-width: 720px) {
+  .journey-cols {
+    grid-template-columns: 1fr;
+  }
+
+  .caravan-card {
+    flex-wrap: wrap;
+    max-width: calc(100vw - 16px);
+  }
+}
