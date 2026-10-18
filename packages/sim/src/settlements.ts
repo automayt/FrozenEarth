@@ -5,6 +5,7 @@ import { frostDistance } from './frost';
 import { pawnName } from './names';
 import { maybeReachable } from './pathfinding';
 import { findSleep } from './pawns';
+import { needsTending } from './health';
 import { offerChoice, registerChoice } from './choices';
 import { storedCount, takeStored } from './eventHandlers';
 import { allied, setPact, type RelView } from './pacts';
@@ -379,6 +380,9 @@ export function settlerThink(w: World, p: Pawn): Job {
     }
   }
   if (best) return { type: 'attack', stage: 0, target: best.id, forced: false, chase: true, next: 0, until: w.tick + 300 };
+  // Between fights, they bind each other's wounds (left alone, the downed bleed out).
+  const patient = woundedNeighbour(w, p, home, s.radius * 1.5);
+  if (patient) return { type: 'tend', stage: 0, patient: patient.id, progress: 0 };
   // Don't wander off chasing someone across the map.
   if (cellDistance(w, here, home) > s.radius * 1.5) return { type: 'goto', stage: 0, dest: home };
   if (w.isNight() || p.needs.rest < 0.2) {
@@ -424,6 +428,28 @@ function aidThink(w: World, p: Pawn): Job | null {
   }
   if (best) return { type: 'attack', stage: 0, target: best.id, forced: false, chase: true, next: 0, until: w.tick + 300 };
   return { type: 'goto', stage: 0, dest: w.map.idx(f.home.x, f.home.y) };
+}
+
+/** A fellow resident near home who is bleeding, and nobody else is already seeing to. */
+function woundedNeighbour(w: World, p: Pawn, home: number, range: number): Pawn | null {
+  let best: Pawn | null = null;
+  let bestD = Infinity;
+  for (const id of w.kinds.pawn) {
+    const o = w.get<Pawn>(id)!;
+    if (o.faction !== p.faction || !needsTending(o) || cellDistance(w, w.cellOf(o), home) > range) continue;
+    let taken = false;
+    for (const oid of w.kinds.pawn) {
+      const q = w.get<Pawn>(oid)!;
+      if (q !== p && q.job?.type === 'tend' && q.job.patient === o.id) taken = true;
+    }
+    if (taken) continue;
+    const d = cellDistance(w, w.cellOf(p), w.cellOf(o));
+    if (d < bestD) {
+      best = o;
+      bestD = d;
+    }
+  }
+  return best;
 }
 
 /** How far out a settlement watches for trouble. */

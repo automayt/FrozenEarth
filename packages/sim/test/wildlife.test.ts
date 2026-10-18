@@ -89,7 +89,7 @@ describe('wildlife', () => {
     expect(hostile(w, wolf.faction, deer.faction)).toBe(false);
   });
 
-  it('hungry wolves hunt prey, and in winter they hunt people', () => {
+  it('hungry wolves hunt prey, and in winter (still only when hungry) people', () => {
     const { w, player } = field();
     const wolf = spawnAnimal(w, 'wolf', w.map.idx(40, 40));
     const hare = spawnAnimal(w, 'hare', w.map.idx(48, 40));
@@ -101,12 +101,22 @@ describe('wildlife', () => {
     const walker = addPawn(w, Math.min(78, wolf.x + 5), wolf.y, player);
     run(w, 300);
     expect(wolf.job?.type === 'attack' && wolf.job.target === walker.id).toBe(false);
-    // Winter.
+    // Winter, fed: still left alone (a fed pack doesn't come back and back).
     w.tick = START_TICK + 15 * TICKS_PER_DAY + 10 * 1250;
-    walker.x = Math.min(78, wolf.x + 5);
-    walker.y = wolf.y;
-    walker.path = null;
-    wolf.job = null;
+    const place = () => {
+      walker.x = Math.min(78, wolf.x + 5);
+      walker.y = wolf.y;
+      walker.path = null;
+      walker.job = { type: 'hold', stage: 0, until: w.tick + 10_000 };
+      wolf.job = null;
+    };
+    place();
+    wolf.needs.food = 1;
+    run(w, 5);
+    expect((wolf.job as Job | null)?.type === 'attack').toBe(false);
+    // Winter, hungry: the colonist is prey.
+    place();
+    wolf.needs.food = 0.2;
     run(w, 5);
     const job = wolf.job as Job | null;
     expect(job?.type === 'attack' && job.target).toBe(walker.id);

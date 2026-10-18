@@ -145,7 +145,9 @@ function predatorThink(w: World, p: Pawn, def: AnimalDef): Job {
   const winter = w.seasonIndex() === 3 || w.frostAt(here) > 0.3;
   // Just failed to find a way to its prey: roam for a while before trying again.
   const balked = !!p.giveUp && w.tick < p.giveUp[1];
-  if ((winter || p.needs.food < 0.5) && !balked) {
+  // They hunt when hungry. Winter (or the frost) only puts people on the menu: a fed pack leaves
+  // a town be for a day or so, rather than coming back and back until nobody is left.
+  if (p.needs.food < 0.5 && !balked) {
     let best: Pawn | null = null;
     let bestScore = HUNT_RANGE;
     for (const id of w.kinds.pawn) {
