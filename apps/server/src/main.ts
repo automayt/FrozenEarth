@@ -1,10 +1,10 @@
-import { createServer, type IncomingMessage } from 'node:http';
+import { createServer } from 'node:http';
 import { networkInterfaces } from 'node:os';
 import { resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { isatty } from 'node:tty';
 import { parseArgs } from 'node:util';
-import { WebSocketServer, type WebSocket } from 'ws';
+import { attachSockets } from './edge';
 import { GameServer } from './game';
 import { listBackups, restoreBackup, worldPath } from './persistence';
 import { normalizeBase, staticHandler } from './static';
@@ -70,23 +70,6 @@ if (!/^(\/[A-Za-z0-9._~-]+)*$/.test(base)) {
   console.error(`--base must be a URL path like /frozen, got "${args.base}"`);
   process.exit(2);
 }
-const trustProxy = args['trust-proxy']!;
-const allowedOrigins = new Set(
-  args['allow-origin']!
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map((s) => {
-      try {
-        return new URL(s).origin;
-      } catch {
-        return s;
-      }
-    }),
-);
-const maxConnections = Math.max(2, Number(args['max-connections']) || 32);
-const PER_IP = 12;
-
 const http = createServer(
   staticHandler(resolve(import.meta.dirname, '../../client/dist'), {
     base,
@@ -95,69 +78,11 @@ const http = createServer(
 );
 http.headersTimeout = 20_000;
 http.requestTimeout = 30_000;
-// Commands are tiny (the largest, a trade offer, is well under 4 KB); 64 KB leaves plenty of room.
-const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024, perMessageDeflate: { threshold: 1024 } });
-
-const isLoopback = (h: string) => h === 'localhost' || h === '[::1]' || h === '::1' || /^127\./.test(h) || h.endsWith('.localhost');
-
-function clientIp(req: IncomingMessage): string {
-  if (trustProxy) {
-    const cf = req.headers['cf-connecting-ip'];
-    if (typeof cf === 'string' && cf) return cf.trim();
-    const xff = req.headers['x-forwarded-for'];
-    // The last entry is the one our own proxy added; earlier ones are whatever the client claimed.
-    if (typeof xff === 'string' && xff) return xff.split(',').at(-1)!.trim();
-  }
-  return (req.socket.remoteAddress ?? '?').replace(/^::ffff:/, '');
-}
-
-/**
- * Browsers always send Origin on websockets. Only pages from this server (or a listed origin) may
- * connect, so a web page someone visits can't quietly join or flood a friends server on their
- * network. Non-browser clients (bots) send no Origin and are let through to the password check.
- */
-function originOk(req: IncomingMessage): boolean {
-  const origin = req.headers.origin;
-  if (!origin) return true;
-  let u: URL;
-  try {
-    u = new URL(origin);
-  } catch {
-    return false;
-  }
-  if (allowedOrigins.has(u.origin)) return true;
-  const fwd = req.headers['x-forwarded-host'];
-  const hosts = [req.headers.host, trustProxy && typeof fwd === 'string' ? fwd.split(',')[0].trim() : undefined];
-  if (hosts.some((h) => h && h.toLowerCase() === u.host.toLowerCase())) return true;
-  // The Vite dev server proxies the socket from another port on this machine.
-  return isLoopback(u.hostname);
-}
-
-const sockets = new Map<WebSocket, string>();
-http.on('upgrade', (req, socket, head) => {
-  const reject = (code: number, why: string) => {
-    socket.end(`HTTP/1.1 ${code} ${why}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
-  };
-  let path = '';
-  try {
-    path = new URL(req.url ?? '/', 'http://x').pathname;
-  } catch {
-    return reject(400, 'Bad Request');
-  }
-  if (path !== '/ws' && path !== `${base}/ws`) return reject(404, 'Not Found');
-  if (!originOk(req)) {
-    console.log(`[net] Refused a websocket from origin ${String(req.headers.origin).slice(0, 100)} (allow it with --allow-origin)`);
-    return reject(403, 'Forbidden');
-  }
-  const ip = clientIp(req);
-  if (sockets.size >= maxConnections) return reject(503, 'Service Unavailable');
-  if (!isLoopback(ip) && [...sockets.values()].filter((x) => x === ip).length >= PER_IP) return reject(429, 'Too Many Requests');
-  wss.handleUpgrade(req, socket, head, (ws) => {
-    sockets.set(ws, ip);
-    ws.on('close', () => sockets.delete(ws));
-    ws.on('error', () => ws.terminate());
-    game.onConnect(ws, ip);
-  });
+const wss = attachSockets(http, (ws, ip) => game.onConnect(ws, ip), {
+  base,
+  trustProxy: args['trust-proxy']!,
+  allowOrigins: args['allow-origin']!.split(','),
+  maxConnections: Number(args['max-connections']) || 32,
 });
 
 const port = Number(args.port);
