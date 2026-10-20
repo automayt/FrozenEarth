@@ -1,3 +1,4 @@
+import { tell } from './chronicle';
 import { ANIMALS, APPAREL, BUILDINGS, COMFORT_MAX, COMFORT_MIN, CONDITIONS, DOWNED_BLOOD_LOSS, DOWNED_PAIN, TRAITS, WEATHER, type ConditionDef, type ConditionStage } from '@fe/defs';
 import { HOURS_PER_DAY, RARE_TICK, TICKS_PER_DAY, TICKS_PER_HOUR } from './constants';
 import { scheduleEvent } from './schedule';
@@ -360,6 +361,7 @@ export function killPawn(w: World, p: Pawn, cause: string, by?: Pawn): void {
   if (p.weapon) w.placeItemNear(p.weapon, 1, cell);
   w.despawn(p.id);
   w.message(0, `${p.name} of ${fname} has died of ${cause}.`, 'bad', cell);
+  tell(w, faction, `${p.name} died of ${cause}.`);
   let left = 0;
   for (const id of w.kinds.pawn) {
     const o = w.get<Pawn>(id)!;

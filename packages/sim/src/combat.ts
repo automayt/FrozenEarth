@@ -197,6 +197,7 @@ export function strike(w: World, p: Pawn, t: Pawn): void {
   const ours = w.factions.get(p.faction)?.raid;
   if (ours && t.faction === ours.target) ours.dealt = (ours.dealt ?? 0) + dmg;
   const theirs = w.factions.get(t.faction)?.raid;
+  if (theirs && w.factions.get(p.faction)?.isPlayer && !p.species) (theirs.heroes ??= {})[p.id] = (theirs.heroes[p.id] ?? 0) + dmg;
   if (theirs) {
     theirs.taken = (theirs.taken ?? 0) + dmg;
     helpedDefend(w, t, p, dmg);

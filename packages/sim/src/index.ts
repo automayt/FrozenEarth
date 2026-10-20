@@ -32,3 +32,4 @@ export { TRADE_OFFER_HOURS } from './trade';
 export { constructCost, constructWork } from './jobs';
 export { MEMBER_CARRY, SLEDGE_CARRY, LOAD_RADIUS, MAX_VIA, bulkOf, cargoBulk, caravanLoad, CARRIED_BULK, sledgesIn, carryCapacity, planRoute, chooseLoad } from './caravan';
 export { ROAD, cargoValue, tollFor, isPass } from './road';
+export { MILESTONES } from './chronicle';

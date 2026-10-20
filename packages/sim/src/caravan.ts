@@ -1,3 +1,4 @@
+import { tell } from './chronicle';
 import { ITEMS, type ItemCategory } from '@fe/defs';
 import { TICKS_PER_HOUR } from './constants';
 import { findPath, makePathState } from './pathfinding';
@@ -497,6 +498,9 @@ function arrive(w: World, f: Faction, c: Caravan): void {
   if (w.story.frostNotice) w.story.frostNotice[f.id] = 0;
   w.dirty.factions.add(f.id);
   const goods = n ? ' The goods are unpacked by the new home: make a stockpile, and place buildings you have kits for to set them up quickly.' : '';
+  const hours = Math.max(1, Math.round((w.tick - c.started) / TICKS_PER_HOUR));
+  const carried = c.wounded?.length ? `, carrying ${c.wounded.length} wounded` : '';
+  tell(w, f.id, `Reached a new home after ${hours} hours on the road${carried}.`, 'first_journey');
   w.message(f.id, `The caravan has arrived. This is home now.${goods}`, 'good', c.dest);
 }
 

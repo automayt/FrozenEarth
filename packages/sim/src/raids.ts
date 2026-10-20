@@ -1,3 +1,4 @@
+import { tell } from './chronicle';
 import { alliesWhoStayedHome, callAllies, townCallsAllies } from './diplomacy';
 import { BUILDINGS, DEFAULT_PRIORITY, ITEMS, START_PRIORITY, WEAPONS, WORK_TYPES } from '@fe/defs';
 import { RARE_TICK, TICKS_PER_DAY } from './constants';
@@ -275,6 +276,22 @@ export function helpedDefend(w: World, raider: Pawn, helper: Pawn, dmg: number):
   raid.helpers[helper.faction] = (raid.helpers[helper.faction] ?? 0) + dmg;
 }
 
+/** A raid on a colony is over: into its story, with whoever did the most to see them off. */
+function tellRaidOver(w: World, f: Faction, colony: number): void {
+  const raid = f.raid!;
+  let hero: Pawn | undefined;
+  let most = 0;
+  for (const [id, dmg] of Object.entries(raid.heroes ?? {})) {
+    const p = w.get<Pawn>(Number(id));
+    if (p && p.kind === 'pawn' && p.faction === colony && dmg > most) {
+      hero = p;
+      most = dmg;
+    }
+  }
+  const who = hero ? ` ${hero.name} did the most to see them off.` : '';
+  tell(w, colony, `${f.name} (${raid.size}) were driven off${raid.dead ? `, ${raid.dead} of them dead` : ''}.${who}`, 'first_raid');
+}
+
 /** The raid on a settlement is over: thank those who helped. */
 function thankHelpers(w: World, raid: RaidState): void {
   const f = w.factions.get(raid.target);
@@ -320,6 +337,7 @@ export function raiderGone(w: World, faction: number, killed: boolean): void {
     const t = w.factions.get(f.raid.target);
     raidNews(w, f.raid, t?.settlement ? `${f.name} are gone. ${t.name} has held out.` : `${f.name} are gone. The raid is over.`, 'neutral');
     thankHelpers(w, f.raid);
+    if (t?.isPlayer) tellRaidOver(w, f, t.id);
     return;
   }
   checkBreak(w, faction);

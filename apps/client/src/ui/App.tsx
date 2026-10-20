@@ -21,6 +21,7 @@ import { Help } from './Help';
 import { OrderPreview } from './OrderPreview';
 import { CaravanCard, JourneyPanel } from './JourneyPanel';
 import { Moments } from './Moments';
+import { ChroniclePanel } from './ChroniclePanel';
 
 export function App() {
   const s = useStore();
@@ -54,6 +55,7 @@ export function App() {
           {s.panel === 'events' && <EventsPanel />}
           {s.panel === 'trade' && <TradePanel />}
           {s.panel === 'diplomacy' && <DiplomacyPanel />}
+          {s.panel === 'chronicle' && <ChroniclePanel />}
           <Architect />
           <OrderPreview />
           <Toasts />

@@ -1,3 +1,4 @@
+import { chronicleTick } from './chronicle';
 import { BUILDINGS, COMFORT_MAX, COMFORT_MIN, EVENTS, ITEMS, PLANTS, T, TERRAINS } from '@fe/defs';
 import { CAVE_TEMP, RARE_TICK, ROOF_SHELTER, TICKS_PER_DAY } from './constants';
 import { FROST_BAND, FROST_COLD, frostDistance } from './frost';
@@ -28,6 +29,7 @@ export function rareTick(w: World): void {
   freezeWater(w);
   settlementsTick(w);
   diplomacyTick(w);
+  chronicleTick(w);
   reviewRaids(w);
   wildlifeTick(w);
   rotTick(w);

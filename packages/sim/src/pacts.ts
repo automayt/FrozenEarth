@@ -1,3 +1,4 @@
+import { tell } from './chronicle';
 import type { Faction, Pact, PactKind } from './types';
 import type { World } from './world';
 
@@ -25,6 +26,15 @@ export function atWar(w: RelView, a: number, b: number): boolean {
 
 /** Make (or with null, end) an agreement, on both sides. */
 export function setPact(w: World, a: number, b: number, kind: PactKind | null, until?: number): void {
+  if (kind === 'ally' && w.factions.get(a)?.pacts?.[b]?.kind !== 'ally') {
+    for (const [x, y] of [
+      [a, b],
+      [b, a],
+    ]) {
+      const other = w.factions.get(y);
+      if (other) tell(w, x, `Swore an alliance with ${other.name}.`, 'first_alliance');
+    }
+  }
   for (const [x, y] of [
     [a, b],
     [b, a],

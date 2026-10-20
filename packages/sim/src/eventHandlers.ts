@@ -1,3 +1,4 @@
+import { tell } from './chronicle';
 import { CONDITIONS, EVENTS, ITEMS, PLANTS, ROCKS, T, TERRAINS, TRAITS } from '@fe/defs';
 
 /** Could this pawn get the condition right now (not immune, not already sick with it)? */
@@ -543,6 +544,7 @@ HANDLERS.wanderer_joins = (w, faction) => {
   if (!p) return false;
   if (w.rng.chance(0.15)) addCondition(w, p, 'flu');
   say(w, faction, `${p.name} (${traitText(p.traits)}), a wanderer, has joined you. They're walking in from the edge of the map.`, 'good', w.cellOf(p));
+  tell(w, faction, `${p.name}, a wanderer, joined the colony.`, 'first_colonist');
   return true;
 };
 
@@ -588,6 +590,7 @@ registerChoice('refugee', (w, c, option, data) => {
   if (data.sick) addCondition(w, p, 'flu');
   if (data.thief) scheduleEvent(w, 'refugee_betrayal', c.faction, (2 + w.rng.next() * 3) * TICKS_PER_DAY, { pawn: p.id });
   say(w, c.faction, `${p.name} has joined your colony.`, 'good', w.cellOf(p));
+  tell(w, c.faction, `${p.name} found refuge with the colony.`, 'first_colonist');
 });
 
 HANDLERS.refugee_betrayal = (w, faction, data) => {
@@ -737,7 +740,10 @@ HANDLERS.lost_child = (w, faction, data) => {
 registerChoice('lost_child', (w, c, option, d) => {
   if (option === 'accept') {
     const p = joinPawn(w, c.faction, String(d.name), ['child']);
-    if (p) say(w, c.faction, `${p.name} has joined your colony.`, 'good', w.cellOf(p));
+    if (p) {
+      say(w, c.faction, `${p.name} has joined your colony.`, 'good', w.cellOf(p));
+      tell(w, c.faction, `${p.name} joined the colony.`, 'first_colonist');
+    }
     return;
   }
   // The child wanders on to another colony that hasn't been asked yet.
@@ -821,7 +827,10 @@ registerChoice('pilgrim', (w, c, option, d) => {
   }
   const traits = ['pilgrim', ...w.rollTraits().slice(0, 1)];
   const p = joinPawn(w, c.faction, String(d.name), traits);
-  if (p) say(w, 0, `${p.name}, a pilgrim from the Center, has joined ${w.factions.get(c.faction)?.name}.`, 'good', w.cellOf(p));
+  if (p) {
+    say(w, 0, `${p.name}, a pilgrim from the Center, has joined ${w.factions.get(c.faction)?.name}.`, 'good', w.cellOf(p));
+    tell(w, c.faction, `${p.name}, a pilgrim from the Center, joined the colony.`, 'first_colonist');
+  }
 });
 
 // ---------------------------------------------------------------------------- threats

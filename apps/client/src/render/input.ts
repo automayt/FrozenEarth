@@ -18,7 +18,7 @@ const PAN_SPEED = 900;
 const STEER_KEYS = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright']);
 
 /** Panels and menus with their own key. */
-const PANEL_KEYS: Record<string, 'work' | 'colonists' | 'trade' | 'diplomacy'> = { p: 'work', l: 'colonists', t: 'trade', g: 'diplomacy' };
+const PANEL_KEYS: Record<string, 'work' | 'colonists' | 'trade' | 'diplomacy' | 'chronicle'> = { p: 'work', l: 'colonists', t: 'trade', g: 'diplomacy', j: 'chronicle' };
 const MENU_KEYS: Record<string, string> = { o: 'orders', z: 'zones', b: 'structure' };
 
 /** How long a "right-click again to attack" warning stays armed. */

@@ -1,3 +1,4 @@
+import { tell } from './chronicle';
 import { EVENTS, RARITY_WEIGHT, WEATHER, type EventDef } from '@fe/defs';
 import { SEASONS, START_TICK, TICKS_PER_DAY, TICKS_PER_HOUR } from './constants';
 import { tickChoices } from './choices';
@@ -59,6 +60,7 @@ function frostNotices(w: World, players: { id: number; name: string; home: { x: 
     if (days === 0 && notice < 2) {
       s.frostNotice[f.id] = 2;
       w.message(f.id, 'The frost line has reached your colony. Outdoors it will never be warm again. Heat your rooms, or move toward the center.', 'bad', m.idx(f.home.x, f.home.y));
+      tell(w, f.id, 'The frost reached the colony.', 'frost');
     } else if (days <= 3 && notice < 1) {
       s.frostNotice[f.id] = 1;
       w.message(f.id, `The frost line will reach your colony in about ${days} day${days === 1 ? '' : 's'}. Prepare heated shelter or start moving inward.`, 'bad', m.idx(f.home.x, f.home.y));

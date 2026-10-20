@@ -34,7 +34,7 @@ export interface Toast {
 const TOAST_MS = 6000;
 
 export type Status = 'join' | 'connecting' | 'playing' | 'error';
-export type Panel = 'none' | 'work' | 'colonists' | 'events' | 'trade' | 'diplomacy';
+export type Panel = 'none' | 'work' | 'colonists' | 'events' | 'trade' | 'diplomacy' | 'chronicle';
 
 /** All client state. React reads it through useStore; the renderer reads it directly. */
 class Store {

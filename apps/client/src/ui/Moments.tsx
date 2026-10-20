@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { GameMessage } from '@fe/sim';
+import { MILESTONES, type GameMessage } from '@fe/sim';
 import { sound } from '../audio';
 import { store, useStore } from '../store';
 
@@ -63,6 +63,23 @@ export function Moments() {
     timer.current = setTimeout(() => setMoment((m) => (m?.key === shown.key ? null : m)), SHOW_MS);
   }, [total, me]);
   useEffect(() => () => clearTimeout(timer.current), []);
+  // A milestone reached: the colony's story gets a new chapter.
+  const reached = s.mirror.factions.get(me)?.milestones ?? [];
+  const known = useRef<number>(-1);
+  useEffect(() => {
+    if (known.current < 0 || reached.length < known.current) {
+      known.current = reached.length;
+      return;
+    }
+    if (reached.length === known.current) return;
+    const key = reached[reached.length - 1];
+    known.current = reached.length;
+    const shown: Moment = { key: -reached.length, title: MILESTONES[key] ?? 'A milestone', text: "A new line in your colony's story. Open it with J.", tone: 'good' };
+    setMoment(shown);
+    sound.play('good');
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setMoment((m) => (m?.key === shown.key ? null : m)), SHOW_MS);
+  }, [reached.length, me]);
   if (!moment) return null;
   const at = moment.at;
   return (
@@ -71,6 +88,7 @@ export function Moments() {
       className={`moment ${moment.tone}`}
       onClick={() => {
         if (at !== undefined) store.set({ focus: { x: at % s.mirror.w, y: Math.floor(at / s.mirror.w) } });
+        else if (moment.key < 0) store.set({ panel: 'chronicle' });
         setMoment(null);
       }}
       title={at !== undefined ? 'Show on the map' : 'Dismiss'}

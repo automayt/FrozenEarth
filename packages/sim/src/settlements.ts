@@ -1,3 +1,4 @@
+import { milestone, tell } from './chronicle';
 import { ITEM_CATEGORIES, ITEMS, TERRAINS } from '@fe/defs';
 import { RARE_TICK, TICKS_PER_DAY } from './constants';
 import { cellDistance, gaveUpOn, hostile, hostileInReach, lineOfSight, weaponFor } from './combat';
@@ -745,7 +746,10 @@ export function settlementTrade(w: World, faction: number, settlement: number, g
   const surplus = lineValue(g) - lineValue(wa) * factor;
   const gift = Math.min(GOODWILL.giftMax, Math.floor(surplus / GOODWILL.giftValue));
   shiftGoodwill(w, f, faction, (wa.length ? GOODWILL.fairTrade : 0) + gift, gift > 0 ? (wa.length ? 'A generous trade' : 'A gift') : 'A fair trade');
-  if (wa.length) w.message(faction, `Trade done with ${f.name}. ${trader.name} has the goods.`, 'good', w.cellOf(trader));
+  if (wa.length) {
+    w.message(faction, `Trade done with ${f.name}. ${trader.name} has the goods.`, 'good', w.cellOf(trader));
+    milestone(w, faction, 'first_trade', `Traded with ${f.name} for the first time.`);
+  }
   else w.message(faction, `${f.name} accepts your gift.`, 'good', w.cellOf(trader));
 }
 
@@ -947,6 +951,7 @@ export function deliverRequest(w: World, faction: number, settlement: number, re
       joiner.bed = 0;
       w.markDirty(joiner);
       w.message(faction, `${joiner.name} of ${f.name} has joined your colony, grateful for your help.`, 'good', at);
+      tell(w, faction, `${joiner.name} left ${f.name} to join the colony.`, 'first_colonist');
     }
   } else {
     w.placeItemNear(r.reward[0], r.reward[1], at);

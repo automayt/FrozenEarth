@@ -47,11 +47,12 @@ function costText(cost: Record<string, number>): string {
 }
 
 /** The panels the bar opens, with their hotkeys. */
-const PANELS: { key: 'work' | 'colonists' | 'trade' | 'diplomacy' | 'events'; label: string; hotkey?: string; title: string }[] = [
+const PANELS: { key: 'work' | 'colonists' | 'trade' | 'diplomacy' | 'chronicle' | 'events'; label: string; hotkey?: string; title: string }[] = [
   { key: 'work', label: 'Work', hotkey: 'P', title: 'Who does what: work priorities (P)' },
   { key: 'colonists', label: 'Colonists', hotkey: 'L', title: 'Everyone in your colony (L)' },
   { key: 'trade', label: 'Trade', hotkey: 'T', title: 'Trade with towns and other colonies (T)' },
   { key: 'diplomacy', label: 'Diplomacy', hotkey: 'G', title: 'Alliances, rivalries, war and peace (G)' },
+  { key: 'chronicle', label: 'Story', hotkey: 'J', title: "Your colony's story and milestones (J)" },
   { key: 'events', label: 'Events', title: 'Host tool: trigger events' },
 ];
 
@@ -110,7 +111,7 @@ export function Architect() {
       {s.tool.kind !== 'select' && (
         <div className="panel tool-hint" role="status">
           <b>{toolLabel}</b> · {s.tool.kind === 'moveHome'
-            ? 'click the new home site'
+            ? 'click where the colony should go, shift-click to add a waypoint'
             : s.tool.kind === 'build'
               ? 'drag to place'
               : s.tool.kind === 'hunt'

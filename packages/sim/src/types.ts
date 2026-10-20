@@ -245,6 +245,8 @@ export interface RaidState {
   fires?: number;
   /** Defenders standing when the current goal was set, to tell progress from stalemate. */
   foes?: number;
+  /** Wounds each colonist dealt the raiders, to name who did the most to drive them off. */
+  heroes?: Record<number, number>;
   /** A town that sent these fighters against a rival town (they leave their own people alone). */
   sponsor?: number;
   /** Raids on settlements: wounds each player colony dealt the raiders, to thank them after. */
@@ -270,6 +272,18 @@ export interface Faction {
   pacts?: Record<number, Pact>;
   /** A colony on the move: its caravan, while one is out. */
   caravan?: Caravan;
+  /** A colony's story: the moments worth retelling, newest last (capped). */
+  chronicle?: Tale[];
+  /** Milestones the colony has reached (keys of MILESTONES in chronicle.ts). */
+  milestones?: string[];
+}
+
+/** One line of a colony's story. */
+export interface Tale {
+  tick: number;
+  text: string;
+  /** Set when this line marks a milestone. */
+  milestone?: string;
 }
 
 /** A colony moving inward as one group: who, where, what they carry, how far they've come. */
