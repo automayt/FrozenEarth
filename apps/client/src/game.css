@@ -1077,3 +1077,94 @@ input[type='checkbox'] {
     display: inline;
   }
 }
+
+/* ------------------------------------------------------------------ moments */
+
+/* A banner for the moments that matter: brass rules either side of a Grenze title. */
+#root .hud > .moment {
+  position: absolute;
+  top: 18%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: min(680px, calc(100vw - 40px));
+  padding: 22px 60px 26px;
+  text-align: center;
+  color: var(--tallow);
+  background: radial-gradient(closest-side, rgba(17, 21, 29, 0.9) 0%, rgba(17, 21, 29, 0.65) 55%, transparent 100%);
+  border: none;
+  box-shadow: none;
+  pointer-events: auto;
+  animation: moment-in 0.45s ease-out both;
+}
+
+#root .hud > .moment:hover:not(:disabled) {
+  background: radial-gradient(closest-side, rgba(17, 21, 29, 0.95) 0%, rgba(17, 21, 29, 0.72) 55%, transparent 100%);
+}
+
+.moment-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font: 700 40px/1 var(--display);
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+}
+
+.moment-title::before,
+.moment-title::after {
+  content: '';
+  width: 70px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--brass));
+}
+
+.moment-title::after {
+  background: linear-gradient(90deg, var(--brass), transparent);
+}
+
+.moment.bad .moment-title {
+  color: #ffb4a4;
+}
+
+.moment.good .moment-title {
+  color: #ffd9a0;
+}
+
+.moment-text {
+  max-width: 52ch;
+  font-size: 13px;
+  color: var(--tallow-dim);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
+}
+
+@keyframes moment-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scale(1.08);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #root .hud > .moment {
+    animation: none;
+  }
+}
+
+@media (max-width: 760px), (max-height: 560px) {
+  .moment-title {
+    font-size: 28px;
+  }
+
+  .moment-title::before,
+  .moment-title::after {
+    width: 36px;
+  }
+}

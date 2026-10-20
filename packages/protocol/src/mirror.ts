@@ -37,6 +37,8 @@ export class Mirror {
   /** Frost line settings, from the snapshot. */
   frost: FrostParams = { ...DEFAULT_FROST };
   messages: GameMessage[] = [];
+  /** Letters received since this mirror was made (keeps counting after old ones are dropped from `messages`). */
+  messagesTotal = 0;
   /** Patches for entities this mirror doesn't have: zero unless deltas were lost or applied out of order. */
   missedPatches = 0;
   /** Attacks since the renderer last drained them, flattened SHOT_FIELDS tuples. */
@@ -140,6 +142,7 @@ export class Mirror {
     }
     if (d.msgs.length) {
       this.messages.push(...d.msgs);
+      this.messagesTotal += d.msgs.length;
       if (this.messages.length > 200) this.messages.splice(0, this.messages.length - 200);
     }
   }

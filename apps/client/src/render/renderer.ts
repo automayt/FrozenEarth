@@ -17,6 +17,7 @@ import { Input } from './input';
 import { Lighting } from './light';
 import { Shadows } from './shadows';
 import { Life } from './life';
+import { Juice } from './juice';
 
 /** World units per cell. */
 export const TILE = 32;
@@ -26,7 +27,7 @@ const CHUNK = 16;
 /** How a settlement feels about you, as a colour. */
 export const DISPOSITION_COLOR = { friendly: 0x7ad07a, wary: 0xf0b43c, hostile: 0xf07a5a } as const;
 
-const LABEL_STYLE = { fontFamily: 'IBM Plex Sans', fontSize: 22, fill: 0xffffff, stroke: { color: 0x000000, width: 5 } };
+const LABEL_STYLE = { fontFamily: 'Signika', fontSize: 22, fill: 0xffffff, stroke: { color: 0x000000, width: 5 } };
 /**
  * One shared TextStyle for every label. A stroked style keys its bitmap font by TextStyle instance,
  * so handing BitmapText a plain style object built a whole new glyph atlas per label (~15 ms each,
@@ -129,6 +130,8 @@ export class GameRenderer {
   private lastShotDrain = 0;
   private orderMark: { x: number; y: number; attack: boolean; born: number } | null = null;
   private particles = new Particles();
+  /** Barks over colonists and gains floating up from felled trees and mined rock. */
+  private juice = new Juice();
   private tweens = new Tweens();
   private weather = new Weather();
   /** True once the first snapshot has been drawn; only later arrivals and departures animate. */
@@ -199,6 +202,7 @@ export class GameRenderer {
     this.shadows = new Shadows(this.app.renderer, this.tex);
     this.layers.shadows.addChild(this.shadows.view);
     this.layers.fx.addChild(this.life.view);
+    this.layers.ui.addChild(this.juice.view);
     this.input = new Input(this, this.app.canvas);
     this.app.ticker.add(() => this.frame());
   }
@@ -302,11 +306,16 @@ export class GameRenderer {
           this.particles.burst(x, y, { count: 14, color: rockDust(this.prevRock[c]), speed: 70, size: 2.2, life: 700, gravity: 60, drag: 3, chips: true });
           this.particles.burst(x, y, { count: 8, color: 0xb0aaa0, speed: 25, size: 4, grow: 6, life: 900, lift: 10, alpha: 0.5 });
           sound.play('rock', x, y);
+          this.juice.rockMined(c, now);
         }
       }
     }
     for (const c of m.changedCells) this.prevRock[c] = m.rock[c];
     this.shadows.note(m, m.changedEnts, m.removedEnts, m.changedCells.size > 0);
+    this.juice.frame(m, store.me?.faction ?? 0, m.changedEnts, m.removedEnts, now, (id) => {
+      const v = this.views.get(id);
+      return v && v.root.visible ? { x: v.root.x, y: v.root.y } : null;
+    });
     if (m.changedCells.size) {
       this.drawTerrainCells(m.changedCells);
       this.rockLayer?.update(m, m.changedCells);

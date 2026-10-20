@@ -20,6 +20,7 @@ import { Toasts } from './Toasts';
 import { Help } from './Help';
 import { OrderPreview } from './OrderPreview';
 import { CaravanCard, JourneyPanel } from './JourneyPanel';
+import { Moments } from './Moments';
 
 export function App() {
   const s = useStore();
@@ -46,6 +47,7 @@ export function App() {
           <Inspect />
           <ControlBar />
           <CaravanCard />
+          <Moments />
           <JourneyPanel />
           {s.panel === 'work' && <WorkPanel />}
           {s.panel === 'colonists' && <ColonistsPanel />}
