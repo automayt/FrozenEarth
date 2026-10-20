@@ -1,6 +1,7 @@
 import { BUILD_CATEGORIES, BUILDINGS, ITEMS, SOWABLE_PLANTS, type BuildCategory } from '@fe/defs';
 import { store, useStore, type Tool } from '../store';
 import { myPawnsAll, myPlayer, mySquad, toggleDraft } from '../actions';
+import { Icon } from './Icon';
 
 type Cat = 'orders' | 'zones' | BuildCategory;
 
@@ -13,7 +14,7 @@ const ORDERS: { label: string; tool: Tool; hint: string }[] = [
   { label: 'Deconstruct', tool: { kind: 'deconstruct' }, hint: 'Remove your buildings (refunds 75%)' },
   { label: 'Steal', tool: { kind: 'designate', what: 'steal' }, hint: "Mark goods in a settlement's or another colony's stockpile: your haulers sneak in after dark to carry them off. Locked doors keep them out. Anyone awake who sees it raises the alarm. To send someone right now, draft them and right-click the goods." },
   { label: 'Move colony', tool: { kind: 'moveHome' }, hint: 'Plan the journey inward: click where to go (shift-click for waypoints), pick who goes and what they take, then set out. Pack up the old site first to carry beds and benches as kits.' },
-  { label: 'Pack up', tool: { kind: 'packUp' }, hint: 'Strip an area: remove zones, take down buildings (75% back), cancel blueprints' },
+  { label: 'Pack up', tool: { kind: 'packUp' }, hint: 'Strip an area before moving: beds, benches and heaters fold into kits to carry; walls and floors come apart (75% back); zones and blueprints go' },
   { label: 'Cancel', tool: { kind: 'designate', what: 'cancel' }, hint: 'Cancel orders and blueprints' },
 ];
 
@@ -45,6 +46,15 @@ function costText(cost: Record<string, number>): string {
   return parts.length ? parts.join(', ') : 'free';
 }
 
+/** The panels the bar opens, with their hotkeys. */
+const PANELS: { key: 'work' | 'colonists' | 'trade' | 'diplomacy' | 'events'; label: string; hotkey?: string; title: string }[] = [
+  { key: 'work', label: 'Work', hotkey: 'P', title: 'Who does what: work priorities (P)' },
+  { key: 'colonists', label: 'Colonists', hotkey: 'L', title: 'Everyone in your colony (L)' },
+  { key: 'trade', label: 'Trade', hotkey: 'T', title: 'Trade with towns and other colonies (T)' },
+  { key: 'diplomacy', label: 'Diplomacy', hotkey: 'G', title: 'Alliances, rivalries, war and peace (G)' },
+  { key: 'events', label: 'Events', title: 'Host tool: trigger events' },
+];
+
 function sameTool(a: Tool, b: Tool): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
@@ -57,8 +67,10 @@ function DraftButton() {
   const allDrafted = who.length > 0 && who.every((p) => p.drafted);
   const label = squad.length ? (allDrafted ? 'Undraft' : 'Draft') : allDrafted ? 'Undraft all' : 'Draft all';
   return (
-    <button className={`draft ${allDrafted ? 'on' : ''}`} onClick={toggleDraft} title="Drafted colonists stop working and follow orders: right-click to move, right-click an enemy to attack (R)">
-      {label} <small>R</small>
+    <button className={`slot draft ${allDrafted ? 'on' : ''}`} onClick={toggleDraft} title="Drafted colonists stop working and follow orders: right-click to move, right-click an enemy to attack (R)">
+      <Icon name="draft" />
+      <span className="slot-label">{label}</span>
+      <kbd className="slot-key">R</kbd>
     </button>
   );
 }
@@ -114,32 +126,30 @@ export function Architect() {
       {s.tool.kind === 'select' && mySquad().some((p) => p.drafted) && (
         <div className="panel tool-hint">Right-click: move · on someone: attack · on goods: steal or pick up · R: back to work</div>
       )}
-      <div className="panel bar">
-        {cats.map((c) => (
-          <button key={c.key} className={open === c.key ? 'on' : ''} onClick={() => setOpen(open === c.key ? null : c.key)} aria-expanded={open === c.key} title={c.hotkey ? `${c.label} (${c.hotkey})` : c.label}>
-            {c.label}
-            {c.hotkey && <small className="hotkey">{c.hotkey}</small>}
-          </button>
-        ))}
-        <span className="sep" />
-        <DraftButton />
-        <button className={s.panel === 'work' ? 'on' : ''} onClick={() => store.set({ panel: s.panel === 'work' ? 'none' : 'work', menu: null })}>
-          Work <small className="hotkey">P</small>
-        </button>
-        <button className={s.panel === 'colonists' ? 'on' : ''} onClick={() => store.set({ panel: s.panel === 'colonists' ? 'none' : 'colonists', menu: null })}>
-          Colonists <small className="hotkey">L</small>
-        </button>
-        <button className={s.panel === 'trade' ? 'on' : ''} onClick={() => store.set({ panel: s.panel === 'trade' ? 'none' : 'trade', menu: null })}>
-          Trade <small className="hotkey">T</small>
-        </button>
-        <button className={s.panel === 'diplomacy' ? 'on' : ''} onClick={() => store.set({ panel: s.panel === 'diplomacy' ? 'none' : 'diplomacy', menu: null })} title="Alliances, rivalries, war and peace (G)">
-          Diplomacy <small className="hotkey">G</small>
-        </button>
-        {myPlayer()?.admin && (
-          <button className={s.panel === 'events' ? 'on' : ''} onClick={() => store.set({ panel: s.panel === 'events' ? 'none' : 'events', menu: null })} title="Host tool: trigger events">
-            Events
-          </button>
-        )}
+      <div className="panel bar" role="toolbar" aria-label="Commands">
+        <div className="slots">
+          {cats.map((c) => (
+            <button key={c.key} className={`slot ${open === c.key ? 'on' : ''}`} onClick={() => setOpen(open === c.key ? null : c.key)} aria-expanded={open === c.key} title={c.hotkey ? `${c.label} (${c.hotkey})` : c.label}>
+              <Icon name={c.key} />
+              <span className="slot-label">{c.label}</span>
+              {c.hotkey && <kbd className="slot-key">{c.hotkey}</kbd>}
+            </button>
+          ))}
+        </div>
+        <span className="rivet" aria-hidden="true" />
+        <div className="slots">
+          <DraftButton />
+        </div>
+        <span className="rivet" aria-hidden="true" />
+        <div className="slots">
+          {PANELS.filter((p) => p.key !== 'events' || myPlayer()?.admin).map((p) => (
+            <button key={p.key} className={`slot ${s.panel === p.key ? 'on' : ''}`} onClick={() => store.set({ panel: s.panel === p.key ? 'none' : p.key, menu: null })} title={p.title}>
+              <Icon name={p.key} />
+              <span className="slot-label">{p.label}</span>
+              {p.hotkey && <kbd className="slot-key">{p.hotkey}</kbd>}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

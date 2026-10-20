@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client';
 import { App } from './ui/App';
 import './styles.css';
+import './game.css';
 import { sound } from './audio';
 
 // Browsers only allow audio after a user gesture.

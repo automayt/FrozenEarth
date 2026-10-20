@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { sound } from '../audio';
+import { Icon } from './Icon';
 
 /** Mute button plus a volume slider. M toggles mute too. */
 export function SoundControl() {
@@ -8,14 +9,15 @@ export function SoundControl() {
   return (
     <span className="sound">
       <button
-        className={sound.muted ? '' : 'on'}
+        className={`icon-btn ${sound.muted ? '' : 'on'}`}
+        aria-label={sound.muted ? 'Turn sound on' : 'Turn sound off'}
         title={sound.muted ? 'Sound off (M)' : 'Sound on (M)'}
         onClick={() => {
           sound.unlock();
           sound.toggleMute();
         }}
       >
-        {sound.muted ? '🔇' : '🔊'}
+        <Icon name={sound.muted ? 'mute' : 'sound'} size={18} />
       </button>
       <input
         type="range"

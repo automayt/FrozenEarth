@@ -1,0 +1,1079 @@
+/*
+ * FrozenEarth's HUD skin: the colony's field kit. Felt panels with cut corners and a brass edge,
+ * tactile buttons, Grenze for titles and numerals, Signika for the small print. Ember marks what
+ * you can act on (and what's active); rime is reserved for the cold.
+ *
+ * Loaded after styles.css. The layout rules at the bottom are scoped under #root so they win over
+ * the older per-element overrides there.
+ */
+
+:root {
+  --woad: #1c2331;
+  --woad-hi: #283146;
+  --soot: #11151d;
+  --tallow: #eadfc8;
+  --tallow-dim: #a99f8b;
+  --ember: #ff9a3c;
+  --ember-deep: #e2792a;
+  --rime: #c3e4f3;
+  --brass: #c9a45c;
+  --brass-dark: #6f5729;
+  --lichen: #a3c46b;
+  --blood: #e0614b;
+
+  /* The older names, pointed at the new palette. */
+  --text: var(--tallow);
+  --muted: var(--tallow-dim);
+  --ice: var(--rime);
+  --amber: var(--ember);
+  --good: var(--lichen);
+  --bad: var(--blood);
+  --line: rgba(201, 164, 92, 0.22);
+  --line-strong: rgba(201, 164, 92, 0.5);
+  --panel: rgba(28, 35, 49, 0.95);
+
+  --display: 'Grenze', 'Palatino Linotype', Georgia, serif;
+  --body: 'Signika', 'Segoe UI', system-ui, sans-serif;
+
+  /* A cut-felt frame: chamfered corners, a brass edge, a dark inner line. Drawn once, nine-sliced. */
+  --frame: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M6 .75H18L23.25 6V18L18 23.25H6L.75 18V6Z' fill='%231c2331' fill-opacity='.95' stroke='%23b8934f' stroke-width='1.5'/%3E%3Cpath d='M6.6 2.7H17.4L21.3 6.6V17.4L17.4 21.3H6.6L2.7 17.4V6.6Z' fill='none' stroke='%23000' stroke-opacity='.4'/%3E%3C/svg%3E");
+  --frame-ember: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M6 .75H18L23.25 6V18L18 23.25H6L.75 18V6Z' fill='%23231f22' fill-opacity='.96' stroke='%23ff9a3c' stroke-width='1.5'/%3E%3Cpath d='M6.6 2.7H17.4L21.3 6.6V17.4L17.4 21.3H6.6L2.7 17.4V6.6Z' fill='none' stroke='%23ff9a3c' stroke-opacity='.25'/%3E%3C/svg%3E");
+  /* Wool: a faint fibrous grain over the felt. */
+  --felt: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .92 0 0 0 0 .87 0 0 0 0 .78 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+html,
+body,
+#root {
+  font: 13px/1.42 var(--body);
+  color: var(--tallow);
+  background: var(--soot);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--brass-dark) transparent;
+}
+
+::selection {
+  background: rgba(255, 154, 60, 0.35);
+}
+
+h3 {
+  margin: 0 0 6px;
+  font: 600 20px/1.1 var(--display);
+  color: var(--tallow);
+}
+
+h4 {
+  margin: 10px 0 4px;
+  font: 600 15px/1.2 var(--display);
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--brass);
+}
+
+kbd {
+  display: inline-block;
+  min-width: 1.4em;
+  padding: 0 3px;
+  font: 600 10px/1.5 var(--body);
+  text-align: center;
+  color: var(--brass);
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(201, 164, 92, 0.35);
+  border-radius: 2px;
+}
+
+/* ------------------------------------------------------------------ panels */
+
+.panel {
+  border: 8px solid transparent;
+  border-image: var(--frame) 8 fill / 8px stretch;
+  border-radius: 0;
+  background: var(--felt);
+  background-clip: padding-box;
+  backdrop-filter: none;
+  box-shadow: none;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.5));
+}
+
+/* ------------------------------------------------------------------ controls */
+
+button {
+  font-family: var(--body);
+  color: var(--tallow);
+  background: linear-gradient(180deg, var(--woad-hi), var(--woad));
+  border: 1px solid #4a3f29;
+  border-radius: 2px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 236, 200, 0.1),
+    0 2px 0 rgba(0, 0, 0, 0.45);
+  transition:
+    border-color 0.12s,
+    color 0.12s;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--brass);
+  background: linear-gradient(180deg, #2f3a52, var(--woad-hi));
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.55);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--ember);
+  outline-offset: 2px;
+}
+
+button.on {
+  color: #fff4e3;
+  border-color: var(--ember);
+  background: linear-gradient(180deg, #3b2e27, #271f1d);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 154, 60, 0.3),
+    inset 0 0 14px rgba(255, 154, 60, 0.25),
+    0 2px 0 rgba(0, 0, 0, 0.45);
+}
+
+button.primary {
+  color: #2b1605;
+  font-weight: 600;
+  background: linear-gradient(180deg, #ffb766, var(--ember-deep));
+  border: 1px solid #ffd29a;
+  text-shadow: 0 1px 0 rgba(255, 240, 210, 0.35);
+}
+
+button.primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #ffc47f, #ee8a35);
+  border-color: #ffe2b8;
+}
+
+button.primary:disabled {
+  opacity: 0.45;
+}
+
+button.danger {
+  color: #fff;
+  border-color: var(--blood);
+  background: linear-gradient(180deg, #6b2b22, #4a1d18);
+}
+
+button.link,
+button.link:hover:not(:disabled) {
+  padding: 0;
+  color: var(--ember);
+  background: none;
+  border: none;
+  box-shadow: none;
+  transform: none;
+}
+
+button.link:hover:not(:disabled) {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+button.link.muted {
+  color: var(--tallow-dim);
+}
+
+button:disabled {
+  opacity: 0.45;
+}
+
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 28px;
+  padding: 0;
+}
+
+input,
+select,
+textarea {
+  font-family: var(--body);
+  color: var(--tallow);
+  background: rgba(8, 10, 15, 0.6);
+  border: 1px solid #3d3626;
+  border-radius: 2px;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--ember);
+  outline: none;
+}
+
+input[type='range'] {
+  accent-color: var(--ember);
+  box-shadow: none;
+  border: none;
+  background: none;
+}
+
+input[type='checkbox'] {
+  accent-color: var(--ember);
+}
+
+.chip {
+  padding: 1px 8px;
+  font-size: 11px;
+  color: var(--tallow);
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+}
+
+.good {
+  color: var(--lichen);
+}
+
+.bad {
+  color: var(--blood);
+}
+
+/* ------------------------------------------------------------------ join */
+
+.join {
+  background:
+    radial-gradient(ellipse at 50% 115%, rgba(255, 154, 60, 0.16), transparent 55%),
+    radial-gradient(ellipse at 50% -20%, #22324a, #0c0f16 70%);
+}
+
+.join-card {
+  border: 8px solid transparent;
+  border-image: var(--frame) 8 fill / 8px stretch;
+  border-radius: 0;
+  background: var(--felt);
+  background-clip: padding-box;
+  filter: drop-shadow(0 18px 30px rgba(0, 0, 0, 0.6));
+}
+
+.join-card h1 {
+  font: 700 46px/1 var(--display);
+  letter-spacing: 0;
+  color: var(--tallow);
+}
+
+.join-card h1 span {
+  color: var(--rime);
+  text-shadow: 0 0 18px rgba(195, 228, 243, 0.45);
+}
+
+.join-card label {
+  color: var(--tallow-dim);
+}
+
+/* ------------------------------------------------------------------ frost dial */
+
+.dial-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.dial {
+  position: relative;
+  width: 112px;
+  height: 112px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.55));
+}
+
+.dial svg {
+  display: block;
+}
+
+.dial .tick {
+  stroke: rgba(234, 223, 200, 0.3);
+  stroke-width: 1.3;
+}
+
+.dial .tick.iced {
+  stroke: var(--rime);
+}
+
+.dial .ice-arc {
+  stroke: rgba(195, 228, 243, 0.6);
+  stroke-width: 5;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 3px rgba(195, 228, 243, 0.9));
+  transition: stroke-dasharray 1.5s ease-out;
+}
+
+.dial.warn .ice-arc {
+  stroke: rgba(195, 228, 243, 0.8);
+}
+
+.dial.bad .ice-arc {
+  stroke: #e6f6ff;
+  stroke-width: 6;
+}
+
+.dial-face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-top: 2px;
+  pointer-events: none;
+}
+
+.dial-season {
+  font: 600 14px/1 var(--display);
+  color: var(--brass);
+}
+
+.dial-day {
+  font: 700 38px/0.9 var(--display);
+  color: var(--tallow);
+  font-variant-numeric: tabular-nums;
+}
+
+.dial-time {
+  margin-top: 1px;
+  font-size: 11px;
+  color: var(--tallow-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.dial-temp {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--tallow);
+}
+
+.dial-temp.cold {
+  color: var(--rime);
+}
+
+.dial-temp.hot {
+  color: var(--ember);
+}
+
+.dial-notes {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding-top: 10px;
+}
+
+.frost-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: var(--rime);
+  background: rgba(14, 22, 34, 0.85);
+  border: 1px solid rgba(195, 228, 243, 0.35);
+}
+
+.frost-chip.warn {
+  border-color: var(--rime);
+}
+
+.frost-chip.bad {
+  color: #fff;
+  border-color: #fff;
+  box-shadow: 0 0 10px rgba(195, 228, 243, 0.55);
+}
+
+.frost-chip .fc-short {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ clasp: players and speed */
+
+.clasp {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.pennants {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  max-width: 520px;
+}
+
+.pennant {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 16px 3px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--flag, #8a96a6) 85%, #fff 15%), color-mix(in srgb, var(--flag, #8a96a6) 70%, #000 30%));
+  border: none;
+  border-left: 3px solid var(--brass);
+  border-radius: 0;
+  box-shadow: none;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 9px) 50%, 100% 100%, 0 100%);
+}
+
+.pennant:hover:not(:disabled) {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--flag, #8a96a6) 75%, #fff 25%), color-mix(in srgb, var(--flag, #8a96a6) 80%, #000 20%));
+}
+
+.pennant:disabled {
+  opacity: 0.8;
+}
+
+.pennant.mine {
+  border-left-color: var(--ember);
+}
+
+.pennant.away,
+.pennant.offline {
+  opacity: 0.55;
+}
+
+.pennant.offline {
+  --flag: #4a5160;
+  font-weight: 400;
+}
+
+.pennant .stance-tag {
+  font: italic 600 11px var(--display);
+  color: #fff;
+}
+
+.pennant.war .stance-tag {
+  color: #ffd2c8;
+}
+
+.pennant-vote {
+  font-weight: 400;
+  opacity: 0.85;
+}
+
+.speed-plate {
+  display: grid;
+  grid-template-columns: auto auto auto;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 2px;
+  padding: 2px 4px;
+}
+
+.speed {
+  display: flex;
+  gap: 3px;
+  margin: 0;
+}
+
+.speed button {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  min-width: 0;
+  height: 28px;
+  padding: 0;
+  letter-spacing: 0;
+}
+
+.speed button.held {
+  border-color: rgba(255, 154, 60, 0.55);
+  border-style: dashed;
+}
+
+.speed-plate .sound {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.speed-plate .sound input[type='range'] {
+  width: 64px;
+}
+
+.speed-state {
+  grid-column: 1 / -1;
+  margin: 0;
+  max-width: 300px;
+  font-size: 11px;
+  color: var(--tallow-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.speed-state b {
+  color: var(--tallow);
+  font-weight: 600;
+}
+
+.speed-state .held-by {
+  color: var(--ember);
+}
+
+/* ------------------------------------------------------------------ command bar */
+
+.architect .bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  flex-wrap: nowrap;
+}
+
+.slots {
+  display: flex;
+  gap: 4px;
+}
+
+.slot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 62px;
+  height: 54px;
+  padding: 4px 2px 3px;
+}
+
+.slot .icon {
+  color: var(--tallow);
+}
+
+.slot:hover:not(:disabled) .icon {
+  color: #fff;
+}
+
+.slot.on .icon {
+  color: var(--ember);
+  filter: drop-shadow(0 0 5px rgba(255, 154, 60, 0.7));
+}
+
+.slot-label {
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.slot-key {
+  position: absolute;
+  top: 2px;
+  right: 3px;
+  min-width: 0;
+  padding: 0;
+  font-size: 9px;
+  line-height: 1;
+  color: var(--brass);
+  background: none;
+  border: none;
+  opacity: 0.85;
+}
+
+.rivet {
+  width: 7px;
+  height: 7px;
+  margin: 0 3px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #f6dda4, #8a6a2f 70%);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
+  flex-shrink: 0;
+}
+
+.tool-menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: min(760px, calc(100vw - 20px));
+}
+
+.tool-menu button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  max-width: 230px;
+  padding: 5px 9px;
+  text-align: left;
+}
+
+.tool-menu button span {
+  font-weight: 600;
+}
+
+.tool-menu button small {
+  font-size: 11px;
+  color: var(--tallow-dim);
+}
+
+.tool-hint {
+  font-size: 12px;
+}
+
+/* ------------------------------------------------------------------ letters, alerts, toasts */
+
+.letter {
+  position: relative;
+  padding: 6px 9px 6px 20px;
+  color: var(--tallow);
+  background: linear-gradient(180deg, rgba(36, 44, 61, 0.96), rgba(24, 30, 42, 0.96));
+  border: 1px solid #3f3726;
+  border-left: 1px solid #3f3726;
+  border-radius: 0;
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+}
+
+/* A wax seal, coloured by the news. */
+.letter::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 10px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--brass);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35);
+}
+
+.letter.bad::before {
+  background: var(--blood);
+}
+
+.letter.good::before {
+  background: var(--lichen);
+}
+
+.letter.choice {
+  border-color: var(--ember);
+  background: linear-gradient(180deg, rgba(48, 38, 33, 0.97), rgba(30, 25, 25, 0.97));
+}
+
+.letter.choice::before {
+  background: var(--ember);
+  box-shadow:
+    0 0 0 2px rgba(0, 0, 0, 0.35),
+    0 0 8px rgba(255, 154, 60, 0.8);
+}
+
+.letter .choice-head b {
+  font: 600 16px/1.15 var(--display);
+}
+
+.letter-body {
+  padding: 0;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: none;
+  box-shadow: none;
+}
+
+.letter-body:hover:not(:disabled) {
+  background: none;
+  color: #fff;
+}
+
+.letter-close,
+.alert-close,
+.toast-close,
+.close {
+  color: var(--tallow-dim);
+  background: none;
+  border: none;
+  box-shadow: none;
+}
+
+.letter-close:hover:not(:disabled),
+.alert-close:hover:not(:disabled),
+.toast-close:hover:not(:disabled),
+.close:hover:not(:disabled) {
+  color: var(--ember);
+  background: none;
+}
+
+.alert {
+  padding: 4px 10px 4px 18px;
+  font-size: 12px;
+  color: var(--tallow);
+  background: linear-gradient(90deg, rgba(20, 25, 36, 0.92), rgba(32, 40, 56, 0.96));
+  border: none;
+  border-right: 3px solid var(--brass);
+  border-radius: 0;
+  clip-path: polygon(10px 0, 100% 0, 100% 100%, 10px 100%, 0 50%);
+}
+
+.alert.critical,
+.alert.bad {
+  border-right-color: var(--blood);
+}
+
+.alert.critical {
+  background: linear-gradient(90deg, rgba(60, 22, 18, 0.95), rgba(88, 32, 26, 0.96));
+}
+
+.toast {
+  border: 8px solid transparent;
+  border-image: var(--frame) 8 fill / 8px stretch;
+  border-radius: 0;
+  background: var(--felt);
+  background-clip: padding-box;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5));
+}
+
+.toast.bad {
+  border-image: var(--frame-ember) 8 fill / 8px stretch;
+}
+
+/* ------------------------------------------------------------------ cards and panels */
+
+.control-bar,
+.caravan-card {
+  border-image: var(--frame-ember) 8 fill / 8px stretch;
+}
+
+.hint {
+  border-image: var(--frame-ember) 8 fill / 8px stretch;
+  border-left-width: 8px;
+}
+
+.hint-head b,
+.checklist-head b,
+.checklist-head summary {
+  font: 600 16px/1.15 var(--display);
+}
+
+.trade-panel h3,
+.work-panel h3,
+.colonists-panel h3,
+.events-panel h3,
+.inspect h3 {
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(201, 164, 92, 0.3);
+}
+
+.minimap {
+  padding: 2px;
+}
+
+.minimap canvas {
+  border-radius: 0;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.6);
+}
+
+.chat .lines .system {
+  color: var(--tallow-dim);
+  font-style: italic;
+}
+
+/* ================================================================== HUD layout */
+
+#root .hud {
+  --gap: 10px;
+  --dial: 112px;
+  --bar-h: 76px;
+  --right-col: 200px;
+}
+
+#root .hud > .dial-wrap {
+  position: absolute;
+  top: var(--gap);
+  left: var(--gap);
+}
+
+#root .hud > .clasp {
+  position: absolute;
+  top: var(--gap);
+  right: var(--gap);
+}
+
+#root .hud > .minimap {
+  position: absolute;
+  top: 98px;
+  right: var(--gap);
+}
+
+#root .hud > .alerts {
+  top: 300px;
+  right: var(--gap);
+}
+
+#root .hud > .feed {
+  top: calc(var(--gap) * 2 + var(--dial));
+  left: var(--gap);
+  bottom: calc(var(--bar-h) + var(--gap) * 2);
+  width: 300px;
+  margin-top: 0;
+}
+
+#root .hud > .architect {
+  left: 50%;
+  right: auto;
+  bottom: var(--gap);
+  transform: translateX(-50%);
+  align-items: center;
+  max-width: calc(100vw - 20px);
+}
+
+#root .hud > .inspect {
+  right: var(--gap);
+  bottom: calc(var(--bar-h) + var(--gap) * 2);
+  top: auto;
+  max-height: calc(100vh - 420px);
+  min-height: 0;
+}
+
+#root .hud > .control-bar,
+#root .hud > .caravan-card {
+  top: var(--gap);
+}
+
+#root .hud > .control-bar ~ .caravan-card {
+  top: 62px;
+}
+
+#root .hud > .toasts {
+  top: 64px;
+}
+
+#root .hud > .trade-panel,
+#root .hud > .work-panel,
+#root .hud > .colonists-panel,
+#root .hud > .events-panel {
+  bottom: calc(var(--bar-h) + var(--gap) * 2);
+  max-height: calc(100vh - var(--bar-h) - 150px);
+}
+
+/* Narrower windows: tighter slots, then icons only. */
+@media (max-width: 1240px) {
+  #root .slot {
+    width: 54px;
+  }
+
+  #root .slot-label {
+    font-size: 10px;
+  }
+}
+
+@media (max-width: 1060px) {
+  #root .hud {
+    --bar-h: 50px;
+  }
+
+  #root .slot {
+    width: 42px;
+    height: 40px;
+  }
+
+  #root .slot-label {
+    display: none;
+  }
+
+  #root .hud > .feed {
+    width: 260px;
+  }
+}
+
+@media (max-width: 760px) {
+  #root .hud {
+    --dial: 88px;
+  }
+
+  #root .dial,
+  #root .dial svg {
+    width: 88px;
+    height: 88px;
+  }
+
+  #root .dial-day {
+    font-size: 28px;
+  }
+
+  #root .dial-time {
+    display: none;
+  }
+
+  #root .hud > .feed {
+    width: min(260px, calc(100vw - 20px));
+  }
+
+  #root .speed-plate .sound input[type='range'] {
+    display: none;
+  }
+
+  #root .hud > .alerts {
+    top: 98px;
+  }
+
+  #root .frost-chip .fc-long {
+    display: none;
+  }
+
+  #root .frost-chip .fc-short {
+    display: inline;
+  }
+}
+
+@media (max-height: 560px) {
+  #root .hud {
+    --dial: 84px;
+  }
+
+  #root .dial,
+  #root .dial svg {
+    width: 84px;
+    height: 84px;
+  }
+
+  #root .dial-day {
+    font-size: 26px;
+  }
+
+  #root .dial-time {
+    display: none;
+  }
+
+  #root .hud > .minimap canvas {
+    width: 130px;
+    height: 130px;
+  }
+
+  #root .hud > .alerts {
+    top: 248px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dial .ice-arc {
+    transition: none;
+  }
+
+  button:active:not(:disabled) {
+    transform: none;
+  }
+}
+
+.frost-chip,
+.chip {
+  border-radius: 2px;
+}
+
+/* ------------------------------------------------------------------ no tracked all-caps labels */
+
+.inspect .kind,
+.diplo-detail h4,
+.relations-web h4,
+.journey-cols h4,
+.new-tag,
+.player .stance-tag {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.inspect .kind {
+  font: italic 500 13px/1.2 var(--display);
+  color: var(--brass);
+  opacity: 1;
+}
+
+.diplo-detail h4,
+.relations-web h4,
+.journey-cols h4 {
+  font: 600 15px/1.2 var(--display);
+  color: var(--brass);
+  opacity: 1;
+}
+
+.new-tag {
+  font: italic 600 11px var(--display);
+  color: var(--ember);
+}
+
+/* Tips are advice, not decisions: the quiet brass frame. Decisions keep the ember. */
+.hint {
+  border-image: var(--frame) 8 fill / 8px stretch;
+}
+
+/* Alerts hang beside the map, clear of the selection card below it. */
+#root .hud > .alerts {
+  top: 98px;
+  right: calc(var(--gap) * 2 + 188px);
+}
+
+@media (max-width: 760px) {
+  #root .hud > .alerts {
+    right: var(--gap);
+  }
+}
+
+@media (max-height: 560px) {
+  #root .hud > .alerts {
+    top: 98px;
+    right: calc(var(--gap) * 2 + 138px);
+  }
+}
+
+/* Need meters: a soot groove with a tallow fill that goes blood-red when low. */
+.meter {
+  height: 7px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid #3a3324;
+  border-radius: 0;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.meter > div {
+  height: 100%;
+  border-radius: 0;
+  background: linear-gradient(180deg, #f1e6cf, #b9ab8c);
+}
+
+.meter > div.low {
+  background: linear-gradient(180deg, #f08a73, var(--blood));
+}
+
+#root .hud > .minimap,
+#root .hud > .alerts {
+  top: 108px;
+}
+
+@media (max-height: 560px) {
+  #root .hud > .minimap,
+  #root .hud > .alerts {
+    top: 104px;
+  }
+}
+
+/* The frost chip: the full sentence where there's room, "29d" where there isn't. */
+#root .frost-chip .fc-long {
+  display: inline;
+}
+
+#root .frost-chip .fc-short {
+  display: none;
+}
+
+@media (max-width: 1100px) {
+  #root .frost-chip .fc-long {
+    display: none;
+  }
+
+  #root .frost-chip .fc-short {
+    display: inline;
+  }
+}
