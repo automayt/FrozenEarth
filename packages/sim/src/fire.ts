@@ -53,7 +53,8 @@ export function fireTick(w: World): void {
   const spreadChance = 0.05 * (dry ? 1.8 : 1) * (rain ? 0.25 : 1);
   const ignite: number[] = [];
   const burntFactions = new Set<number>();
-  for (const cell of [...w.fireCells]) {
+  // In cell order, not the order the fires started: a loaded save can't know that order, and the rolls must match.
+  for (const cell of [...w.fireCells].sort((a, b) => a - b)) {
     let level = m.fire[cell];
     const fuel = fuelAt(w, cell);
     if (!fuel) {
