@@ -1,5 +1,5 @@
 import type { Graphics } from 'pixi.js';
-import { BUILDINGS, ITEMS, WEAPONS } from '@fe/defs';
+import { ANIMALS, BUILDINGS, ITEMS, WEAPONS } from '@fe/defs';
 import { pawnPosition } from '@fe/protocol';
 import { attackRefusal, atWar, dispositionOf, type Pawn, type Rect, MAX_VIA } from '@fe/sim';
 import { command } from '../net';
@@ -164,6 +164,22 @@ export class Input {
           const n = ids.length;
           store.toast(`Marked ${n} animal${n > 1 ? 's' : ''} for hunting. Colonists with a bow or rifle will go after ${n > 1 ? 'them' : 'it'}.`, 'good');
         } else store.toast('No animals there. Drag over the animals you want hunted.', 'neutral');
+        break;
+      }
+      case 'tame': {
+        const x0 = Math.min(rect.x0, rect.x1);
+        const x1 = Math.max(rect.x0, rect.x1);
+        const y0 = Math.min(rect.y0, rect.y1);
+        const y1 = Math.max(rect.y0, rect.y1);
+        const ids: number[] = [];
+        for (const e of store.mirror.entities.values()) {
+          if (e.kind === 'pawn' && e.species && !e.tamed && ANIMALS[e.species]?.tame && e.x >= x0 - 1 && e.x <= x1 + 1 && e.y >= y0 - 1 && e.y <= y1 + 1) ids.push(e.id);
+        }
+        if (ids.length) {
+          command({ c: 'tame', pawns: ids, on: true });
+          const n = ids.length;
+          store.toast(`Marked ${n} animal${n > 1 ? 's' : ''} for taming. Colonists on Hunt work will go and win ${n > 1 ? 'them' : 'it'} over.`, 'good');
+        } else store.toast('No animals there that can be tamed. Deer, muskox and hares can; wolves cannot.', 'neutral');
         break;
       }
     }

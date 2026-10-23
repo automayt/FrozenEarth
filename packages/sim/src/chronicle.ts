@@ -20,6 +20,8 @@ export const MILESTONES: Record<string, string> = {
   first_birth: 'A child was born',
   first_winter: 'Lived through a winter',
   frost: 'The frost arrived',
+  first_find: 'Found something out in the wilds',
+  first_tame: 'Tamed an animal',
 };
 
 /** Most tales a colony keeps (the oldest go first). */

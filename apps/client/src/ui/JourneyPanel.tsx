@@ -4,7 +4,7 @@ import { caravanLoad, carryCapacity, LOAD_RADIUS, MAX_VIA, sledgesIn, type Carav
 import { command } from '../net';
 import { store, useStore } from '../store';
 import { daysText, frostDays } from './OrderPreview';
-import { candidates, crossings, detourAround, hoursFor, loadable, passCells, planLoad, routeLength, siteTrouble, type Point } from './journey';
+import { beastsAt, candidates, crossings, detourAround, hoursFor, landmarksAlong, loadable, passCells, planLoad, routeLength, siteTrouble, type Point } from './journey';
 
 const goodsText = (lines: [string, number][], max = 6) => {
   const sorted = [...lines].sort((a, b) => (ITEMS[b[0]]?.marketValue ?? 0) * b[1] - (ITEMS[a[0]]?.marketValue ?? 0) * a[1]);
@@ -27,12 +27,14 @@ export function JourneyPanel() {
   const members = j.members ?? people.map((p) => p.id);
   const take = j.take ?? ITEM_CATEGORIES.map((c) => c.key);
   const goods = loadable(m, me, f.home);
-  const plan = planLoad(goods, members.length, j.take ?? []);
+  const beasts = beastsAt(m, me, f.home);
+  const plan = planLoad(goods, members.length, j.take ?? [], beasts.pack, beasts.draft);
   const points: Point[] = j.dest ? [f.home, ...j.via, j.dest] : [];
   const length = routeLength(points);
   const hours = hoursFor(length, plan.capacity ? plan.bulk / plan.capacity : 0);
   const towns = j.dest ? crossings(m, me, points, plan.cargo) : [];
   const passes = j.dest ? passCells(m, points) : 0;
+  const sights = j.dest ? landmarksAlong(m, me, points) : [];
   const days = j.dest ? frostDays(j.dest.x, j.dest.y) : Infinity;
   const trouble = j.dest ? siteTrouble(m, me, s.estTick(), j.dest.x, j.dest.y) : null;
   const hereDays = frostDays(f.home.x, f.home.y);
@@ -91,7 +93,17 @@ export function JourneyPanel() {
               </li>
             ))}
             {passes > 0 && <li className="bad">The route runs through mountain passes: raiders sometimes lie in wait there.</li>}
-            {!towns.length && !passes && <li className="good muted">Nothing known on the road.</li>}
+            {sights.map((l) => (
+              <li key={`${l.x},${l.y}`} className="good">
+                Passes {l.off <= 2 ? 'right by' : `${l.off} cells from`} {l.label.startsWith('a') || l.label.startsWith('o') ? 'an' : 'a'} {l.label}: your people will look in on the way{l.off > 2 ? ' if you route it closer' : ''}.{' '}
+                {l.off > 2 && j.via.length < MAX_VIA && (
+                  <button className="link" onClick={() => set({ via: [...j.via, { x: l.x, y: l.y + 1 }] })}>
+                    Go by it
+                  </button>
+                )}
+              </li>
+            ))}
+            {!towns.length && !passes && !sights.length && <li className="good muted">Nothing known on the road.</li>}
           </ul>
         </>
       )}
@@ -123,7 +135,8 @@ export function JourneyPanel() {
         </div>
         <span className="small">
           Carrying {Math.round(plan.bulk)} of {plan.capacity}
-          {plan.sledges ? ` (${plan.sledges} sledge${plan.sledges > 1 ? 's' : ''})` : ' · a sledge (Workbench) carries 300 more'} · food for about {Math.max(0, Math.floor(food / Math.max(1, members.length)))} meals each
+          {plan.sledges ? ` (${plan.sledges} sledge${plan.sledges > 1 ? 's' : ''})` : ' · a sledge (Workbench) carries 300 more'}
+          {beasts.names.length ? ` · ${beasts.names.join(', ')} under packs` : ' · tamed deer and muskox carry more'} · food for about {Math.max(0, Math.floor(food / Math.max(1, members.length)))} meals each
         </span>
         {plan.cargo.length > 0 && <p className="small">Takes: {goodsText(plan.cargo)}</p>}
         {plan.left.length > 0 && <p className="small muted">Leaves behind: {goodsText(plan.left)}</p>}
@@ -144,7 +157,8 @@ export function CaravanCard() {
   const c: Caravan | undefined = f?.caravan;
   const [armed, setArmed] = useState(0);
   if (!c) return null;
-  const cap = carryCapacity(c.members.length, sledgesIn(c.cargo));
+  const herd = beastsAt(s.mirror, s.me?.faction ?? 0, { x: 0, y: 0 }, c.beasts ?? []);
+  const cap = carryCapacity(c.members.length, sledgesIn(c.cargo), herd.pack, herd.draft);
   const food = c.cargo.filter(([d]) => ITEMS[d]?.nutrition).reduce((a, [d, n]) => a + (ITEMS[d].nutrition ?? 0) * n, 0);
   const pct = c.route.length ? Math.round((Math.min(c.leg, c.route.length) / c.route.length) * 100) : 0;
   const status =
@@ -157,7 +171,7 @@ export function CaravanCard() {
         : c.phase === 'halt'
           ? 'Stopped'
           : c.waiting !== undefined
-            ? 'Waiting on your answer to a toll'
+            ? 'Waiting on your answer'
             : `On the road, ${pct}% of the way`;
   const at = c.at;
   return (
@@ -167,7 +181,8 @@ export function CaravanCard() {
       {c.phase !== 'muster' && (
         <span className="muted small">
           {c.members.length}
-          {c.wounded?.length ? ` + ${c.wounded.length} wounded carried` : ''} · carrying {Math.round(caravanLoad(c))}/{cap} · food {Math.floor(food / Math.max(1, c.members.length))} meals each
+          {c.wounded?.length ? ` + ${c.wounded.length} wounded carried` : ''}
+          {herd.names.length ? ` + ${herd.names.join(', ')}` : ''} · carrying {Math.round(caravanLoad(c))}/{cap} · food {Math.floor(food / Math.max(1, c.members.length))} meals each
         </span>
       )}
       {at !== undefined && (

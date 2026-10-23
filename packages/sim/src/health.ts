@@ -355,6 +355,12 @@ export function killPawn(w: World, p: Pawn, cause: string, by?: Pawn): void {
     // A carcass: meat and a hide. Wolves eat their share where it falls.
     const eaten = by?.species && ANIMALS[by.species]?.predator;
     if (eaten) predatorFed(w, by);
+    // One of a colony's animals: the story remembers it.
+    if (p.tamed) {
+      const how = eaten ? 'was killed by wolves' : `died of ${cause}`;
+      w.message(p.tamed, `${p.name}, the colony's ${sp.label.toLowerCase()}, ${how}.`, 'bad', cell);
+      tell(w, p.tamed, `${p.name} the ${sp.label.toLowerCase()} ${how}.`);
+    }
     const meat = Math.round(sp.meat * (eaten ? 0.4 : 1));
     if (meat > 0) w.placeItemNear('meat', meat, cell);
     if (sp.hide > 0) w.placeItemNear('cloth', sp.hide, cell);

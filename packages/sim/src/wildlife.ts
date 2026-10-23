@@ -5,6 +5,7 @@ import { maybeReachable } from './pathfinding';
 import { dangerZones } from './settlements';
 import type { Faction, Job, Pawn } from './types';
 import { rk, type World } from './world';
+import { calmToward, tamedThink, tamingThink } from './taming';
 
 /** Prey on the map per this many cells of area. */
 const CELLS_PER_PREY = 1100;
@@ -117,12 +118,16 @@ export function animalThink(w: World, p: Pawn): Job {
   if (def.predator) return predatorThink(w, p, def);
   const attacker = p.aggro ? w.get<Pawn>(p.aggro) : undefined;
   if (attacker && def.defends && def.bite > 0) return { type: 'attack', stage: 0, target: attacker.id, forced: true, chase: true, next: 0, until: w.tick + 500 };
+  if (!attacker) {
+    const held = tamingThink(w, p);
+    if (held) return held;
+  }
   let threat = attacker ? w.cellOf(attacker) : -1;
   if (threat < 0) {
     let bestD = def.shy;
     for (const id of w.kinds.pawn) {
       const o = w.get<Pawn>(id)!;
-      if (!(isPerson(w, o) || speciesOf(o)?.predator)) continue;
+      if (!(isPerson(w, o) || speciesOf(o)?.predator) || calmToward(p, o)) continue;
       const d = cellDistance(w, here, w.cellOf(o));
       if (d < bestD) {
         bestD = d;
@@ -133,6 +138,10 @@ export function animalThink(w: World, p: Pawn): Job {
   if (threat >= 0) {
     const flee = fleeFrom(w, p, threat, 12);
     if (flee) return flee;
+  }
+  if (p.tamed) {
+    const j = tamedThink(w, p, (x, y, spread) => openNear(w, p, x, y, spread));
+    if (j) return j;
   }
   return grazeJob(w, p, def);
 }
@@ -274,6 +283,8 @@ export function markHunt(w: World, faction: number, ids: unknown, on: boolean): 
   for (const id of ids.slice(0, 100)) {
     const p = w.get<Pawn>(Number(id));
     if (!p || p.kind !== 'pawn' || !p.species) continue;
+    // Nobody's animals are fair game: not your own, not another colony's.
+    if (on && p.tamed) continue;
     if (on) p.hunted = faction;
     else if (p.hunted === faction) p.hunted = 0;
     w.markDirty(p);
@@ -290,7 +301,7 @@ export function giveHunt(w: World, p: Pawn): Job | null {
   const danger = dangerZones(w, p.faction);
   for (const id of w.kinds.pawn) {
     const a = w.get<Pawn>(id)!;
-    if (a.hunted !== p.faction || !a.species || w.reservedByOther(rk.e(a.id), p.id)) continue;
+    if (a.hunted !== p.faction || !a.species || a.tamed || w.reservedByOther(rk.e(a.id), p.id)) continue;
     if (danger.some((z) => Math.hypot(a.x - z.x, a.y - z.y) <= z.r)) continue;
     const c = w.cellOf(a);
     const d = w.dist(here, c);

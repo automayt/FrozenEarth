@@ -32,6 +32,14 @@ const RULES: { test: RegExp; title: string; tone: Moment['tone'] }[] = [
   { test: /is heartbroken over/, title: 'Heartbreak', tone: 'bad' },
   { test: /(Someone is watching the colony|they were asking about you|they come at night|Someone is digging toward you|Scouts, maybe)/, title: 'An omen', tone: 'bad' },
   { test: /has fallen\. Whatever they had/, title: 'A town has fallen', tone: 'neutral' },
+  // The world and discovery.
+  { test: /wolves came out of it/, title: 'Wolves in the wreck!', tone: 'bad' },
+  { test: /The ice gave way under/, title: 'Through the ice!', tone: 'bad' },
+  { test: /has tamed a/, title: 'A new companion', tone: 'good' },
+  { test: /falls in behind the caravan/, title: 'A stray joins the caravan', tone: 'good' },
+  { test: /found a hot spring/, title: 'A hot spring', tone: 'good' },
+  { test: /lines on it fall into place/, title: 'The monolith speaks', tone: 'good' },
+  { test: /has frozen over\. The ice will bear/, title: 'The lake has frozen', tone: 'neutral' },
 ];
 
 const SHOW_MS = 4200;

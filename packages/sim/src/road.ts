@@ -4,6 +4,7 @@ import { allied } from './pacts';
 import { raidPoints, startRaid } from './raids';
 import { dispositionOf, FRIENDLY_AT, goodwillOf, GUARD_REACH, liveTowns, shiftGoodwill } from './settlements';
 import type { Caravan, Faction } from './types';
+import { roadFinds } from './finds';
 import type { World } from './world';
 
 /**
@@ -42,6 +43,7 @@ export function roadEncounters(w: World, f: Faction, c: Caravan): void {
   towns(w, f, c, at);
   ambush(w, f, c, at);
   meetOthers(w, f, c, at);
+  roadFinds(w, f, c, at);
 }
 
 function towns(w: World, f: Faction, c: Caravan, at: number): void {
