@@ -33,3 +33,5 @@ export { constructCost, constructWork } from './jobs';
 export { MEMBER_CARRY, SLEDGE_CARRY, LOAD_RADIUS, MAX_VIA, bulkOf, cargoBulk, caravanLoad, CARRIED_BULK, sledgesIn, carryCapacity, planRoute, chooseLoad } from './caravan';
 export { ROAD, cargoValue, tollFor, isPass } from './road';
 export { MILESTONES } from './chronicle';
+export { TALK, bondOf, opinion, chemistry, FRIEND_AT, RIVAL_AT, LOVE_AT, type Social, type TalkKind, type Bond } from './social';
+export { OPENING, omenText } from './opening';

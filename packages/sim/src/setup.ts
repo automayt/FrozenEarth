@@ -1,3 +1,4 @@
+import { beginOpening } from './opening';
 import { TERRAINS } from '@fe/defs';
 import { generateMap } from './mapgen';
 import { FACTION_COLORS, pawnName } from './names';
@@ -214,6 +215,7 @@ export function addPlayerFaction(w: World, name: string, colonists = 3, at?: { x
   const f: Faction = { id, name, color: FACTION_COLORS[players % FACTION_COLORS.length], home, isPlayer: true };
   w.factions.set(id, f);
   w.dirty.factions.add(id);
+  beginOpening(w, id);
   // Anyone already on the map who shares the new player's name gets another.
   const names = w.playerNames();
   for (const pid of w.kinds.pawn) {

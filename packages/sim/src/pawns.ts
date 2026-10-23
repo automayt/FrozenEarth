@@ -1,6 +1,7 @@
 import { caravanJob, caravanPace, inCaravan } from './caravan';
 import { APPAREL, BUILDINGS, COMFORT_MAX, COMFORT_MIN, ITEMS, MAX_SKILL, SKILL_LABELS, skillSpeed, xpToNext, type SkillKey } from '@fe/defs';
-import { conditionOf, effectsOf, type Effects } from './health';
+import { conditionOf, effectsOf, hasCondition, type Effects } from './health';
+import { sleepTime } from './social';
 import { atGoal, findPath, makePathState } from './pathfinding';
 import { runJob } from './jobs';
 import { findWork } from './work';
@@ -179,9 +180,11 @@ function think(w: World, p: Pawn): void {
   if (!job && exposureSeverity(p) > 0.3 && needsWarmth(w, p, e)) job = warmthJob(w, p, e);
   if (!job && e.bedRest) job = findSleep(w, p, true);
   if (!job && needsWarmth(w, p, e)) job = warmthJob(w, p, e);
-  if (!job && (n.rest < 0.2 || (w.isNight() && n.rest < 0.8))) job = findSleep(w, p, false);
+  if (!job && (n.rest < 0.2 || (sleepTime(w, p) && n.rest < 0.8))) job = findSleep(w, p, false);
   if (!job && !e.noWork) job = findApparel(w, p);
   if (!job && !e.noWork) job = findWork(w, p);
+  // Refusing to work out in the cold: go and sit somewhere warm instead.
+  if (!job && e.noWork && hasCondition(p, 'cold_strike')) job = warmthJob(w, p, e);
   if (!job) job = wanderJob(w, p);
   p.job = job;
   w.markDirty(p);

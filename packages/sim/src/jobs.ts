@@ -15,6 +15,7 @@ import { coverSpot, seeksCover, weaponFor } from './combat';
 import { startFire } from './fire';
 import { controlTick } from './control';
 import { threatTo } from './shelter';
+import { sleepTime } from './social';
 import type { World } from './world';
 
 export type JobResult = 'continue' | 'done' | 'fail';
@@ -709,7 +710,7 @@ function sleep(w: World, p: Pawn, j: J<'sleep'>): JobResult {
   // Settlers keep to the village's hours: abed until morning.
   if (w.isNight() && w.factions.get(p.faction)?.settlement) return 'continue';
   if (p.needs.rest >= 1) return 'done';
-  if (!w.isNight() && p.needs.rest > 0.95) return 'done';
+  if (!sleepTime(w, p) && p.needs.rest > 0.95) return 'done';
   return 'continue';
 }
 

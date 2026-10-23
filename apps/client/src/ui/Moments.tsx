@@ -27,6 +27,10 @@ const RULES: { test: RegExp; title: string; tone: Moment['tone'] }[] = [
   { test: /caravan has arrived/, title: 'Home at last', tone: 'good' },
   { test: /(has joined your colony|joins your colony)/, title: 'A new colonist', tone: 'good' },
   { test: /The frost line has reached your colony/, title: 'The frost is here', tone: 'bad' },
+  { test: /have fallen in love/, title: 'Love', tone: 'good' },
+  { test: /was born today/, title: 'A child is born', tone: 'good' },
+  { test: /is heartbroken over/, title: 'Heartbreak', tone: 'bad' },
+  { test: /(Someone is watching the colony|they were asking about you|they come at night|Someone is digging toward you|Scouts, maybe)/, title: 'An omen', tone: 'bad' },
   { test: /has fallen\. Whatever they had/, title: 'A town has fallen', tone: 'neutral' },
 ];
 

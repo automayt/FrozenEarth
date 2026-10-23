@@ -367,6 +367,88 @@ export const CONDITIONS: Record<string, ConditionDef> = {
     hours: [36, 72],
     stages: [{ minSeverity: 0, label: '', mood: 0.18 }],
   },
+  // Bonds between colonists (see social.ts in the sim).
+  heartbroken: {
+    key: 'heartbroken',
+    label: 'Heartbroken',
+    kind: 'mood',
+    description: 'Lost the one they loved.',
+    hours: [120, 192],
+    stages: [{ minSeverity: 0, label: '', mood: -0.25, workMult: 0.85 }],
+  },
+  lost_friend: {
+    key: 'lost_friend',
+    label: 'Lost a friend',
+    kind: 'mood',
+    description: 'A close friend died.',
+    hours: [72, 120],
+    stages: [{ minSeverity: 0, label: '', mood: -0.1 }],
+  },
+  brawled: {
+    key: 'brawled',
+    label: 'Got into a fight',
+    kind: 'mood',
+    description: 'Came to blows with someone in the colony.',
+    hours: [16, 30],
+    stages: [{ minSeverity: 0, label: '', mood: -0.08 }],
+  },
+  comforted: {
+    key: 'comforted',
+    label: 'Comforted',
+    kind: 'mood',
+    description: 'Someone listened when it mattered.',
+    hours: [8, 16],
+    stages: [{ minSeverity: 0, label: '', mood: 0.08 }],
+  },
+  vindicated: {
+    key: 'vindicated',
+    label: 'Vindicated',
+    kind: 'mood',
+    description: 'The colony took their side in a quarrel.',
+    hours: [24, 36],
+    stages: [{ minSeverity: 0, label: '', mood: 0.08 }],
+  },
+  slighted: {
+    key: 'slighted',
+    label: 'Slighted',
+    kind: 'mood',
+    description: 'Felt let down by the colony.',
+    hours: [30, 48],
+    stages: [{ minSeverity: 0, label: '', mood: -0.1 }],
+  },
+  feasted: {
+    key: 'feasted',
+    label: 'Feasted',
+    kind: 'mood',
+    description: 'Ate and sang with everyone at a feast.',
+    hours: [24, 36],
+    stages: [{ minSeverity: 0, label: '', mood: 0.14 }],
+  },
+  catharsis: {
+    key: 'catharsis',
+    label: 'Catharsis',
+    kind: 'mood',
+    description: 'Let it all out, and feels lighter for it.',
+    hours: [20, 30],
+    stages: [{ minSeverity: 0, label: '', mood: 0.1 }],
+  },
+  newborn: {
+    key: 'newborn',
+    label: 'New life',
+    kind: 'mood',
+    description: 'A child was born in the colony.',
+    hours: [48, 72],
+    stages: [{ minSeverity: 0, label: '', mood: 0.12 }],
+  },
+  cold_strike: {
+    key: 'cold_strike',
+    label: 'Refusing the cold',
+    kind: 'mental',
+    description: 'Will not work outdoors in this freeze. Heads somewhere warm and waits it out.',
+    hours: [3, 6],
+    noWork: true,
+    stages: [{ minSeverity: 0, label: '', mood: -0.03 }],
+  },
   dread: {
     key: 'dread',
     label: 'Dread',
@@ -400,6 +482,16 @@ export interface TraitDef {
   conflicts?: string[];
   /** Never rolled randomly; only granted by events. */
   special?: boolean;
+  /** Only colonists roll it: it shows in how they live together, which towns and raiders don't model. */
+  colonistOnly?: boolean;
+  /** Refuses outdoor work when it is colder than this outside (degrees C). */
+  coldStrike?: number;
+  /** Sleeps by day and works by night. */
+  nightOwl?: boolean;
+  /** How warmly they talk to people: positive comforts and charms, negative insults (about -1..1). */
+  warmth?: number;
+  /** Multiplies the chance a close friendship turns to love. */
+  romance?: number;
 }
 
 export const TRAITS: Record<string, TraitDef> = {
@@ -418,13 +510,20 @@ export const TRAITS: Record<string, TraitDef> = {
   volatile: { key: 'volatile', label: 'Volatile', description: 'Snaps under stress much more easily.', breakMult: 2.5, conflicts: ['steady'] },
   steady: { key: 'steady', label: 'Steady nerves', description: 'Rarely breaks down.', breakMult: 0.4, conflicts: ['volatile'] },
   cold_blooded: { key: 'cold_blooded', label: 'Northerner', description: 'Grew up in the cold. Tolerates it far better.', coldShift: -10, heatShift: -4, conflicts: ['heat_lover'] },
-  heat_lover: { key: 'heat_lover', label: 'Southerner', description: 'Loves the heat, hates the cold.', coldShift: 5, heatShift: 8, conflicts: ['cold_blooded'] },
+  heat_lover: { key: 'heat_lover', label: 'Southerner', description: 'Loves the heat, hates the cold. Downs tools rather than work outdoors in a freeze.', coldShift: 5, heatShift: 8, coldStrike: 0, conflicts: ['cold_blooded'] },
+  kind: { key: 'kind', label: 'Kind', description: 'Comforts the downcast. People warm to them.', warmth: 0.5, conflicts: ['abrasive'], colonistOnly: true },
+  abrasive: { key: 'abrasive', label: 'Abrasive', description: 'Says exactly what they think. Rubs people the wrong way.', warmth: -0.6, conflicts: ['kind'], colonistOnly: true },
+  romantic: { key: 'romantic', label: 'Romantic', description: 'Falls in love easily, and hard.', romance: 2.5, colonistOnly: true },
+  night_owl: { key: 'night_owl', label: 'Night owl', description: 'Sleeps through the day and works through the night.', nightOwl: true, conflicts: ['sleepyhead'], colonistOnly: true },
   // Granted by events only.
   child: { key: 'child', label: 'Child', description: 'Too young for hard labour. Works at half speed.', workMult: 0.5, moveMult: 0.9, special: true },
   pilgrim: { key: 'pilgrim', label: 'Pilgrim of the Center', description: 'Walked out of the frozen heart of the world. Tireless, calm, and strange.', workMult: 1.3, restDrain: 0.6, breakMult: 0.1, coldShift: -15, special: true },
 };
 
-export const RANDOM_TRAITS = Object.values(TRAITS).filter((t) => !t.special);
+/** Traits anyone may be born with (townsfolk and raiders roll from these). */
+export const RANDOM_TRAITS = Object.values(TRAITS).filter((t) => !t.special && !t.colonistOnly);
+/** Traits a colonist may be born with. */
+export const COLONIST_TRAITS = Object.values(TRAITS).filter((t) => !t.special);
 
 /** Pain at or above this knocks a pawn down. */
 export const DOWNED_PAIN = 0.8;

@@ -5,6 +5,7 @@ import { scheduleEvent } from './schedule';
 import { dropWeapon, endJob } from './pawns';
 import { raiderGone, raiderDowned } from './raids';
 import { predatorFed } from './wildlife';
+import { socialBreak, socialOnDeath } from './social';
 import type { Building, Pawn, PawnCondition } from './types';
 import type { World } from './world';
 
@@ -254,7 +255,11 @@ export function healthTick(w: World, p: Pawn, e: Effects): boolean {
     if (def.hours) {
       if (w.tick >= c.until) {
         removeCondition(w, p, c.key);
-        if (def.kind === 'mental') w.message(p.faction, `${p.name} has calmed down.`, 'neutral', cell);
+        // After a real break, relief. (Refusing the cold is a mood, not a breakdown.)
+        if (def.kind === 'mental' && c.key !== 'cold_strike') {
+          w.message(p.faction, `${p.name} has calmed down.`, 'neutral', cell);
+          addCondition(w, p, 'catharsis');
+        }
       }
       continue;
     }
@@ -283,6 +288,7 @@ export function healthTick(w: World, p: Pawn, e: Effects): boolean {
   if (!isMental(p) && !p.downed) {
     const mood = p.needs.mood;
     if (mood < 0.18 && w.rng.chance(0.02 * e.breakMult)) {
+      if (socialBreak(w, p)) return !!w.get(p.id);
       const kind = w.rng.pick(['sulking', 'dazed', 'binging', 'hiding']);
       addCondition(w, p, kind);
       w.message(p.faction, `${p.name} has had a mental break: ${CONDITIONS[kind].label.toLowerCase()}.`, 'bad', cell);
@@ -369,6 +375,7 @@ export function killPawn(w: World, p: Pawn, cause: string, by?: Pawn): void {
     left++;
     addCondition(w, o, 'mourning');
   }
+  if (w.factions.get(faction)?.isPlayer) socialOnDeath(w, p);
   if (w.factions.get(faction)?.raid) raiderGone(w, faction, true);
   if (left === 0 && w.factions.get(faction)?.isPlayer) {
     w.message(0, `${fname} has fallen. Survivors from the wilds may yet find what is left of it.`, 'bad', cell);

@@ -1,7 +1,7 @@
 import { pawnName } from './names';
 import { caravanTick } from './caravan';
 import { allied } from './pacts';
-import { BUILDINGS, DEFAULT_PRIORITY, ITEMS, maxHp, PLANTS, RANDOM_TRAITS, SKILLS, START_PRIORITY, TERRAINS, TREE_COVER, WALL_COVER, WEATHER, WORK_TYPES, type SkillKey, type WorkType, ALL_CATEGORIES } from '@fe/defs';
+import { BUILDINGS, DEFAULT_PRIORITY, ITEMS, maxHp, PLANTS, RANDOM_TRAITS, COLONIST_TRAITS, SKILLS, START_PRIORITY, TERRAINS, TREE_COVER, WALL_COVER, WEATHER, WORK_TYPES, type SkillKey, type WorkType, ALL_CATEGORIES } from '@fe/defs';
 import * as C from './constants';
 import { GameMap } from './map';
 import { Rng } from './rng';
@@ -585,12 +585,13 @@ export class World {
     });
   }
 
-  /** 0-2 random traits that don't conflict. */
-  rollTraits(): string[] {
+  /** 0-2 random traits that don't conflict. Colonists may have a few that only matter in a colony. */
+  rollTraits(colonist = true): string[] {
     const out: string[] = [];
     const n = this.rng.chance(0.25) ? 0 : this.rng.chance(0.55) ? 1 : 2;
+    const pool = colonist ? COLONIST_TRAITS : RANDOM_TRAITS;
     for (let tries = 0; out.length < n && tries < 20; tries++) {
-      const t = this.rng.pick(RANDOM_TRAITS);
+      const t = this.rng.pick(pool);
       if (out.includes(t.key) || out.some((o) => t.conflicts?.includes(o))) continue;
       out.push(t.key);
     }
@@ -624,7 +625,7 @@ export class World {
       bed: 0,
       asleep: false,
       conditions: [],
-      traits: traits ?? this.rollTraits(),
+      traits: traits ?? this.rollTraits(!!this.factions.get(faction)?.isPlayer),
       apparel: ['tunic'],
       skills: this.rollSkills(),
       thoughts: [],
