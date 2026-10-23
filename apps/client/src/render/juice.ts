@@ -37,7 +37,19 @@ const LINES: Record<string, string[]> = {
   road: ['On the road.', 'Onward.', 'Keep together.'],
   camp: ['Keep the fire going.', 'Rest while we can.'],
   miserable: ["I can't go on like this.", 'What are we doing here?'],
+  spotted: ["What's that?", 'Over there!', 'Something out there…'],
+  found: ['Look at this!', 'Worth the walk.', "Someone's left us a gift."],
+  tamed: ['Easy… good.', "There. You're one of us now.", 'Steady, friend.'],
+  spring: ['Warm water!', 'Oh, that is good.'],
 };
+
+/** Letters that one named colonist would say a word about: the first word of the letter is their first name. */
+const LETTER_BARKS: [RegExp, string][] = [
+  [/^(\S+) spotted /, 'spotted'],
+  [/^(\S+) (searched the|went down into the cellar)/, 'found'],
+  [/^(\S+) found a hot spring/, 'spring'],
+];
+const TAMED = /^(\S+ \S+) has tamed a/;
 
 interface Seen {
   job: string;
@@ -73,6 +85,7 @@ export class Juice {
   private items = new Set<number>();
   private cleared: { cell: number; at: number }[] = [];
   private primed = false;
+  private letters = -1;
 
   /** A rock cell was mined out this frame (the renderer already spots it for the dust). */
   rockMined(cell: number, now: number): void {
@@ -112,7 +125,46 @@ export class Juice {
         this.maybeGain(m, e, now);
       } else if (e.kind === 'pawn' && e.faction === me && !e.species && !e.prisoner) this.watch(m, e, now);
     }
+    this.fromLetters(m, me, now);
     this.animate(now, pawnPos);
+  }
+
+  /** A colonist named at the start of a fresh letter (a find, a sighting, a tamed beast) says a word. */
+  private fromLetters(m: Mirror, me: number, now: number): void {
+    const total = m.messagesTotal;
+    if (this.letters < 0 || total < this.letters) {
+      this.letters = total;
+      return;
+    }
+    const fresh = m.messages.slice(Math.max(0, m.messages.length - (total - this.letters)));
+    this.letters = total;
+    for (const msg of fresh) {
+      if (msg.faction !== me || msg.reply) continue;
+      let who = '';
+      let what = '';
+      const t = TAMED.exec(msg.text);
+      if (t) {
+        who = t[1];
+        what = 'tamed';
+      } else {
+        for (const [re, kind] of LETTER_BARKS) {
+          const r = re.exec(msg.text);
+          if (r) {
+            who = r[1];
+            what = kind;
+            break;
+          }
+        }
+      }
+      if (!who) continue;
+      for (const e of m.entities.values()) {
+        if (e.kind !== 'pawn' || e.faction !== me || e.species) continue;
+        if (e.name === who || e.name.split(' ')[0] === who) {
+          this.say(e.id, pick(LINES[what]), now);
+          break;
+        }
+      }
+    }
   }
 
   private state(p: Pawn): Seen {

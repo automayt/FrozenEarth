@@ -48,6 +48,8 @@ export interface Building extends Base {
   bills: Bill[];
   /** Hit points left; at 0 the building is wrecked. Full is maxHp(def). */
   hp: number;
+  /** Landmarks: the colony that searched it first (it's been emptied), or -1 once the frost buried it. */
+  found?: number;
 }
 
 export interface Construct extends Base {
@@ -145,6 +147,11 @@ export interface Pawn extends Base {
   giveUp?: [target: EntityId, until: number];
   /** Settlers sent to help an ally fight off a raid, and when they head home regardless. */
   aid?: [faction: number, until: number];
+  // -- the world and discovery (taming)
+  /** Animals: the colony it belongs to, once tamed. It keeps its wild faction, so it is nobody's target. */
+  tamed?: number;
+  /** Animals: the colony trying to tame it. */
+  taming?: number;
 }
 
 export type PrisonerState = '' | 'held' | 'leaving';
@@ -184,6 +191,8 @@ export type Job =
   /** Drafted: stand ready, shooting hostiles in range. Ends now and then to rescan. */
   | (JobBase & { type: 'hold'; until: number })
   | (JobBase & { type: 'tend'; patient: EntityId; progress: number })
+  /** Win over an animal marked for taming: walk up slowly, then try now and then until it trusts you. */
+  | (JobBase & { type: 'tame'; target: EntityId; next: number; until: number })
   /** Raiders leaving the map, optionally grabbing loot on the way. */
   | (JobBase & { type: 'flee'; dest: number; item: EntityId })
   /** Raiders smashing a wall or door (or sappers digging rock) that stands between them and the colony. */
@@ -276,6 +285,9 @@ export interface Faction {
   chronicle?: Tale[];
   /** Milestones the colony has reached (keys of MILESTONES in chronicle.ts). */
   milestones?: string[];
+  /** Landmarks (building ids) the colony has seen or heard of, and the ones its people have been to. */
+  seen?: number[];
+  visited?: number[];
 }
 
 /** One line of a colony's story. */
@@ -322,6 +334,12 @@ export interface Caravan {
   waiting?: number;
   /** Members who went down on the road, carried along by the others until they can walk. */
   wounded?: EntityId[];
+  /** Tamed animals walking with it, carrying loads (and muskox pulling sledges). */
+  beasts?: EntityId[];
+  /** Finds on the road so far this trip. */
+  finds?: number;
+  /** The blizzard (its end tick) the caravan has already decided about. */
+  storm?: number;
 }
 
 /** ally: fight for each other. truce: a ceasefire that runs out. war: fight on sight. */
@@ -467,6 +485,8 @@ export type Command =
   | { c: 'diplomacy'; act: DiplomacyAct; target: number; other?: number; give?: [string, number][] }
   | { c: 'steal'; pawn: EntityId; item: EntityId }
   | { c: 'hunt'; pawns: EntityId[]; on: boolean }
+  /** Mark animals (pawns) for taming, or clear the mark. */
+  | { c: 'tame'; pawns: EntityId[]; on: boolean }
   | { c: 'possess'; pawn: EntityId; on: boolean }
   | { c: 'steer'; pawn: EntityId; dx: number; dy: number }
   | { c: 'sneak'; pawn: EntityId; on: boolean }

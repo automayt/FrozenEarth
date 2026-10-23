@@ -63,7 +63,8 @@ export interface PawnViewLike {
 /** Height (cells), opacity, and footprint scale of a building's shadow, or null if it casts none. */
 function buildingShadow(def: string): { h: number; alpha: number } | null {
   const d = BUILDINGS[def];
-  if (!d || d.floorTerrain || d.wall) return null;
+  // Landmarks cast none: a shadow would give away one your people haven't found.
+  if (!d || d.floorTerrain || d.wall || d.landmark) return null;
   switch (def) {
     case 'bed':
       return { h: 0.3, alpha: 0.8 };

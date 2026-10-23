@@ -11,6 +11,7 @@ const ORDERS: { label: string; tool: Tool; hint: string }[] = [
   { label: 'Harvest', tool: { kind: 'designate', what: 'harvest' }, hint: 'Harvest wild berries and crops' },
   { label: 'Cut plants', tool: { kind: 'designate', what: 'cut' }, hint: 'Clear any plants' },
   { label: 'Hunt', tool: { kind: 'hunt' }, hint: 'Drag over animals to mark them. Hunters with a bow or rifle bring them down for meat and hides.' },
+  { label: 'Tame', tool: { kind: 'tame' }, hint: 'Drag over deer, muskox or hares to win them over. Anyone on Hunt work goes (no weapon needed; social skill helps). Tamed deer and muskox carry loads on a journey, and a muskox pulls a sledge.' },
   { label: 'Deconstruct', tool: { kind: 'deconstruct' }, hint: 'Remove your buildings (refunds 75%)' },
   { label: 'Steal', tool: { kind: 'designate', what: 'steal' }, hint: "Mark goods in a settlement's or another colony's stockpile: your haulers sneak in after dark to carry them off. Locked doors keep them out. Anyone awake who sees it raises the alarm. To send someone right now, draft them and right-click the goods." },
   { label: 'Move colony', tool: { kind: 'moveHome' }, hint: 'Plan the journey inward: click where to go (shift-click for waypoints), pick who goes and what they take, then set out. Pack up the old site first to carry beds and benches as kits.' },
@@ -114,7 +115,7 @@ export function Architect() {
             ? 'click where the colony should go, shift-click to add a waypoint'
             : s.tool.kind === 'build'
               ? 'drag to place'
-              : s.tool.kind === 'hunt'
+              : s.tool.kind === 'hunt' || s.tool.kind === 'tame'
                 ? 'drag over animals'
                 : s.tool.kind === 'designate' && s.tool.what === 'steal'
                   ? 'drag over goods; haulers go after dark'

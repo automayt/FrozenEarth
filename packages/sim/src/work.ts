@@ -9,6 +9,7 @@ import { giveHunt } from './wildlife';
 import { dangerZones } from './settlements';
 import { canStealFrom } from './stealth';
 import { rk, type World } from './world';
+import { giveTame } from './taming';
 
 type Giver = (w: World, p: Pawn) => Job | null;
 
@@ -16,7 +17,7 @@ const GIVERS: Record<WorkType, Giver> = {
   firefight: giveFirefight,
   doctor: giveDoctor,
   cook: (w, p) => giveBill(w, p, 'cook'),
-  hunt: giveHunt,
+  hunt: (w, p) => giveHunt(w, p) ?? giveTame(w, p),
   construct: giveConstruct,
   grow: giveGrow,
   mine: giveMine,

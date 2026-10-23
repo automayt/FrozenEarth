@@ -367,6 +367,22 @@ export const CONDITIONS: Record<string, ConditionDef> = {
     hours: [36, 72],
     stages: [{ minSeverity: 0, label: '', mood: 0.18 }],
   },
+  bathed: {
+    key: 'bathed',
+    label: 'Bathed in a hot spring',
+    kind: 'mood',
+    description: 'Warm all the way through, for once.',
+    hours: [20, 30],
+    stages: [{ minSeverity: 0, label: '', mood: 0.08 }],
+  },
+  petted: {
+    key: 'petted',
+    label: 'Spent time with the animals',
+    kind: 'mood',
+    description: 'A warm flank and a patient eye.',
+    hours: [10, 18],
+    stages: [{ minSeverity: 0, label: '', mood: 0.04 }],
+  },
   dread: {
     key: 'dread',
     label: 'Dread',

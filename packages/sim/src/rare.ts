@@ -12,6 +12,8 @@ import { animalNeeds, wildlifeTick } from './wildlife';
 import { answerUrgentCare } from './work';
 import type { Building, Item, Pawn, Plant, Room } from './types';
 import { NEIGHBORS4, type World } from './world';
+import { springWarmed } from './landmarks';
+import { iceFormed } from './frontier';
 
 /** Enclosed regions larger than this count as outdoors. */
 const MAX_ROOM_CELLS = 1600;
@@ -65,7 +67,10 @@ function freezeWater(w: World): void {
     const c = q[w.waterNext];
     if (frostDistance(m.cx(c), m.cy(c), m.w, m.h) < edge) break;
     w.waterNext++;
-    if (m.terrain[c] === T.deep_water || m.terrain[c] === T.shallow_water) w.setTerrain(c, T.ice);
+    if ((m.terrain[c] === T.deep_water || m.terrain[c] === T.shallow_water) && !springWarmed(w, c)) {
+      w.setTerrain(c, T.ice);
+      iceFormed(w, c);
+    }
   }
 }
 

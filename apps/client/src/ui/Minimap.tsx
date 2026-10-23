@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { ROCKS, TERRAINS } from '@fe/defs';
+import { BUILDINGS, LANDMARKS, ROCKS, TERRAINS, type LandmarkKind } from '@fe/defs';
 import { atWar, dispositionOf, frostLevel, frostRadius } from '@fe/sim';
 import { DISPOSITION_COLOR } from '../render/renderer';
 import { store, useStore } from '../store';
@@ -90,6 +90,29 @@ export function Minimap() {
         }
         ctx.stroke();
       }
+      // Landmarks your colony knows of: an ember ring until someone has been there, a dot after;
+      // hot springs in rime, emptied ones grey.
+      const meF = store.me ? m.factions.get(store.me.faction) : undefined;
+      for (const id of meF?.seen ?? []) {
+        const b = m.entities.get(id);
+        if (!b || b.kind !== 'building' || !BUILDINGS[b.def]?.landmark) continue;
+        const x = (b.x + 0.5) * sx;
+        const y = (b.y + 0.5) * sy;
+        const lasting = LANDMARKS[b.def as LandmarkKind]?.lasting;
+        const been = meF?.visited?.includes(id);
+        const gone = !!b.found && !lasting;
+        ctx.beginPath();
+        ctx.arc(x, y, been || gone ? 2 : 3.2, 0, Math.PI * 2);
+        const col = gone ? '#8a8f96' : b.def === 'hot_spring' ? '#c3e4f3' : b.def === 'monolith' ? '#9ad8e6' : '#ff9a3c';
+        if (been || gone) {
+          ctx.fillStyle = col;
+          ctx.fill();
+        } else {
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = col;
+          ctx.stroke();
+        }
+      }
       // Player colonies: a house in the colony's colour, outlined white for yours and red for enemies at war.
       const mineF = store.me?.faction ?? 0;
       for (const f of m.factions.values()) {
@@ -145,7 +168,7 @@ export function Minimap() {
   };
 
   return (
-    <div className="panel minimap" title={`Click to jump there. Houses are player colonies (yours outlined white), diamonds are towns.${colonyList()}`}>
+    <div className="panel minimap" title={`Click to jump there. Houses are player colonies (yours outlined white), diamonds are towns, ember rings are places your people have spotted but not yet been to.${colonyList()}`}>
       <canvas ref={ref} width={SIZE} height={SIZE} onMouseDown={jump} />
     </div>
   );

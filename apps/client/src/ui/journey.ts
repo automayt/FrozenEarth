@@ -1,4 +1,4 @@
-import { BUILDINGS, ITEMS, TERRAINS } from '@fe/defs';
+import { ANIMALS, BUILDINGS, ITEMS, LANDMARKS, TERRAINS, type LandmarkKind } from '@fe/defs';
 import {
   bulkOf,
   carryCapacity,
@@ -56,9 +56,24 @@ export interface LoadPlan {
   sledges: number;
 }
 
+/** Your tamed animals that would walk with a caravan from here: names, what they carry, how many pull a sledge. */
+export function beastsAt(m: Mirror, faction: number, home: Point, ids?: number[]): { names: string[]; pack: number; draft: number } {
+  const out = { names: [] as string[], pack: 0, draft: 0 };
+  for (const e of m.entities.values()) {
+    if (e.kind !== 'pawn' || e.tamed !== faction || e.downed) continue;
+    const def = ANIMALS[e.species ?? ''];
+    if (!def?.pack && !def?.draft) continue;
+    if (ids ? !ids.includes(e.id) : Math.abs(e.x - home.x) > LOAD_RADIUS || Math.abs(e.y - home.y) > LOAD_RADIUS) continue;
+    out.names.push(e.name);
+    out.pack += def.pack ?? 0;
+    if (def.draft) out.draft++;
+  }
+  return out;
+}
+
 /** What the caravan would take and leave behind, by the sim's own loading rule. */
-export function planLoad(goods: { def: string; count: number }[], members: number, take: string[]): LoadPlan {
-  const n = chooseLoad(goods, members, take);
+export function planLoad(goods: { def: string; count: number }[], members: number, take: string[], pack = 0, draft = 0): LoadPlan {
+  const n = chooseLoad(goods, members, take, pack, draft);
   const cargo: [string, number][] = [];
   const left: [string, number][] = [];
   goods.forEach((g, i) => {
@@ -66,7 +81,7 @@ export function planLoad(goods: { def: string; count: number }[], members: numbe
     if (g.count - n[i] > 0) left.push([g.def, g.count - n[i]]);
   });
   const sledges = cargo.reduce((a, [d, k]) => a + (d === 'sledge' ? k : 0), 0);
-  return { cargo, left, bulk: cargo.reduce((a, [d, k]) => a + bulkOf(d, k), 0), capacity: carryCapacity(members, sledges), sledges };
+  return { cargo, left, bulk: cargo.reduce((a, [d, k]) => a + bulkOf(d, k), 0), capacity: carryCapacity(members, sledges, pack, draft), sledges };
 }
 
 export function routeLength(points: Point[]): number {
@@ -113,6 +128,22 @@ export function crossings(m: Mirror, me: number, points: Point[], cargo: [string
     }
   }
   return out;
+}
+
+/** Landmarks your colony knows of within reach of the route, still worth a look. */
+export function landmarksAlong(m: Mirror, me: number, points: Point[], reach = 12): { label: string; off: number; x: number; y: number }[] {
+  const f = m.factions.get(me);
+  const out: { label: string; off: number; x: number; y: number }[] = [];
+  for (const id of f?.seen ?? []) {
+    const b = m.entities.get(id);
+    if (!b || b.kind !== 'building') continue;
+    const def = LANDMARKS[b.def as LandmarkKind];
+    if (!def || (b.found && !def.lasting) || (def.lasting && f?.visited?.includes(id))) continue;
+    let near = Infinity;
+    for (let i = 1; i < points.length; i++) near = Math.min(near, segDist(b, points[i - 1], points[i]));
+    if (near <= reach) out.push({ label: def.label.toLowerCase(), off: Math.round(near), x: b.x, y: b.y });
+  }
+  return out.sort((a, b) => a.off - b.off);
 }
 
 /** How many cells of the route run through mountain passes, where raiders may wait. */

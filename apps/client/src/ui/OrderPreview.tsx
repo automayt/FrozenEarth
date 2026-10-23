@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ANIMALS, ITEMS, WEAPONS, weaponOf } from '@fe/defs';
 import { pawnPosition } from '@fe/protocol';
-import { daysUntilFrost, dispositionOf, GOODWILL, type Item, type Pawn } from '@fe/sim';
+import { daysUntilFrost, dispositionOf, GOODWILL, tameChance, type Item, type Pawn } from '@fe/sim';
 import { helpers, mySquad, myPawnsAll } from '../actions';
 import { store, useStore } from '../store';
 import { goodwillShift, hostileLandAt, hostileLandText, shiftText, stealableOwner, stealRisk, type RiskLine, type Tone } from './risk';
@@ -69,6 +69,23 @@ function preview(x: number, y: number): Preview | null {
     if (def?.predator) lines.push({ text: 'Predator: it fights back', tone: 'bad' });
     else if (def?.defends) lines.push({ text: 'Turns on whoever attacks it', tone: 'neutral' });
     return { title: `Hunt ${def?.label.toLowerCase() ?? a.name}`, tone: def?.predator ? 'bad' : 'neutral', lines };
+  }
+  if (tool.kind === 'tame') {
+    const a = pawnOn(x, y);
+    if (!a?.species) return null;
+    const def = ANIMALS[a.species];
+    if (a.tamed) return { title: a.name, tone: 'good', lines: [{ text: a.tamed === me ? 'Already yours' : "Another colony's animal", tone: 'neutral' }] };
+    if (!def?.tame) return { title: `${def?.label ?? a.name} can't be tamed`, tone: 'bad', lines: [{ text: 'Only deer, muskox and hares will come round', tone: 'neutral' }] };
+    const tamers = myPawnsAll().filter((p) => !p.downed && p.priorities.hunt > 0);
+    const best = Math.max(0, ...tamers.map((p) => p.skills?.social?.level ?? 0));
+    const lines: RiskLine[] = [
+      tamers.length ? { text: `${tamers.length} colonist${tamers.length > 1 ? 's' : ''} on Hunt work can go · about ${Math.round(tameChance(def, best) * 100)}% a try`, tone: 'good' } : { text: 'Nobody has Hunt work turned on', tone: 'bad' },
+    ];
+    if (def.draft) lines.push({ text: `Carries ${def.pack} on a journey, or pulls a sledge`, tone: 'good' });
+    else if (def.pack) lines.push({ text: `Carries ${def.pack} on a journey`, tone: 'good' });
+    else lines.push({ text: 'A companion: good company, no load', tone: 'neutral' });
+    if (def.defends) lines.push({ text: 'May lose patience and charge', tone: 'bad' });
+    return { title: `Tame ${def.label.toLowerCase()}`, tone: 'neutral', lines };
   }
   if (tool.kind !== 'select') return null;
   const squad = mySquad().filter((p) => p.drafted && !p.downed);

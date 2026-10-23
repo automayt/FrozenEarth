@@ -35,6 +35,8 @@ import { newStoryState, type StoryState } from './schedule';
 import { fireTick } from './fire';
 import { outdoorTempAt } from './time';
 import { DEFAULT_FROST, FROST_COLD, FROST_MAX, frostLevel, frostRadius, type FrostParams } from './frost';
+import { landmarkTick } from './landmarks';
+import { companionTick } from './taming';
 
 /** Everything that changed since the last delta was taken. */
 export class Dirty {
@@ -151,6 +153,8 @@ export class World {
     }
     rareTick(this);
     caravanTick(this);
+    landmarkTick(this);
+    companionTick(this);
     fireTick(this);
     tickStoryteller(this);
     if (this.tick % C.TICKS_PER_HOUR === 0) this.pruneUnreachable();

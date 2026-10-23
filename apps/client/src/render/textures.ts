@@ -200,6 +200,63 @@ export class TextureBank {
           g.poly([32, 2, 46, 14, 44, 56, 20, 56, 18, 14]).fill(0x1a1a24).stroke({ width: 2, color: 0x6a5aa0 });
           g.rect(29, 16, 6, 30).fill({ color: 0x8a7ad0, alpha: 0.35 });
           return;
+        // ---- landmarks (drawn larger than a cell by the renderer)
+        case 'abandoned_camp':
+          // A sagging lean-to, a cold fire ring and a bedroll left behind.
+          g.ellipse(32, 50, 26, 8).fill({ color: 0x000000, alpha: 0.25 });
+          g.poly([8, 46, 26, 14, 40, 46]).fill(0xb8a27a).stroke({ width: 2, color: 0x5a4a30 });
+          g.poly([26, 14, 40, 46, 46, 44, 32, 14]).fill(0x8e7a56);
+          g.moveTo(26, 14).lineTo(22, 6).stroke({ width: 2, color: 0x5a4430 });
+          for (let k = 0; k < 7; k++) {
+            const a = (k / 7) * Math.PI * 2;
+            g.circle(50 + Math.cos(a) * 7, 52 + Math.sin(a) * 4, 2.6).fill(0x77736c);
+          }
+          g.ellipse(50, 52, 4, 2.5).fill(0x2a2622);
+          g.roundRect(30, 48, 14, 6, 3).fill(0x7a4a3a);
+          return;
+        case 'cairn':
+          g.ellipse(32, 54, 20, 6).fill({ color: 0x000000, alpha: 0.3 });
+          for (const [x, y, r, f] of [[22, 48, 8, 0.85], [36, 49, 9, 0.95], [44, 46, 6, 0.8], [28, 38, 7, 1], [38, 37, 6, 0.9], [32, 27, 6, 1.1], [33, 18, 4, 1.2]] as const) {
+            g.ellipse(x, y, r, r * 0.8).fill(shade(c, f)).stroke({ width: 1.5, color: shade(c, 0.5) });
+          }
+          return;
+        case 'old_ruin':
+          // A cracked hearth and a broken chimney stub, rubble about it.
+          g.rect(14, 22, 36, 30).fill(shade(c, 0.9)).stroke({ width: 2, color: shade(c, 0.5) });
+          g.rect(22, 34, 20, 18).fill(0x231e1a);
+          g.poly([14, 22, 22, 10, 30, 18, 38, 8, 50, 22]).fill(shade(c, 1.1)).stroke({ width: 2, color: shade(c, 0.5) });
+          g.moveTo(30, 22).lineTo(26, 34).lineTo(31, 40).stroke({ width: 1.5, color: shade(c, 0.45) });
+          for (const [x, y, r] of [[8, 54, 4], [54, 52, 5], [46, 58, 3], [18, 58, 3]] as const) g.circle(x, y, r).fill(shade(c, 0.8));
+          return;
+        case 'frozen_wreck':
+          // An iron hull run aground and heeled over: a pointed bow, rust and rivets, ice drifted
+          // along its back, the hold hatch, a snapped mast.
+          g.ellipse(32, 46, 30, 9).fill({ color: 0x000000, alpha: 0.3 });
+          g.poly([3, 30, 12, 22, 50, 20, 62, 31, 52, 44, 10, 46]).fill(shade(c, 1)).stroke({ width: 2, color: shade(c, 0.45) });
+          g.poly([12, 22, 50, 20, 62, 31, 52, 29, 14, 30]).fill(shade(c, 1.35));
+          g.poly([16, 22, 34, 20, 30, 26, 14, 27]).fill({ color: 0xe4eef4, alpha: 0.95 });
+          g.poly([42, 21, 52, 22, 56, 27, 46, 26]).fill({ color: 0xe4eef4, alpha: 0.9 });
+          for (const [x, w] of [[18, 3], [30, 2], [44, 4]] as const) g.rect(x, 31, w, 12).fill({ color: 0x8a4a2a, alpha: 0.55 });
+          for (let k = 0; k < 8; k++) g.circle(12 + k * 5.5, 38, 1.1).fill(shade(c, 1.6));
+          g.roundRect(24, 30, 12, 7, 1).fill(0x101418).stroke({ width: 1, color: shade(c, 0.6) });
+          g.moveTo(40, 24).lineTo(50, 4).stroke({ width: 3, color: 0x4a3a2a });
+          g.moveTo(50, 4).lineTo(57, 9).stroke({ width: 2, color: 0x4a3a2a });
+          return;
+        case 'hot_spring':
+          // Where the warm water wells up: pale mineral crust, a bright blue vent, rings of bubbles.
+          // The steam over it is drawn live.
+          g.circle(32, 32, 22).fill({ color: 0xe8dcc0, alpha: 0.35 });
+          g.circle(32, 32, 15).fill({ color: 0x3ab8c8, alpha: 0.85 });
+          g.circle(32, 32, 8).fill({ color: 0x9ae8f0, alpha: 0.9 });
+          for (const r of [11, 18]) g.circle(32, 32, r).stroke({ width: 1.5, color: 0xeefcff, alpha: 0.55 });
+          for (const [x, y] of [[26, 28], [37, 35], [33, 24], [28, 38]] as const) g.circle(x, y, 1.6).fill({ color: 0xffffff, alpha: 0.8 });
+          return;
+        case 'monolith':
+          g.ellipse(32, 58, 14, 5).fill({ color: 0x000000, alpha: 0.4 });
+          g.poly([24, 4, 40, 4, 42, 58, 22, 58]).fill(c).stroke({ width: 2, color: 0x4a6a78 });
+          for (const y of [14, 24, 34, 44]) g.moveTo(27, y).lineTo(37, y + 3).stroke({ width: 1.2, color: 0x6ad0e0, alpha: 0.55 });
+          g.rect(31, 8, 2, 46).fill({ color: 0x8ae0f0, alpha: 0.25 });
+          return;
         case 'sandbags': {
           // Two staggered courses of stuffed bags, running edge to edge so a line of them reads as one barricade.
           const bag = (x: number, y: number, w: number, h: number, f: number) => {

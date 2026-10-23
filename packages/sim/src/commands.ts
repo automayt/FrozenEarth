@@ -17,6 +17,7 @@ import { canStealFrom } from './stealth';
 import { interact, setPossessed } from './control';
 import { markHunt } from './wildlife';
 import { attackRefusal, diplomacy } from './diplomacy';
+import { markTame } from './taming';
 
 // ---------------------------------------------------------------- wire validation
 
@@ -224,6 +225,9 @@ export function applyCommand(w: World, faction: number, cmd: Command): void {
     }
     case 'hunt':
       markHunt(w, faction, cmd.pawns, !!cmd.on);
+      return;
+    case 'tame':
+      markTame(w, faction, cmd.pawns, !!cmd.on);
       return;
     case 'deliverRequest':
       deliverRequest(w, faction, Number(cmd.settlement), Number(cmd.request));

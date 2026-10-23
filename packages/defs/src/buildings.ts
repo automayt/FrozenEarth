@@ -38,6 +38,8 @@ export interface BuildingDef {
   cover?: number;
   /** A wall you can see and shoot through (an embrasure): still encloses a room, still blocks movement. */
   seeThrough?: boolean;
+  /** A landmark (see LANDMARKS): placed at map generation, searched by walking up to it. */
+  landmark?: boolean;
 }
 
 /** Cover a wall or rock gives when nothing more specific is set. */
@@ -64,6 +66,13 @@ export const BUILDINGS: Record<string, BuildingDef> = {
   heater: { key: 'heater', label: 'Wood heater', category: 'temperature', color: 0xb05030, cost: { steel: 30, wood: 10 }, work: 500, blocksMovement: true, heat: 14, targetTemp: 21 },
   sun_shard: { key: 'sun_shard', label: 'The Sun Shard', category: 'special', color: 0xffc040, cost: {}, work: 0, blocksMovement: true, special: true, heat: 60, targetTemp: 24, radiant: [24, 4] },
   whispering_stone: { key: 'whispering_stone', label: 'Whispering stone', category: 'special', color: 0x1a1a24, cost: {}, work: 0, blocksMovement: true, special: true, aweRadius: 6 },
+  // Landmarks: found out in the wilds, never built.
+  abandoned_camp: { key: 'abandoned_camp', label: 'Abandoned camp', category: 'special', color: 0x8a6a48, cost: {}, work: 0, blocksMovement: false, special: true, landmark: true },
+  cairn: { key: 'cairn', label: 'Cairn', category: 'special', color: 0x8d877c, cost: {}, work: 0, blocksMovement: false, special: true, landmark: true },
+  old_ruin: { key: 'old_ruin', label: 'Old ruin', category: 'special', color: 0x6e665c, cost: {}, work: 0, blocksMovement: false, special: true, landmark: true },
+  frozen_wreck: { key: 'frozen_wreck', label: 'Frozen wreck', category: 'special', color: 0x55606c, cost: {}, work: 0, blocksMovement: true, special: true, landmark: true, hp: 2000 },
+  hot_spring: { key: 'hot_spring', label: 'Hot spring', category: 'special', color: 0x7ec0d0, cost: {}, work: 0, blocksMovement: false, special: true, landmark: true, radiant: [30, 5] },
+  monolith: { key: 'monolith', label: 'Monolith', category: 'special', color: 0x22222e, cost: {}, work: 0, blocksMovement: true, special: true, landmark: true, aweRadius: 4, hp: 5000 },
   cooler: { key: 'cooler', label: 'Cooler', category: 'temperature', color: 0x4a8ab0, cost: { steel: 40 }, work: 500, blocksMovement: true, heat: -14, targetTemp: -2 },
 };
 

@@ -1,5 +1,5 @@
 import { tell } from './chronicle';
-import { ITEMS, type ItemCategory } from '@fe/defs';
+import { ANIMALS, ITEMS, type ItemCategory } from '@fe/defs';
 import { TICKS_PER_HOUR } from './constants';
 import { findPath, makePathState } from './pathfinding';
 import { pawnSpeed } from './pawns';
@@ -8,6 +8,9 @@ import { calendar } from './time';
 import type { Caravan, Command, EntityId, Faction, Item, Job, Pawn } from './types';
 import { NEIGHBORS8, rk, type World } from './world';
 import { roadEncounters, nightShelter } from './road';
+import { offerChoice, registerChoice } from './choices';
+import { addCondition } from './health';
+import { beastHaul, beastsNear, caravanOf } from './taming';
 
 /**
  * Moving the colony inward as one journey. The player picks who goes, where to, and what to
@@ -59,17 +62,29 @@ export function sledgesIn(cargo: [string, number][]): number {
   return cargo.reduce((a, [d, n]) => a + (d === 'sledge' ? n : 0), 0);
 }
 
-/** How much a group can carry: everyone's back, plus a sledge for each who has one to pull. */
-export function carryCapacity(members: number, sledges: number): number {
-  return members * MEMBER_CARRY + Math.min(sledges, members) * SLEDGE_CARRY;
+/**
+ * How much a group can carry: everyone's back, plus a sledge for each who has one to pull (a
+ * colonist, or a draft animal like a muskox), plus what pack animals carry (`pack`).
+ */
+export function carryCapacity(members: number, sledges: number, pack = 0, draft = 0): number {
+  return members * MEMBER_CARRY + Math.min(sledges, members + draft) * SLEDGE_CARRY + pack;
+}
+
+/** Everything a caravan can carry, its animals included. */
+export function caravanCapacity(w: World, c: Caravan): number {
+  const { pack, draft } = beastHaul(w, c);
+  return carryCapacity(c.members.length, sledgesIn(c.cargo), pack, draft);
 }
 
 /** Walk-speed factor for a caravan member: heavier loads, slower going. 1 outside a caravan. */
 export function caravanPace(w: World, p: Pawn): number {
-  const c = w.factions.get(p.faction)?.caravan;
-  if (!c || c.phase !== 'travel' || !c.members.includes(p.id)) return 1;
-  const cap = carryCapacity(c.members.length, sledgesIn(c.cargo));
-  return 1 - (1 - FULL_LOAD_PACE) * Math.min(1, cap ? caravanLoad(c) / cap : 1);
+  const beast = !!p.tamed;
+  const c = beast ? caravanOf(w, p) : w.factions.get(p.faction)?.caravan;
+  if (!c || c.phase !== 'travel' || (!beast && !c.members.includes(p.id))) return 1;
+  const cap = caravanCapacity(w, c);
+  const pace = 1 - (1 - FULL_LOAD_PACE) * Math.min(1, cap ? caravanLoad(c) / cap : 1);
+  // Pack animals keep step with the people leading them.
+  return beast ? pace / (ANIMALS[p.species!]?.speed ?? 1) : pace;
 }
 
 export function inCaravan(w: World, p: Pawn): Caravan | undefined {
@@ -134,6 +149,7 @@ function form(w: World, f: Faction, cmd: CaravanCmd, say: (t: string) => void): 
   const route = planRoute(w, f.id, muster, dest, via);
   if (!route) return say('There is no way through to there. Try another spot, or route it through a waypoint.');
   const take = (cmd.take ?? []).filter((k) => typeof k === 'string') as ItemCategory[];
+  const beasts = beastsNear(w, f.id, muster, LOAD_RADIUS);
   f.caravan = {
     phase: 'muster',
     members: members.map((p) => p.id),
@@ -150,9 +166,11 @@ function form(w: World, f: Faction, cmd: CaravanCmd, say: (t: string) => void): 
     dealt: [],
     met: [],
   };
+  if (beasts.length) f.caravan.beasts = beasts.map((a) => a.id);
   w.dirty.factions.add(f.id);
   endJobs(w, f.caravan);
-  say(`${members.length === 1 ? members[0].name.split(' ')[0] + ' is' : `${members.length} colonists are`} gathering at home to load up for the journey.`);
+  const herd = beasts.length ? `, with ${beasts.length === 1 ? beasts[0].name : `${beasts.length} pack animals`},` : '';
+  say(`${members.length === 1 ? members[0].name.split(' ')[0] + ' is' : `${members.length} colonists are`} gathering at home${herd} to load up for the journey.`);
 }
 
 /** Waypoints from start through each via point to dest, LEG cells apart. Null if there's no way. */
@@ -171,7 +189,7 @@ export function planRoute(w: World, faction: number, start: number, dest: number
 }
 
 function endJobs(w: World, c: Caravan): void {
-  for (const id of c.members) {
+  for (const id of [...c.members, ...(c.beasts ?? [])]) {
     const p = w.get<Pawn>(id);
     if (!p || p.kind !== 'pawn') continue;
     p.job = null;
@@ -318,6 +336,18 @@ function roll(w: World, f: Faction, c: Caravan): void {
       walking.push(id);
     }
   }
+  // Pack animals that went down are left behind (their owners may come back for them, or the wolves will).
+  if (c.beasts?.length) {
+    const keep = c.beasts.filter((id) => {
+      const a = w.get<Pawn>(id);
+      if (a && a.kind === 'pawn' && a.downed && c.phase !== 'muster') w.message(f.id, `${a.name} can go no further. The caravan has to leave it behind.`, 'bad', w.cellOf(a));
+      return a && a.kind === 'pawn' && a.tamed === f.id && !a.downed;
+    });
+    if (keep.length !== c.beasts.length) {
+      c.beasts = keep.length ? keep : undefined;
+      w.dirty.factions.add(f.id);
+    }
+  }
   const same = walking.length === c.members.length && wounded.length === (c.wounded?.length ?? 0) && walking.every((id, i) => id === c.members[i]);
   if (same) return;
   c.members = walking;
@@ -364,8 +394,9 @@ function musterTick(w: World, f: Faction, c: Caravan): void {
   c.legSince = w.tick;
   w.dirty.factions.add(f.id);
   endJobs(w, c);
-  const cap = carryCapacity(c.members.length, sledgesIn(c.cargo));
-  w.message(f.id, `The caravan sets out: ${c.members.length} ${c.members.length === 1 ? 'colonist' : 'colonists'}, carrying ${Math.round(caravanLoad(c))} of ${cap}.`, 'good', c.muster);
+  const cap = caravanCapacity(w, c);
+  const herd = c.beasts?.length ? ` and ${c.beasts.length === 1 ? 'a pack animal' : `${c.beasts.length} pack animals`}` : '';
+  w.message(f.id, `The caravan sets out: ${c.members.length} ${c.members.length === 1 ? 'colonist' : 'colonists'}${herd}, carrying ${Math.round(caravanLoad(c))} of ${cap}.`, 'good', c.muster);
 }
 
 /** Order goods are loaded in: sledges (they add room), kits, food, clothes, weapons, then materials. */
@@ -376,7 +407,7 @@ const LOAD_ORDER: ItemCategory[] = ['gear', 'kit', 'meal', 'raw_food', 'apparel'
  * within a kind) until they can carry no more. Sledges add room for whoever pulls them. Shared
  * with the client, which shows the plan before setting out.
  */
-export function chooseLoad(stacks: { def: string; count: number }[], members: number, take: string[]): number[] {
+export function chooseLoad(stacks: { def: string; count: number }[], members: number, take: string[], pack = 0, draft = 0): number[] {
   const allowed = take.length ? new Set(take) : null;
   const order = stacks
     .map((s, i) => ({ s, i, cat: ITEMS[s.def]?.category }))
@@ -387,13 +418,13 @@ export function chooseLoad(stacks: { def: string; count: number }[], members: nu
   let bulk = 0;
   for (const { s, i } of order) {
     if (s.def === 'sledge') {
-      const n = Math.min(s.count, members - sledges);
+      const n = Math.min(s.count, members + draft - sledges);
       out[i] = Math.max(0, n);
       sledges += out[i];
       continue;
     }
     const per = bulkOf(s.def, 1);
-    const room = carryCapacity(members, sledges) - bulk;
+    const room = carryCapacity(members, sledges, pack, draft) - bulk;
     const n = per > 0 ? Math.max(0, Math.min(s.count, Math.floor(room / per))) : s.count;
     out[i] = n;
     bulk += n * per;
@@ -423,7 +454,8 @@ export function loadableNear(w: World, faction: number, muster: number): Item[] 
 /** Take goods from near the muster point, up to what the group can carry. */
 export function load(w: World, f: Faction, c: Caravan): void {
   const near = loadableNear(w, f.id, c.muster);
-  const counts = chooseLoad(near, c.members.length, c.take);
+  const { pack, draft } = beastHaul(w, c);
+  const counts = chooseLoad(near, c.members.length, c.take, pack, draft);
   near.forEach((it, i) => {
     if (counts[i] <= 0) return;
     const def = it.def;
@@ -441,16 +473,72 @@ function travelTick(w: World, f: Faction, c: Caravan): void {
     if (w.choices.has(c.waiting)) return;
     c.waiting = undefined;
   }
+  const storm = w.conditions.find((k) => k.key === 'blizzard');
+  if (storm && c.storm !== storm.until) return blizzardCatches(w, f, c, storm.until);
   const target = c.route[c.leg];
   if (!membersNear(w, c, target, NEAR) && w.tick - c.legSince < LEG_TIMEOUT) return;
   c.leg++;
   c.legSince = w.tick;
   w.dirty.factions.add(f.id);
   if (c.leg >= c.route.length) return arrive(w, f, c);
+  if (storm) braveTheStorm(w, f, c);
   roadEncounters(w, f, c);
 }
 
-function makeCamp(w: World, f: Faction, c: Caravan): void {
+// ---------------------------------------------------------------- weather on the road
+
+/** Chance, at each waypoint walked in a blizzard, that the cold gets into someone. */
+const STORM_BITE = 0.12;
+
+/** A blizzard comes down on the caravan: dig in, or press on through it. */
+function blizzardCatches(w: World, f: Faction, c: Caravan, until: number): void {
+  c.storm = until;
+  w.dirty.factions.add(f.id);
+  const ch = offerChoice(
+    w,
+    f.id,
+    'caravan_blizzard',
+    'A blizzard on the road',
+    'A blizzard is coming down on your caravan. You can dig in round a fire and wait it out, losing the time, or press on half-blind through the snow and risk the cold getting into your people.',
+    [
+      { key: 'press', label: 'Press on' },
+      { key: 'dig', label: 'Dig in and wait' },
+    ],
+    1,
+    { until },
+    c.at,
+  );
+  c.waiting = ch.id;
+}
+
+registerChoice('caravan_blizzard', (w, ch, option, d) => {
+  const f = w.factions.get(ch.faction);
+  const c = f?.caravan;
+  if (!f || !c) return;
+  if (c.waiting === ch.id) c.waiting = undefined;
+  w.dirty.factions.add(f.id);
+  if (c.phase !== 'travel') return;
+  if (option === 'dig') {
+    makeCamp(w, f, c, Math.max(w.tick + TICKS_PER_HOUR, Number(d.until)));
+    w.message(f.id, 'The caravan digs in round a fire to wait out the blizzard.', 'neutral', c.at);
+    return;
+  }
+  w.message(f.id, 'The caravan presses on into the blizzard. Keep an eye on who is getting cold.', 'neutral', c.at);
+});
+
+/** Walking on through the storm: now and then the cold gets into someone. */
+function braveTheStorm(w: World, f: Faction, c: Caravan): void {
+  if (!c.members.length || !w.rng.chance(STORM_BITE)) return;
+  const p = w.get<Pawn>(w.rng.pick(c.members));
+  if (!p || p.kind !== 'pawn') return;
+  const cold = p.conditions.find((k) => k.key === 'hypothermia');
+  if (cold) cold.severity = Math.min(0.9, cold.severity + 0.12);
+  else addCondition(w, p, 'hypothermia', 0.15);
+  w.markDirty(p);
+  w.message(f.id, `The wind cuts through ${p.name.split(' ')[0]} on the road. They are getting dangerously cold.`, 'bad', w.cellOf(p));
+}
+
+function makeCamp(w: World, f: Faction, c: Caravan, until?: number): void {
   const m = w.map;
   const at = leaderCell(w, c);
   let spot = -1;
@@ -468,10 +556,11 @@ function makeCamp(w: World, f: Faction, c: Caravan): void {
   }
   c.phase = 'camp';
   const h = calendar(w.tick).hour;
-  c.until = w.tick + Math.round(((24 - h + DAWN) % 24 || 24) * TICKS_PER_HOUR) - (w.tick % TICKS_PER_HOUR);
+  c.until = until ?? w.tick + Math.round(((24 - h + DAWN) % 24 || 24) * TICKS_PER_HOUR) - (w.tick % TICKS_PER_HOUR);
   if (spot >= 0) c.fire = w.spawnBuilding('campfire', spot, f.id).id;
   w.dirty.factions.add(f.id);
   endJobs(w, c);
+  if (until !== undefined) return;
   nightShelter(w, f, c);
   w.message(f.id, 'The caravan makes camp for the night.', 'neutral', spot >= 0 ? spot : at);
 }
@@ -499,8 +588,10 @@ function arrive(w: World, f: Faction, c: Caravan): void {
   w.dirty.factions.add(f.id);
   const goods = n ? ' The goods are unpacked by the new home: make a stockpile, and place buildings you have kits for to set them up quickly.' : '';
   const hours = Math.max(1, Math.round((w.tick - c.started) / TICKS_PER_HOUR));
-  const carried = c.wounded?.length ? `, carrying ${c.wounded.length} wounded` : '';
-  tell(w, f.id, `Reached a new home after ${hours} hours on the road${carried}.`, 'first_journey');
+  const beasts = (c.beasts ?? []).map((id) => w.get<Pawn>(id)?.name).filter(Boolean);
+  const herd = beasts.length > 1 ? `${beasts.slice(0, -1).join(', ')} and ${beasts[beasts.length - 1]}` : beasts.join('');
+  const carried = (c.wounded?.length ? `, carrying ${c.wounded.length} wounded` : '') + (herd ? `, ${herd} under the packs` : '');
+  tell(w, f.id, `Reached a new home after ${hours} hour${hours === 1 ? '' : 's'} on the road${carried}.`, 'first_journey');
   w.message(f.id, `The caravan has arrived. This is home now.${goods}`, 'good', c.dest);
 }
 
@@ -512,7 +603,7 @@ function unload(w: World, f: Faction, at: number): void {
   for (const [def, n] of c.cargo) if (n > 0) w.placeItemNear(def, n, at);
   f.caravan = undefined;
   w.dirty.factions.add(f.id);
-  for (const id of c.members) {
+  for (const id of [...c.members, ...(c.beasts ?? [])]) {
     const p = w.get<Pawn>(id);
     if (p && p.kind === 'pawn') {
       p.job = null;

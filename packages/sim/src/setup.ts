@@ -7,6 +7,7 @@ import { daysUntilFrost, FROST_MAX, frostLevel } from './frost';
 import { World } from './world';
 import { placeSettlements } from './settlements';
 import { populateWildlife } from './wildlife';
+import { placeLandmarks } from './landmarks';
 
 export interface WorldOptions {
   seed?: number;
@@ -16,6 +17,8 @@ export interface WorldOptions {
   settlements?: boolean;
   /** Stock the map with wild animals (default true). */
   wildlife?: boolean;
+  /** Scatter landmarks to find: ruins, camps, wrecks, hot springs (default true). */
+  landmarks?: boolean;
 }
 
 export function createWorld(opts: WorldOptions = {}): World {
@@ -24,6 +27,7 @@ export function createWorld(opts: WorldOptions = {}): World {
   generateMap(w);
   if (opts.settlements !== false) placeSettlements(w);
   if (opts.wildlife !== false) populateWildlife(w);
+  if (opts.landmarks !== false) placeLandmarks(w);
   return w;
 }
 

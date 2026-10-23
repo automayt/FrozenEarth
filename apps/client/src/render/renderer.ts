@@ -1,7 +1,7 @@
 import { Application, BitmapText, Container, Graphics, GraphicsContext, Sprite, TextStyle } from 'pixi.js';
-import { ANIMALS, BUILDINGS, maxHp, PLANTS, ROCKS, TERRAINS, WEAPON_KEYS, weaponOf, type TerrainDef } from '@fe/defs';
+import { ANIMALS, BUILDINGS, LANDMARKS, maxHp, PLANTS, ROCKS, TERRAINS, WEAPON_KEYS, weaponOf, type LandmarkKind, type TerrainDef } from '@fe/defs';
 import { PawnGlide, pawnPosition } from '@fe/protocol';
-import { DESIG, FROST_BAND, MIN_COLONY_GAP, pactOf, SHOT_FIELDS, bleedRate, calendar, dispositionOf, GUARD_REACH, hostile, NOISE, SETTLEMENT_WATCH, stealthMult, frostLevel, frostRadius, hash2, outdoorTempAt, weaponFor, woundTotal, type Construct, type Entity, type Pawn, type World, constructCost, constructWork } from '@fe/sim';
+import { DESIG, FROST_BAND, MIN_COLONY_GAP, pactOf, SHOT_FIELDS, bleedRate, calendar, dispositionOf, GUARD_REACH, hostile, NOISE, SETTLEMENT_WATCH, stealthMult, frostLevel, frostRadius, hash2, outdoorTempAt, weaponFor, woundTotal, type Construct, type Entity, type Pawn, type World, constructCost, constructWork, type Building } from '@fe/sim';
 import { ease, Particles, Tweens, Weather, type Precip } from './fx';
 import { sound } from '../audio';
 import { fog } from './fog';
@@ -158,6 +158,10 @@ export class GameRenderer {
   private life = new Life();
   private precip = 'none';
   private views = new Map<number, EntityView>();
+  /** Hot springs on view (they steam), what your colony knew of landmarks last frame, and the next puff. */
+  private springs = new Set<number>();
+  private landmarkSig = '';
+  private nextSteam = 0;
   /** Shared geometry for the small shapes on entity views (see shape()). */
   private shapes = new Map<string, GraphicsContext>();
   private pawnIds = new Set<number>();
@@ -347,6 +351,13 @@ export class GameRenderer {
     for (const id of m.removedEnts) this.removeView(id, true);
     m.removedEnts.clear();
     const mine = store.me?.faction;
+    // Learning of a landmark (or visiting one) changes how it's drawn, though the landmark itself didn't change.
+    const known = mine ? m.factions.get(mine) : undefined;
+    const sig = `${mine}:${known?.seen?.length ?? 0}:${known?.visited?.length ?? 0}`;
+    if (sig !== this.landmarkSig) {
+      this.landmarkSig = sig;
+      for (const e of m.entities.values()) if (e.kind === 'building' && BUILDINGS[e.def]?.landmark) m.changedEnts.add(e.id);
+    }
     for (const id of m.changedEnts) {
       const e = m.entities.get(id);
       if (!e) continue;
@@ -372,6 +383,15 @@ export class GameRenderer {
       // Others indoors, out of your people's sight, aren't shown.
       v.root.visible = e.faction === me || !fog.hidden(Math.round(pos.y) * m.w + Math.round(pos.x));
       this.animatePawn(e, v, now);
+    }
+    if (now >= this.nextSteam && this.springs.size) {
+      // Warm water breathing out into the cold.
+      this.nextSteam = now + 380;
+      for (const id of this.springs) {
+        const v = this.views.get(id);
+        if (!v || !v.root.parent?.visible) continue;
+        this.particles.burst(v.root.x + (Math.random() - 0.5) * TILE, v.root.y + (Math.random() - 0.5) * TILE * 0.6, { count: 1, color: 0xeef6f8, speed: 4, size: 5, grow: 12, life: 2200, lift: 16, alpha: 0.32 });
+      }
     }
     this.cullChunks();
     {
@@ -737,6 +757,7 @@ export class GameRenderer {
     if (!v) return;
     this.views.delete(id);
     this.pawnIds.delete(id);
+    this.springs.delete(id);
     this.pawnGlide.forget(id);
     const root = v.root;
     if (!leaving || !this.built || !root.visible || !root.parent?.visible) {
@@ -820,6 +841,8 @@ export class GameRenderer {
       case 'item':
         return `i:${e.def}:${e.count}:${e.rot >= 0.5 ? 1 : 0}`;
       case 'building': {
+        // Landmarks: drawn once your people know of them, dimmed once searched.
+        if (BUILDINGS[e.def]?.landmark) return `l:${e.def}:${knowsLandmark(e.id) ? 1 : 0}:${e.found ?? 0}:${visitedLandmark(e.id) ? 1 : 0}`;
         // Damage in eighths, so a wall being smashed redraws a few times rather than every blow.
         const dmg = Math.ceil((1 - e.hp / maxHp(e.def)) * 8);
         return isWall(e) ? `b:${e.def}:${e.faction}:${this.wallMask(e.x, e.y)}:${dmg}` : `b:${e.def}:${e.faction}:${dmg}`;
@@ -830,7 +853,7 @@ export class GameRenderer {
         return `c:${e.def}:${got}/${total}:${Math.floor((e.progress / constructWork(e)) * 10)}:${e.kit ? 'k' : ''}`;
       }
       case 'pawn':
-        return `w:${e.faction}:${e.name}:${e.asleep ? 1 : 0}:${e.carrying?.def ?? ''}:${e.weapon}:${e.drafted ? 1 : 0}:${e.downed ? 1 : 0}:${Math.ceil(woundTotal(e) * 20)}:${bleedRate(e) > 0 ? 1 : 0}:${e.prisoner}`;
+        return `w:${e.faction}:${e.name}:${e.tamed ?? 0}:${e.taming ?? 0}:${e.hunted ?? 0}:${e.asleep ? 1 : 0}:${e.carrying?.def ?? ''}:${e.weapon}:${e.drafted ? 1 : 0}:${e.downed ? 1 : 0}:${Math.ceil(woundTotal(e) * 20)}:${bleedRate(e) > 0 ? 1 : 0}:${e.prisoner}`;
     }
   }
 
@@ -876,6 +899,11 @@ export class GameRenderer {
       }
       case 'building': {
         const d = BUILDINGS[e.def];
+        if (d?.landmark) {
+          this.drawLandmark(root, e);
+          this.place('buildings', root, e.x, e.y);
+          break;
+        }
         const wall = isWall(e);
         if (wall) v.wallCell = e.y * store.mirror.w + e.x;
         const s = new Sprite(wall ? this.tex.wall(e.def, this.wallMask(e.x, e.y)) : this.tex.building(e.def));
@@ -883,7 +911,10 @@ export class GameRenderer {
         s.width = s.height = TILE;
         root.addChild(s);
         const health = e.hp / maxHp(e.def);
-        if (health < 1) {
+        if (health < 1 && e.faction === 0) {
+          // Old ruined walls out in the wilds: weathered, not under attack.
+          s.tint = 0xb8b0a4;
+        } else if (health < 1) {
           // Battered: darker, with a strip showing what's left.
           const k = Math.round(0x60 + 0x9f * health);
           s.tint = (k << 16) | (k << 8) | k;
@@ -1039,11 +1070,44 @@ export class GameRenderer {
     if (p > 0) root.addChild(this.shape(`cprog:${ready}:${p}`, (g) => g.rect(-TILE / 2 + 3, TILE / 2 - 6, (TILE - 6) * p, 3).fill(ready ? 0xf0c060 : 0x8ac8ff)));
   }
 
+  /**
+   * A landmark: hidden until your people have seen it (or heard of it), then drawn larger than a
+   * cell, with an ember mark over it until someone of yours has been there; dimmed once emptied,
+   * frosted over if the ice took it.
+   */
+  private drawLandmark(root: Container, e: Building): void {
+    if (!knowsLandmark(e.id)) return;
+    const scale = LANDMARK_SCALE[e.def] ?? 1.2;
+    const s = new Sprite(this.tex.building(e.def));
+    s.anchor.set(0.5, e.def === 'monolith' ? 0.8 : 0.5);
+    s.width = s.height = TILE * scale;
+    if (e.found && e.found < 0) s.tint = 0xc8dcf0;
+    else if (e.found) s.tint = 0x9a948c;
+    root.addChild(s);
+    if (!visitedLandmark(e.id) && !(e.found && !LANDMARKS[e.def as LandmarkKind]?.lasting)) {
+      const y = -TILE * scale * 0.55 - 6;
+      root.addChild(
+        this.shape(`lm-mark:${y}`, (g) =>
+          g
+            .poly([0, y - 6, 5, y, 0, y + 6, -5, y])
+            .fill({ color: 0xff9a3c, alpha: 0.95 })
+            .stroke({ width: 1.5, color: 0x3a2410 }),
+        ),
+      );
+    }
+    if (e.def === 'hot_spring') this.springs.add(e.id);
+  }
+
   /** A wild animal: its sprite on a shadow, a crosshair when your hunters are after it. */
   private drawAnimal(root: Container, e: Pawn, v: EntityView): void {
     const def = ANIMALS[e.species!];
     const size = TILE * 1.15 * (def?.size ?? 1);
     root.addChild(this.shape(`shadow:${size}`, (g) => g.ellipse(0, TILE * 0.3, size * 0.38, size * 0.12).fill({ color: 0x000000, alpha: 0.3 })));
+    // One of a colony's animals wears its colours: a ring at its feet, like a colonist's.
+    if (e.tamed) {
+      const color = store.mirror.factions.get(e.tamed)?.color ?? 0xffffff;
+      root.addChild(this.shape(`tame-ring:${size}:${color}`, (g) => g.ellipse(0, TILE * 0.3, size * 0.36, size * 0.13).stroke({ width: 2, color, alpha: 0.9 })));
+    }
     const body = new Sprite(this.tex.animal(e.species!));
     // The ComfyUI sprites stand on the bottom of their frame; the fallback shapes a little higher.
     body.anchor.set(0.5, this.tex.hasArt(`animal_${e.species}`) ? 0.95 : 0.85);
@@ -1063,6 +1127,19 @@ export class GameRenderer {
     const hurt = woundTotal(e);
     if (hurt > 0.02 || e.downed) {
       root.addChild(this.healthBar(TILE * 0.6, -size * 0.75, hurt, bleedRate(e) > 0));
+    }
+    if (e.taming && e.taming === store.me?.faction) {
+      // Marked for taming: a small heart, in ember.
+      const y = -size * 0.75 - 8;
+      root.addChild(
+        this.shape(`tame:${y}`, (g) =>
+          g
+            .circle(-2.6, y - 1.5, 3)
+            .circle(2.6, y - 1.5, 3)
+            .poly([-5.4, y - 0.5, 5.4, y - 0.5, 0, y + 5.5])
+            .fill(0xff9a3c),
+        ),
+      );
     }
     if (e.hunted && e.hunted === store.me?.faction) {
       const y = -size * 0.75 - 8;
@@ -1809,6 +1886,21 @@ function precipFor(tick: number): { kind: Precip; wind: number } {
   const cold = outdoorTempAt(tick, m.coldOffset, m.conditions) < 0;
   if (cold && (cal.season === 'Winter' || active.has('cold_snap') || active.has('early_frost')) && hash2(cal.day, 7, m.seed) < 0.6) return { kind: 'snow', wind: 0.35 };
   return { kind: 'none', wind: 0 };
+}
+
+/** How big each landmark is drawn, in cells. */
+const LANDMARK_SCALE: Record<string, number> = { abandoned_camp: 1.6, cairn: 1.2, old_ruin: 1.5, frozen_wreck: 2.6, hot_spring: 1.5, monolith: 1.9 };
+
+/** Your colony has seen this landmark, or heard of it. Spectators see everything. */
+function knowsLandmark(id: number): boolean {
+  const me = store.me?.faction;
+  if (!me) return true;
+  return !!store.mirror.factions.get(me)?.seen?.includes(id);
+}
+
+function visitedLandmark(id: number): boolean {
+  const me = store.me?.faction;
+  return !!me && !!store.mirror.factions.get(me)?.visited?.includes(id);
 }
 
 function isWall(e: Entity | undefined): boolean {

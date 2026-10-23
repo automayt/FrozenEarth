@@ -11,7 +11,8 @@ export type Tool =
   | { kind: 'deconstruct' }
   | { kind: 'packUp' }
   | { kind: 'moveHome' }
-  | { kind: 'hunt' };
+  | { kind: 'hunt' }
+  | { kind: 'tame' };
 
 export interface ChatLine {
   from: string;

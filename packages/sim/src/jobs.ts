@@ -16,6 +16,7 @@ import { startFire } from './fire';
 import { controlTick } from './control';
 import { threatTo } from './shelter';
 import type { World } from './world';
+import { tameTick } from './taming';
 
 export type JobResult = 'continue' | 'done' | 'fail';
 
@@ -90,6 +91,8 @@ export function runJob(w: World, p: Pawn): JobResult {
       return equip(w, p, j);
     case 'feed':
       return feed(w, p, j);
+    case 'tame':
+      return tameTick(w, p, j);
   }
 }
 

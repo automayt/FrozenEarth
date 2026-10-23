@@ -15,6 +15,7 @@ import { raidPoints, spendThreat, startRaid } from './raids';
 import { askForHelp, settlementsThatCouldAsk } from './settlements';
 import type { Item, Pawn, Plant, Tone } from './types';
 import { NEIGHBORS8, type World } from './world';
+import { auroraLights } from './landmarks';
 
 type Data = Record<string, unknown>;
 type Handler = (w: World, faction: number, data: Data) => boolean;
@@ -234,6 +235,7 @@ function weatherEvent(key: string): Handler {
     const [text, tone] = WEATHER_TEXT[key] ?? [`${def.label}.`, def.tone];
     say(w, 0, text, tone);
     if (key === 'long_night') for (const p of playerPawns(w)) addCondition(w, p, 'dread');
+    if (key === 'aurora') auroraLights(w);
     return true;
   };
 }

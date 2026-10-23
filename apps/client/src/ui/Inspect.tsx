@@ -1,5 +1,5 @@
-import { ANIMALS, APPAREL, BUILDINGS, CONDITIONS, DOWNED_PAIN, ITEM_CATEGORIES, ITEMS, MAX_SKILL, maxHp, WEAPONS, PLANTS, RECIPES, ROCKS, SKILL_LABELS, SKILLS, SOWABLE_PLANTS, TERRAINS, TRAITS, weaponOf } from '@fe/defs';
-import { bleedRate, CAVE_TEMP, describeJob, ROOF_SHELTER, dispositionOf, goodwillOf, outdoorTempAt, painOf, stageOf, TICKS_PER_HOUR, woundTotal, type Building, type Construct, type Entity, type Pawn, type Zone, constructCost, constructWork } from '@fe/sim';
+import { ANIMALS, APPAREL, BUILDINGS, CONDITIONS, LANDMARKS, type LandmarkKind, DOWNED_PAIN, ITEM_CATEGORIES, ITEMS, MAX_SKILL, maxHp, WEAPONS, PLANTS, RECIPES, ROCKS, SKILL_LABELS, SKILLS, SOWABLE_PLANTS, TERRAINS, TRAITS, weaponOf } from '@fe/defs';
+import { bleedRate, frostLevel, frostRadius, tameChance, CAVE_TEMP, describeJob, ROOF_SHELTER, dispositionOf, goodwillOf, outdoorTempAt, painOf, stageOf, TICKS_PER_HOUR, woundTotal, type Building, type Construct, type Entity, type Pawn, type Zone, constructCost, constructWork } from '@fe/sim';
 import { helpers } from '../actions';
 import { command } from '../net';
 import { store, useStore } from '../store';
@@ -54,6 +54,7 @@ function EntityInfo({ e }: { e: Entity }) {
     case 'pawn':
       return e.species ? <AnimalInfo p={e} /> : <PawnInfo p={e} />;
     case 'building':
+      if (BUILDINGS[e.def]?.landmark) return <LandmarkInfo b={e} />;
       return <BuildingInfo b={e} />;
     case 'construct':
       return <ConstructInfo c={e} />;
@@ -156,10 +157,86 @@ function hasHunter(): boolean {
   return false;
 }
 
+/** A place out in the wilds: what it is, whether it's been searched, and a button to send someone. */
+function LandmarkInfo({ b }: { b: Building }) {
+  const def = LANDMARKS[b.def as LandmarkKind];
+  const m = store.mirror;
+  const me = store.me?.faction ?? 0;
+  const f = m.factions.get(me);
+  if (!def || (me && !f?.seen?.includes(b.id))) return null;
+  const been = !!f?.visited?.includes(b.id);
+  const emptied = !def.lasting && !!b.found;
+  const by = b.found && b.found > 0 ? m.factions.get(b.found) : undefined;
+  const status = def.lasting
+    ? been
+      ? 'Your people have been here.'
+      : 'Nobody of yours has been here yet.'
+    : b.found === -1
+      ? 'Buried under the ice. Nothing can be had from it now.'
+      : b.found
+        ? b.found === me
+          ? 'Your people searched it.'
+          : `Picked clean by ${by?.name ?? 'someone else'}.`
+        : 'Not yet searched. Whoever gets there first takes what is there.';
+  const frost = frostLevel(b.x, b.y, m.w, m.h, frostRadius(store.estTick(), m.frost));
+  const who = helpers(b.x, b.y)[0];
+  const send = () => {
+    if (!who) return;
+    command({ c: 'draft', pawns: [who.id], on: true });
+    command({ c: 'move', pawns: [who.id], x: b.x, y: Math.min(m.h - 1, b.y + 1) });
+    store.toast(`${who.name.split(' ')[0]} is heading out to the ${def.label.toLowerCase()} (drafted: R sends them back to work).`, 'good');
+  };
+  return (
+    <>
+      <div className="kind">Landmark</div>
+      <h3>{def.label}</h3>
+      <p className="small">{def.blurb}</p>
+      <p className={`small ${emptied ? 'muted' : been ? 'good' : ''}`}>{status}</p>
+      {!def.lasting && !b.found && frost > 0 && <p className="bad small">The frost is closing on it: reach it before the ice does.</p>}
+      {b.def === 'hot_spring' && <p className="muted small">Warms the air for about five cells round it, even inside the frost, and its water never freezes. Colonists who bathe here feel better.</p>}
+      {b.def === 'monolith' && <p className="muted small">Touch it to learn of the places around it. Under an aurora it hums, and inspires whoever stands by it.</p>}
+      {b.def === 'frozen_wreck' && !b.found && <p className="muted small">Breaking into the hold is risky: something may be living in there.</p>}
+      {me && who && !emptied && (!been || def.lasting) ? (
+        <div className="combat-row">
+          <button onClick={send} title="Draft them and send them walking there">
+            Send {who.name.split(' ')[0]}
+          </button>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 function AnimalInfo({ p }: { p: Pawn }) {
   const def = ANIMALS[p.species!];
   const me = store.me?.faction ?? 0;
   const marked = p.hunted === me;
+  if (p.tamed) {
+    const owner = store.mirror.factions.get(p.tamed);
+    const ours = p.tamed === me;
+    return (
+      <>
+        <div className="kind">{ours ? 'Your animal' : `${owner?.name ?? 'A colony'}'s animal`}</div>
+        <h3>
+          {p.name} <span className="muted small">{def?.label.toLowerCase()}</span>
+        </h3>
+        <p className="muted small">
+          {def?.draft
+            ? `Grazes near home. On a journey it carries ${def.pack} and can pull a sledge.`
+            : def?.pack
+              ? `Grazes near home. On a journey it carries ${def.pack}.`
+              : 'Keeps the colony company. Colonists who spend time with it feel a little better.'}
+        </p>
+        <div className="combat-row">
+          <span className="muted small">Health {pct(Math.max(0, 1 - woundTotal(p)))}</span>
+          {p.downed && <span className="chip bad">Downed</span>}
+        </div>
+      </>
+    );
+  }
+  const taming = p.taming === me;
+  const tamers = me ? [...store.mirror.entities.values()].filter((e): e is Pawn => e.kind === 'pawn' && e.faction === me && !e.species && !e.prisoner && !e.downed && e.priorities.hunt > 0) : [];
+  const social = Math.max(0, ...tamers.map((t) => t.skills?.social?.level ?? 0));
   return (
     <>
       <div className="kind">{def?.predator ? 'Wild animal · predator' : 'Wild animal'}</div>
@@ -173,7 +250,17 @@ function AnimalInfo({ p }: { p: Pawn }) {
             {marked ? 'Stop hunting' : 'Hunt'}
           </button>
         ) : null}
+        {me && def?.tame ? (
+          <button className={taming ? 'on' : ''} onClick={() => command({ c: 'tame', pawns: [p.id], on: !taming })} title="Colonists on Hunt work will try to win it over">
+            {taming ? 'Stop taming' : 'Tame'}
+          </button>
+        ) : null}
       </div>
+      {me && taming && (
+        <p className={`small ${tamers.length ? '' : 'bad'}`}>
+          {tamers.length ? `Being tamed: about ${Math.round(tameChance(def!, social) * 100)}% a try with your best hand.` : 'Nobody has Hunt work turned on, so nobody will go.'}
+        </p>
+      )}
       {me && marked && !hasHunter() && <p className="bad small">None of your colonists has a bow or rifle, so nobody can hunt it yet.</p>}
       {def && (
         <p className="small">
