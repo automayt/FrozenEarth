@@ -247,7 +247,7 @@ describe('save compatibility', () => {
     const save = serializeWorld(w);
     save.version = 5;
     delete save.roof;
-    expect(SAVE_VERSION).toBe(7);
+    expect(SAVE_VERSION).toBe(8);
     const b = deserializeWorld(save);
     expect(b.map.roof.some((r) => r === ROOF.thick)).toBe(true);
     expect(Array.from(b.map.roof)).toEqual(Array.from(w.map.roof));

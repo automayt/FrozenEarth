@@ -1,4 +1,5 @@
 import { DEFAULT_PRIORITY, maxHp, START_PRIORITY } from '@fe/defs';
+import { placeLandmarks } from './landmarks';
 import type { Choice, Condition, Entity, Faction, Pawn, Room, Snapshot, Zone } from './types';
 import { upgradeStoryState, type StoryState } from './schedule';
 import { DEFAULT_FROST, type FrostParams } from './frost';
@@ -6,7 +7,7 @@ import { SKILLS } from '@fe/defs';
 import { computeRoof } from './mapgen';
 import { Dirty, rkFromString, rkToString, unreachableKey, World } from './world';
 
-export const SAVE_VERSION = 7;
+export const SAVE_VERSION = 8;
 
 export interface SaveData {
   version: number;
@@ -134,6 +135,8 @@ function migrate(data: SaveData): SaveData {
     }
     d.version = 7;
   }
+  // Version 8 added landmarks; they are placed once the world is rebuilt (see deserializeWorld).
+  if (d.version === 7) d.version = 8;
   return d;
 }
 
@@ -201,6 +204,8 @@ export function deserializeWorld(data: SaveData): World {
   m.wallChanges = d.wallChanges ?? [];
   w.frost = { ...DEFAULT_FROST, ...(d.frost ?? {}) };
   w.dirty = new Dirty();
+  // Worlds from before landmarks get them scattered over whatever ground is still open.
+  if (data.version < 8) placeLandmarks(w);
   return w;
 }
 

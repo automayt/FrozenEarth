@@ -2,7 +2,7 @@ import type { Command, GameMessage, Snapshot } from '@fe/sim';
 import type { WireDelta } from './packer';
 
 /** Bump when the wire format changes incompatibly. */
-export const PROTOCOL_VERSION = 9;
+export const PROTOCOL_VERSION = 10;
 
 export interface PlayerInfo {
   id: number;

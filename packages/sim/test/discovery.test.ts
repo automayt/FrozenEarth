@@ -311,3 +311,17 @@ describe('the frost as a set piece', () => {
     expect(back.factions.get(2)!.seen).toEqual([camp.id]);
   });
 });
+
+describe('worlds from before landmarks', () => {
+  it('get landmarks scattered over them when they load', () => {
+    const w = createWorld({ seed: 31, width: 200, height: 200, landmarks: false });
+    expect(landmarksOf(w)).toEqual([]);
+    const save = serializeWorld(w);
+    save.version = 7;
+    const back = deserializeWorld(save);
+    expect(landmarksOf(back).length).toBeGreaterThan(0);
+    // Saved again, they are not placed a second time.
+    const again = deserializeWorld(serializeWorld(back));
+    expect(landmarksOf(again).length).toBe(landmarksOf(back).length);
+  });
+});
