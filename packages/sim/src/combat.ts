@@ -4,6 +4,7 @@ import { HOSTILE_AT, opinionBetween, settlerAttacked } from './settlements';
 import { pactOf } from './pacts';
 import { noteAttack } from './diplomacy';
 import { helpedDefend } from './raids';
+import { answeredWithSteel, CHIEF_HIDE, chiefStruck } from './warband';
 import type { Faction, Pawn } from './types';
 import { NEIGHBORS8, type World } from './world';
 
@@ -191,12 +192,18 @@ export function strike(w: World, p: Pawn, t: Pawn): void {
   w.dirty.shots.push(p.id, t.id, p.x, p.y, t.x, t.y, hit ? 1 : 0, Math.max(0, WEAPON_KEYS.indexOf(p.weapon)));
   noteAttack(w, p.faction, t.faction);
   if (w.factions.get(t.faction)?.settlement) settlerAttacked(w, t, p, hit);
+  // Attacking a band that's waiting on its demand is an answer to it.
+  const theirs = w.factions.get(t.faction)?.raid;
+  if (theirs?.parley) answeredWithSteel(w, w.factions.get(t.faction)!, p);
   if (!hit) return;
-  const dmg = wd.damage * w.rng.range(0.7, 1.3);
+  let dmg = wd.damage * w.rng.range(0.7, 1.3);
+  if (theirs?.chief === t.id) {
+    dmg *= CHIEF_HIDE;
+    chiefStruck(theirs, t, p);
+  }
   // Raids keep score, to judge whether to press on.
   const ours = w.factions.get(p.faction)?.raid;
   if (ours && t.faction === ours.target) ours.dealt = (ours.dealt ?? 0) + dmg;
-  const theirs = w.factions.get(t.faction)?.raid;
   if (theirs && w.factions.get(p.faction)?.isPlayer && !p.species) (theirs.heroes ??= {})[p.id] = (theirs.heroes[p.id] ?? 0) + dmg;
   if (theirs) {
     theirs.taken = (theirs.taken ?? 0) + dmg;

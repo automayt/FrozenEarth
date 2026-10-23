@@ -53,7 +53,8 @@ export function fireTick(w: World): void {
   const spreadChance = 0.05 * (dry ? 1.8 : 1) * (rain ? 0.25 : 1);
   const ignite: number[] = [];
   const burntFactions = new Set<number>();
-  for (const cell of [...w.fireCells]) {
+  // In cell order: a loaded save rebuilds the set in cell order, and the dice must fall the same way.
+  for (const cell of [...w.fireCells].sort((a, b) => a - b)) {
     let level = m.fire[cell];
     const fuel = fuelAt(w, cell);
     if (!fuel) {

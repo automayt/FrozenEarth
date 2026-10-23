@@ -235,7 +235,7 @@ function flee(w: World, p: Pawn, j: J<'flee'>): JobResult {
   if (p.carrying && f?.raid) w.message(f.raid.target, `A raider escaped with ${p.carrying.count} ${ITEMS[p.carrying.def]?.label.toLowerCase() ?? p.carrying.def}.`, 'bad');
   p.carrying = null;
   w.despawn(p.id);
-  raiderGone(w, p.faction, false);
+  raiderGone(w, p.faction, false, p.id);
   return 'done';
 }
 

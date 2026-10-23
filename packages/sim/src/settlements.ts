@@ -11,6 +11,7 @@ import { offerChoice, registerChoice } from './choices';
 import { storedCount, takeStored } from './eventHandlers';
 import { allied, setPact, type RelView } from './pacts';
 import { theftGrievance } from './diplomacy';
+import { CONTRACT_CHANCE, contractsTick, hasContract, offerContract, voidContracts } from './contracts';
 import { hash2 } from './rng';
 import type { Building, Faction, Item, Job, Pawn, SettlementRequest, SettlementState } from './types';
 import { NEIGHBORS4, type World } from './world';
@@ -570,6 +571,7 @@ function notifyAll(w: World, f: Faction, text: string, tone: 'good' | 'neutral' 
 
 /** Once a day or so: first contact, the frost driving them out, arriving somewhere new, falling. */
 export function settlementsTick(w: World): void {
+  contractsTick(w);
   if (w.tick % (RARE_TICK * 4) !== 0) return;
   const daily = w.tick % TICKS_PER_DAY === 0;
   for (const f of w.factions.values()) {
@@ -767,7 +769,8 @@ const NEEDS: { item: string; lo: number; hi: number; why: string }[] = [
   { item: 'parka', lo: 1, hi: 2, why: 'because a child has nothing warm to wear' },
   { item: 'stone', lo: 40, hi: 80, why: 'to build a proper hearth' },
 ];
-const REWARDS = ['gold', 'steel', 'cloth', 'survival_meal', 'parka', 'rifle', 'bow'];
+/** What towns pay for help, picked to fit what it's worth. */
+export const REWARDS = ['gold', 'steel', 'cloth', 'survival_meal', 'parka', 'rifle', 'bow'];
 
 /** Label for a request's goods: "40 wood", "10 meals". */
 export function requestText(item: string, n: number): string {
@@ -809,7 +812,16 @@ function canAsk(w: World, f: Faction): number[] {
   const s = f.settlement!;
   const asking = new Set([...w.choices.values()].filter((c) => c.event === 'settlement_request' && w.choiceData.get(c.id)?.settlement === f.id).map((c) => c.faction));
   const open = new Set((s.requests ?? []).map((r) => r.faction));
-  return s.met.filter((p) => w.factions.get(p)?.isPlayer && dispositionOf(s, p) !== 'hostile' && !asking.has(p) && !open.has(p));
+  return s.met.filter((p) => w.factions.get(p)?.isPlayer && dispositionOf(s, p) !== 'hostile' && !asking.has(p) && !open.has(p) && !hasContract(w, f, p));
+}
+
+/**
+ * A town asks a colony for help (the storyteller's settlement_plea): sometimes a job to do
+ * (contracts.ts), otherwise goods to bring. Returns whether it asked.
+ */
+export function townAsks(w: World, f: Faction, faction: number): boolean {
+  if (f.settlement?.state === 'home' && canAsk(w, f).includes(faction) && w.rng.chance(CONTRACT_CHANCE) && offerContract(w, f, faction)) return true;
+  return askForHelp(w, f, faction);
 }
 
 /**
@@ -898,6 +910,7 @@ function voidRequests(w: World, f: Faction): void {
   const s = f.settlement!;
   for (const r of s.requests ?? []) w.message(r.faction, `${f.name} is gone. Your promise to bring them ${requestText(r.item, r.count)} no longer stands.`, 'neutral');
   s.requests = [];
+  voidContracts(w, f);
   // Their letters asking for help go too: agreeing would do nothing.
   for (const c of [...w.choices.values()]) {
     if (c.event !== 'settlement_request' || Number(w.choiceData.get(c.id)?.settlement) !== f.id) continue;

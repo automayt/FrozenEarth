@@ -12,7 +12,7 @@ import { addCondition, hasCondition, isMental, removeCondition } from './health'
 import { pawnName } from './names';
 import { scheduleEvent } from './schedule';
 import { raidPoints, spendThreat, startRaid } from './raids';
-import { askForHelp, settlementsThatCouldAsk } from './settlements';
+import { settlementsThatCouldAsk, townAsks } from './settlements';
 import type { Item, Pawn, Plant, Tone } from './types';
 import { NEIGHBORS8, type World } from './world';
 
@@ -635,7 +635,7 @@ HANDLERS.settlement_raid = (w) => {
 
 HANDLERS.settlement_plea = (w, faction) => {
   const options = settlementsThatCouldAsk(w, faction);
-  return options.length > 0 && askForHelp(w, w.rng.pick(options), faction);
+  return options.length > 0 && townAsks(w, w.rng.pick(options), faction);
 };
 
 HANDLERS.peddler = (w, faction) => {
