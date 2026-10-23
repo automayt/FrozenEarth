@@ -273,6 +273,8 @@ export interface RaidState {
   lastStand?: [pawn: EntityId, odds: number];
   /** A bandit camp a town wants cleared (contracts.ts): the cell they hold. */
   camp?: number;
+  /** Scouts: they slip away once they've put someone down. */
+  scout?: true;
 }
 
 /** assault: go for the colonists. loot: grab goods and go. burn: torch fields and outbuildings. siege: dig in out there and pick off anyone who shows. camp: bandits holding their camp. */

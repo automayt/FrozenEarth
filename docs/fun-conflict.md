@@ -11,6 +11,7 @@ Fights, raids and the people around you, made more exciting and more rewarding.
 | 3 | **Prisoners are worth something.** A day after you take a raider prisoner, their band sends word: ransom them back for gold, hand them to a town you know for goodwill and a bounty, or keep them and hope they join. Chiefs fetch far more. | High | Low | Turns "downed raider" into a reward with a real choice between gold, friends and a recruit. | Built |
 | 4 | **Town jobs beyond deliveries.** Towns that know you post work: clear a wolf pack that's taking their goats, or break up a bandit camp (with its own chief and the stolen goods lying in it). Reward from the town, goodwill, and a line in your story. | High | Medium | Gives a reason to march a squad out across the map, with a fight and a loot pile at the end. | Built |
 | 5 | **Last stands and combat barks.** When one colonist is the only one still standing against two or more raiders, everyone hears about it, and if they live it goes in the colony's story ("Yara held alone against four raiders."). Colonists call out when they drop an enemy, rescue a friend or take a prisoner; the chief going down, a band talked off and a last stand each get a banner. | Medium | Low | The chronicle's best stories, made by the sim instead of left to chance. | Built |
+| 5b | **Losing a fight hurts, it doesn't end the game.** Scouts slip away once they've put someone down; with nobody left standing, the raiders leave the fallen be, loot and go; when the fighting stops, the downed bind their own bleeding wounds. | High | Low | Early raids on an undrafted colony were wiping it out (everyone down, nobody to tend). A lost fight should cost goods and a week of bed rest, and leave a story. | Built |
 | 6 | **Bands that remember you.** A chief who escapes comes back with a grudge and a bigger band; a chief you killed is avenged by a successor. A "known bands" list in Diplomacy shows who's out there and how strong. | Medium-high | Medium | Escalation you can see coming, and a nemesis. | Not built |
 | 7 | **Escort a town's caravan** to a neighbour, with an ambush on the road. | High | High | A journey with stakes that isn't your own move. | Not built |
 | 8 | **Hold their walls:** a town that hears a raid is coming asks you to garrison it, paying on the day. | Medium | Medium | Formalises the "help a town hold out" moment that already happens by chance. | Not built |
@@ -46,3 +47,9 @@ Fights, raids and the people around you, made more exciting and more rewarding.
 
 - `reviewRaids` notices a lone defender among two or more colonists against two or more raiders (`raid.lastStand`), says so, and tells the story at the end if they're still alive.
 - `render/juice.ts`: barks for downing an enemy, rescuing, capturing; `ui/Moments.tsx`: banners for a demand, the chief down, a band talked off, a last stand, a job done.
+
+### 5b. Losing without dying (`warband.ts` stabilise, `raids.ts` reviewRaids)
+
+- Scout raids (`raid.scout`) break off once any colonist is down.
+- When nobody at a colony is standing, the raid stops fighting: it turns to looting (or leaves if there's nothing to take), and the downed bind their own wounds.
+- Whenever a raid on a colony breaks or ends, downed colonists' untended bleeding wounds are bound at `SELF_TEND` (0.2) quality: they stop bleeding but still need a bed.

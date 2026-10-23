@@ -1,4 +1,4 @@
-import { APPAREL, ITEMS } from '@fe/defs';
+import { APPAREL, CONDITIONS, ITEMS } from '@fe/defs';
 import { tell } from './chronicle';
 import { offerChoice, registerChoice } from './choices';
 import { TICKS_PER_DAY } from './constants';
@@ -300,6 +300,39 @@ registerChoice('ransom', (w, c, option, d) => {
   w.message(c.faction, `${String(d.band)} paid ${Number(d.gold)} gold for ${p.name}, who is walking away. The gold is by your home.`, 'good', homeCell);
   tell(w, c.faction, `Ransomed ${p.name} back to ${String(d.band)} for ${Number(d.gold)} gold.`);
 });
+
+// ---------------------------------------------------------------- the fight is over
+
+/** How well the downed bind their own wounds when the fighting stops (a doctor does better). */
+export const SELF_TEND = 0.2;
+
+/**
+ * The fighting at a colony has stopped (the raiders broke, or there's nobody left standing to
+ * fight): its downed bind their own wounds as best they can, so a lost fight leaves the colony
+ * hurt and robbed rather than bleeding to death with nobody to help.
+ */
+export function stabilise(w: World, colony: number): void {
+  if (!w.factions.get(colony)?.isPlayer) return;
+  const names: string[] = [];
+  let at = -1;
+  for (const id of w.kinds.pawn) {
+    const p = w.get<Pawn>(id)!;
+    if (p.faction !== colony || !p.downed || p.prisoner || p.species) continue;
+    let bound = false;
+    for (const c of p.conditions) {
+      if (c.tended !== undefined || !CONDITIONS[c.key]?.bleed) continue;
+      c.tended = SELF_TEND;
+      bound = true;
+    }
+    if (!bound) continue;
+    w.markDirty(p);
+    names.push(p.name.split(' ')[0]);
+    at = w.cellOf(p);
+  }
+  if (!names.length) return;
+  const who = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  w.message(colony, `The fighting has stopped. ${who} bound ${names.length === 1 ? 'their' : 'their own'} wounds as best they could: get them to a bed.`, 'neutral', at);
+}
 
 // ---------------------------------------------------------------- last stands
 

@@ -218,6 +218,40 @@ describe('last stands', () => {
   });
 });
 
+describe('early raids hurt and rob rather than wipe out', () => {
+  function raidOn(w: World, scout = false): Faction {
+    const f: Faction = { id: 2, name: 'Raiders of the Test', color: 0, home: { x: 5, y: 5 }, isPlayer: false, raid: { target: 1, size: 2, breakAt: 9, dead: 0, until: w.tick + TICKS_PER_DAY, fled: false } };
+    if (scout) f.raid!.scout = true;
+    w.factions.set(2, f);
+    addPawn(w, 3, 3, 2);
+    addPawn(w, 4, 3, 2);
+    return f;
+  }
+
+  it('scouts slip away once they have put someone down', () => {
+    const { w, b } = colony();
+    const f = raidOn(w, true);
+    run(w, RARE_TICK + 1);
+    expect(f.raid!.fled).toBe(false);
+    knockDown(w, b);
+    run(w, RARE_TICK + 1);
+    expect(f.raid!.fled).toBe(true);
+  });
+
+  it('with nobody left standing, the downed bind their wounds and the raiders take what they can and go', () => {
+    const { w, a, b } = colony();
+    const f = raidOn(w);
+    for (const p of [a, b]) {
+      injure(w, p, 'cut', 0.3);
+      knockDown(w, p);
+    }
+    expect(a.conditions.some((c) => c.key === 'cut' && c.tended === undefined)).toBe(true);
+    run(w, RARE_TICK * 2);
+    for (const p of [a, b]) expect(p.conditions.filter((c) => c.key === 'cut').every((c) => c.tended !== undefined)).toBe(true);
+    expect(f.raid!.fled || f.raid!.goal === 'loot').toBe(true);
+  });
+});
+
 describe('town jobs', () => {
   function withTown(seed = 3) {
     const w = flatWorld(90, 90, seed);
