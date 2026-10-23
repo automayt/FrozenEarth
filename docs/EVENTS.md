@@ -240,6 +240,8 @@ Hosts have an **Events** button (bottom bar) that fires any event on demand, for
 | **Catharsis** | mood | lasts 20–30 h. Let it all out, and feels lighter for it. |
 | **New life** | mood | lasts 48–72 h. A child was born in the colony. |
 | **Refusing the cold** | mental | lasts 3–6 h. Will not work outdoors in this freeze. Heads somewhere warm and waits it out. |
+| **Bathed in a hot spring** | mood | lasts 20–30 h. Warm all the way through, for once. |
+| **Spent time with the animals** | mood | lasts 10–18 h. A warm flank and a patient eye. |
 | **Dread** | mood | lasts 24–48 h. Something is very wrong with the world. |
 <!-- conditions:end -->
 
