@@ -241,4 +241,14 @@ describe('moving a colony', () => {
     expect(total(itemsOf(w, 'kit_bed'))).toBe(1);
     expect(total(itemsOf(w, 'wood'))).toBe(Math.floor(5 * 0.75));
   });
+
+describe('condition endings read right', () => {
+  it('singular, plural and names that start with "The"', async () => {
+    const { endedName } = await import('../src/rare');
+    expect(endedName('Cold snap')).toBe('The cold snap has');
+    expect(endedName('Gentle rains')).toBe('The gentle rains have');
+    expect(endedName('The Long Night')).toBe('The Long Night has');
+    expect(endedName('Sleeping sickness')).toBe('The sleeping sickness has');
+  });
+});
 });

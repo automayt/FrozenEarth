@@ -369,6 +369,13 @@ function conditionsTick(w: World): void {
   const ended = w.conditions.filter((c) => c.until <= w.tick);
   if (ended.length === 0) return;
   w.conditions = w.conditions.filter((c) => c.until > w.tick);
-  for (const c of ended) w.message(c.faction, `The ${(EVENTS[c.key]?.label ?? c.key).toLowerCase()} has ended.`, 'neutral');
+  for (const c of ended) w.message(c.faction, `${endedName(EVENTS[c.key]?.label ?? c.key)} ended.`, 'neutral');
   if (w.conditions.length !== before) w.dirty.conditions = true;
+}
+
+/** "The cold snap has", "The gentle rains have", "The Long Night has": a condition's name ready for "ended". */
+export function endedName(label: string): string {
+  const name = /^the /i.test(label) ? label : `The ${label.toLowerCase()}`;
+  const plural = /[^s]s$/.test(label);
+  return `${name} ${plural ? 'have' : 'has'}`;
 }
