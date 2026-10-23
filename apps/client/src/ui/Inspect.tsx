@@ -1,5 +1,5 @@
 import { ANIMALS, APPAREL, BUILDINGS, CONDITIONS, DOWNED_PAIN, ITEM_CATEGORIES, ITEMS, MAX_SKILL, maxHp, WEAPONS, PLANTS, RECIPES, ROCKS, SKILL_LABELS, SKILLS, SOWABLE_PLANTS, TERRAINS, TRAITS, weaponOf } from '@fe/defs';
-import { bleedRate, CAVE_TEMP, describeJob, ROOF_SHELTER, dispositionOf, goodwillOf, outdoorTempAt, painOf, stageOf, TICKS_PER_HOUR, woundTotal, type Building, type Construct, type Entity, type Pawn, type Zone, constructCost, constructWork } from '@fe/sim';
+import { bleedRate, bondOf, CAVE_TEMP, describeJob, ROOF_SHELTER, dispositionOf, goodwillOf, outdoorTempAt, painOf, stageOf, TICKS_PER_HOUR, woundTotal, type Building, type Construct, type Entity, type Pawn, type Zone, constructCost, constructWork } from '@fe/sim';
 import { helpers } from '../actions';
 import { command } from '../net';
 import { store, useStore } from '../store';
@@ -269,6 +269,7 @@ function PawnInfo({ p }: { p: Pawn }) {
           ))}
         </div>
       )}
+      {mine && !p.prisoner && <Bonds p={p} />}
       {p.conditions.length > 0 && (
         <div className="health">
           <h4>Health</h4>
@@ -313,6 +314,41 @@ function PawnInfo({ p }: { p: Pawn }) {
         </ul>
       )}
     </>
+  );
+}
+
+const BOND_LABEL = { lover: 'lover', friend: 'friend', rival: 'rival', '': '' } as const;
+
+/** How they get on with the rest of the colony: lover and friends first, rivals last. */
+function Bonds({ p }: { p: Pawn }) {
+  const op = p.social?.op ?? {};
+  const rows = Object.keys(op)
+    .map((k) => {
+      const q = store.mirror.get(Number(k));
+      if (!q || q.kind !== 'pawn' || q.faction !== p.faction) return null;
+      const bond = bondOf(p, q);
+      return { q, bond, v: Math.round(op[Number(k)]) };
+    })
+    .filter((r): r is NonNullable<typeof r> => !!r)
+    .sort((a, b) => (b.bond === 'lover' ? 1 : 0) - (a.bond === 'lover' ? 1 : 0) || b.v - a.v);
+  if (!rows.length) return null;
+  return (
+    <div className="health bonds">
+      <h4>Bonds</h4>
+      {rows.map(({ q, bond, v }) => (
+        <div
+          key={q.id}
+          className={`condition ${bond === 'rival' || v < -15 ? 'bad' : bond || v > 15 ? 'good' : ''}`}
+          title={`What ${p.name.split(' ')[0]} thinks of ${q.name}: ${v > 0 ? '+' : ''}${v} of 100`}
+        >
+          <span>
+            {q.name}
+            {bond ? ` (${BOND_LABEL[bond]})` : ''}
+          </span>
+          <small>{v > 0 ? `+${v}` : v}</small>
+        </div>
+      ))}
+    </div>
   );
 }
 

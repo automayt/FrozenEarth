@@ -85,7 +85,7 @@ function giveFirefight(w: World, p: Pawn): Job | null {
   const m = w.map;
   const home = m.idx(f.home.x, f.home.y);
   const fires: number[] = [];
-  for (const c of w.fireCells) {
+  for (const c of [...w.fireCells].sort((a, b) => a - b)) {
     if (w.reservedByOther(rk.f(c), p.id)) continue;
     let ours = w.dist(c, home) <= 25;
     if (!ours) {

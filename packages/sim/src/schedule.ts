@@ -22,6 +22,8 @@ export interface StoryState {
   scheduled: ScheduledEvent[];
   /** Frost line notices: faction -> 1 warned, 2 reached. Key 0 = the "front is moving" notice. */
   frostNotice: Record<number, number>;
+  /** New colonies' paced first week (opening.ts): faction -> [tick founded, next beat]. Missing on older saves. */
+  opening?: Record<number, [since: number, next: number]>;
 }
 
 export function newStoryState(): StoryState {

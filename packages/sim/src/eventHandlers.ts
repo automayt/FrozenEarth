@@ -13,6 +13,7 @@ import { pawnName } from './names';
 import { scheduleEvent } from './schedule';
 import { raidPoints, spendThreat, startRaid } from './raids';
 import { askForHelp, settlementsThatCouldAsk } from './settlements';
+import { brawl, chemistry, colonistsOf, warmTo, worstPair } from './social';
 import type { Item, Pawn, Plant, Tone } from './types';
 import { NEIGHBORS8, type World } from './world';
 
@@ -351,6 +352,106 @@ HANDLERS.nightmares = (w, faction) => {
   say(w, faction, `${p.name} was woken by terrible nightmares about the cold. They're exhausted.`, 'bad', w.cellOf(p));
   return true;
 };
+
+const QUARREL_TOPICS = [
+  'who gets the warm spot by the fire',
+  'the last of the good meat',
+  "who's been slacking",
+  'a debt from before the frost',
+  "whose turn it is to haul",
+  'a song one of them will not stop singing',
+  'who left the door open all night',
+  'whether the colony should move inward now',
+];
+
+const firstName = (p: Pawn) => p.name.split(' ')[0];
+
+HANDLERS.quarrel = (w, faction) => {
+  const pair = worstPair(w, faction);
+  if (!pair) return false;
+  const [a, b] = pair;
+  const topic = w.rng.pick(QUARREL_TOPICS);
+  offerChoice(
+    w,
+    faction,
+    'quarrel',
+    'A quarrel',
+    `${a.name} and ${b.name} are at each other's throats over ${topic}. The whole colony can hear it, and both look to you.`,
+    [
+      { key: 'a', label: `Side with ${firstName(a)}` },
+      { key: 'b', label: `Side with ${firstName(b)}` },
+      { key: 'leave', label: 'Let them sort it out' },
+    ],
+    5,
+    { a: a.id, b: b.id, topic },
+    w.cellOf(a),
+  );
+  return true;
+};
+
+registerChoice('quarrel', (w, c, option, d) => {
+  const a = w.get<Pawn>(Number(d.a));
+  const b = w.get<Pawn>(Number(d.b));
+  if (!a || !b || a.kind !== 'pawn' || b.kind !== 'pawn' || a.faction !== c.faction || b.faction !== c.faction) return;
+  if (option === 'a' || option === 'b') {
+    const [won, lost] = option === 'a' ? [a, b] : [b, a];
+    addCondition(w, won, 'vindicated');
+    addCondition(w, lost, 'slighted');
+    warmTo(w, lost, won, -15, 5);
+    say(w, c.faction, `You side with ${won.name}. ${firstName(lost)} storms off, muttering about ${d.topic}.`, 'neutral', w.cellOf(lost));
+    return;
+  }
+  // Left to themselves: good chemistry talks it out, bad chemistry ends in fists.
+  if (w.rng.chance(0.5 + chemistry(w, a.id, b.id) * 0.35)) {
+    warmTo(w, a, b, 15);
+    say(w, c.faction, `${a.name} and ${b.name} talked it out over the fire and shook hands.`, 'good', w.cellOf(a));
+  } else {
+    brawl(w, a, b, ` over ${d.topic}`);
+  }
+});
+
+HANDLERS.feast = (w, faction) => {
+  const people = colonistsOf(w, faction);
+  if (people.length < 2) return false;
+  const meals = storedItems(w, faction, (it) => ITEMS[it.def].category === 'meal').reduce((a, it) => a + it.count, 0);
+  const n = people.length;
+  const cost = meals >= n + 2 ? { of: 'cat:meal', n: n + 2, text: `${n + 2} meals` } : { of: 'cat:raw_food', n: n * 6, text: `${n * 6} raw food` };
+  if (storedItems(w, faction, (it) => (cost.of === 'cat:meal' ? ITEMS[it.def].category === 'meal' : ITEMS[it.def].category === 'raw_food')).reduce((a, it) => a + it.count, 0) < cost.n) return false;
+  const host = [...people].sort((x, y) => y.needs.mood - x.needs.mood || x.id - y.id)[0];
+  offerChoice(
+    w,
+    faction,
+    'feast',
+    'A feast?',
+    `${host.name} wants to throw a feast tonight: ${cost.text} from the stores, music, and a fire big enough to see from the next valley. Everyone would feel better for it, and closer.`,
+    [
+      { key: 'feast', label: 'Hold the feast' },
+      { key: 'keep', label: 'Keep the food' },
+    ],
+    5,
+    { host: host.id, ...cost },
+    w.cellOf(host),
+  );
+  return true;
+};
+
+registerChoice('feast', (w, c, option, d) => {
+  const host = w.get<Pawn>(Number(d.host));
+  if (option !== 'feast') {
+    if (host && host.kind === 'pawn' && !d.expired) addCondition(w, host, 'slighted');
+    say(w, c.faction, host ? `No feast. ${firstName(host)} takes it badly.` : 'No feast, then.', 'neutral');
+    return;
+  }
+  if (takeStored(w, c.faction, String(d.of), Number(d.n)) < Number(d.n)) {
+    say(w, c.faction, 'The stores turned out too thin for a feast. Maybe another time.', 'neutral');
+    return;
+  }
+  const people = colonistsOf(w, c.faction);
+  for (const p of people) addCondition(w, p, 'feasted');
+  for (let i = 0; i < people.length; i++) for (let j = i + 1; j < people.length; j++) warmTo(w, people[i], people[j], 6);
+  say(w, c.faction, `The feast goes on long into the night${host && host.kind === 'pawn' ? `, and ${firstName(host)} is the last to bed` : ''}. Everyone feels better, and closer.`, 'good', host && host.kind === 'pawn' ? w.cellOf(host) : undefined);
+  tell(w, c.faction, `Held a feast${host && host.kind === 'pawn' ? `, thrown by ${host.name}` : ''}.`);
+});
 
 HANDLERS.festival = (w) => {
   const pawns = playerPawns(w);
@@ -741,6 +842,7 @@ registerChoice('lost_child', (w, c, option, d) => {
   if (option === 'accept') {
     const p = joinPawn(w, c.faction, String(d.name), ['child']);
     if (p) {
+      p.social = { op: {}, born: w.tick };
       say(w, c.faction, `${p.name} has joined your colony.`, 'good', w.cellOf(p));
       tell(w, c.faction, `${p.name} joined the colony.`, 'first_colonist');
     }

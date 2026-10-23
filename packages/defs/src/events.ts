@@ -46,6 +46,11 @@ export interface EventDef {
    * only the minimum pool needed before it can be rolled.
    */
   scaledCost?: boolean;
+  /**
+   * Foreshadowed: when the storyteller picks it, a warning letter goes out first (with this
+   * chance) and the event itself follows this many in-game hours later.
+   */
+  omen?: { chance: number; hours: [number, number] };
   description: string;
 }
 
@@ -59,10 +64,10 @@ const E = (d: Omit<EventDef, 'cost' | 'minDay' | 'cooldownDays'> & Partial<Pick<
 export const EVENTS: Record<string, EventDef> = Object.fromEntries(
   [
     // ------------------------------------------------------------------ weather
-    E({ key: 'cold_snap', label: 'Cold snap', category: 'weather', scope: 'map', tone: 'bad', rarity: 'uncommon', cost: 25, minDay: 3, cooldownDays: 6, seasons: [0, 2, 3], hours: [24, 48], description: 'Temperatures drop by 20°C for one or two days. Outdoor crops may die and colonists risk hypothermia.' }),
+    E({ key: 'cold_snap', label: 'Cold snap', category: 'weather', scope: 'map', tone: 'bad', rarity: 'uncommon', cost: 25, minDay: 3, cooldownDays: 6, seasons: [0, 2, 3], hours: [24, 48], omen: { chance: 0.8, hours: [6, 12] }, description: 'Temperatures drop by 20°C for one or two days. Outdoor crops may die and colonists risk hypothermia.' }),
     E({ key: 'heat_wave', label: 'Heat wave', category: 'weather', scope: 'map', tone: 'bad', rarity: 'uncommon', cost: 20, minDay: 3, cooldownDays: 6, seasons: [1], hours: [24, 48], description: 'Temperatures climb by 12°C. Risk of heatstroke; food spoils fast.' }),
-    E({ key: 'blizzard', label: 'Blizzard', category: 'weather', scope: 'map', tone: 'bad', rarity: 'uncommon', cost: 30, minDay: 4, cooldownDays: 5, seasons: [3], hours: [12, 30], description: '−12°C and driving snow. Everyone walks 25% slower outdoors.' }),
-    E({ key: 'early_frost', label: 'Early frost', category: 'weather', scope: 'map', tone: 'bad', rarity: 'uncommon', cost: 25, minDay: 3, cooldownDays: 8, seasons: [2], hours: [6, 10], description: 'One brutal night at −18°C, enough to kill unprotected crops.' }),
+    E({ key: 'blizzard', label: 'Blizzard', category: 'weather', scope: 'map', tone: 'bad', rarity: 'uncommon', cost: 30, minDay: 4, cooldownDays: 5, seasons: [3], hours: [12, 30], omen: { chance: 0.8, hours: [5, 10] }, description: '−12°C and driving snow. Everyone walks 25% slower outdoors.' }),
+    E({ key: 'early_frost', label: 'Early frost', category: 'weather', scope: 'map', tone: 'bad', rarity: 'uncommon', cost: 25, minDay: 3, cooldownDays: 8, seasons: [2], hours: [6, 10], omen: { chance: 0.9, hours: [4, 8] }, description: 'One brutal night at −18°C, enough to kill unprotected crops.' }),
     E({ key: 'warm_spell', label: 'Warm spell', category: 'weather', scope: 'map', tone: 'good', rarity: 'uncommon', minDay: 2, cooldownDays: 8, seasons: [3], hours: [36, 60], description: 'A surprise thaw: +14°C in the middle of winter.' }),
     E({ key: 'spring_rains', label: 'Gentle rains', category: 'weather', scope: 'map', tone: 'good', rarity: 'common', minDay: 1, cooldownDays: 3, seasons: [0, 1], hours: [12, 30], description: 'Plants grow 40% faster and fires struggle to spread.' }),
     E({ key: 'thunderstorm', label: 'Thunderstorm', category: 'weather', scope: 'map', tone: 'neutral', rarity: 'common', cost: 5, minDay: 2, cooldownDays: 3, seasons: [0, 1, 2], hours: [5, 12], description: 'Rain plus lightning strikes that can set trees and wooden buildings alight.' }),
@@ -80,7 +85,7 @@ export const EVENTS: Record<string, EventDef> = Object.fromEntries(
     // ------------------------------------------------------------------ health
     E({ key: 'flu_outbreak', label: 'Flu', category: 'health', scope: 'faction', tone: 'bad', rarity: 'common', cost: 15, minDay: 3, cooldownDays: 5, seasons: [0, 2, 3], description: 'A colonist catches the flu. It can spread to others nearby.' }),
     E({ key: 'stomach_flu', label: 'Stomach flu', category: 'health', scope: 'faction', tone: 'bad', rarity: 'common', cost: 8, minDay: 2, cooldownDays: 4, description: 'A colonist is miserable and ravenous for a day or two.' }),
-    E({ key: 'plague', label: 'Plague', category: 'health', scope: 'faction', tone: 'bad', rarity: 'rare', cost: 45, minDay: 8, cooldownDays: 20, description: 'A deadly contagious disease. Rest the sick in beds and keep others away.' }),
+    E({ key: 'plague', label: 'Plague', category: 'health', scope: 'faction', tone: 'bad', rarity: 'rare', cost: 45, minDay: 8, cooldownDays: 20, omen: { chance: 0.7, hours: [10, 20] }, description: 'A deadly contagious disease. Rest the sick in beds and keep others away.' }),
     E({ key: 'wasting_cough', label: 'Wasting cough', category: 'health', scope: 'faction', tone: 'bad', rarity: 'uncommon', cost: 12, minDay: 4, cooldownDays: 8, seasons: [2, 3], description: 'A lingering cold-weather lung sickness.' }),
     E({ key: 'sleeping_sickness', label: 'Sleeping sickness', category: 'health', scope: 'pawn', tone: 'bad', rarity: 'uncommon', cost: 10, minDay: 3, cooldownDays: 6, description: 'A colonist can barely stay awake for days.' }),
     E({ key: 'food_poisoning', label: 'Food poisoning', category: 'health', scope: 'pawn', tone: 'bad', rarity: 'common', cost: 5, minDay: 1, cooldownDays: 3, description: 'Something they ate disagreed with them.' }),
@@ -92,6 +97,8 @@ export const EVENTS: Record<string, EventDef> = Object.fromEntries(
     E({ key: 'inspiration', label: 'Inspiration', category: 'mood', scope: 'pawn', tone: 'good', rarity: 'common', minDay: 1, cooldownDays: 3, description: 'A colonist works 50% faster for a day.' }),
     E({ key: 'second_wind', label: 'Second wind', category: 'mood', scope: 'pawn', tone: 'good', rarity: 'uncommon', minDay: 1, cooldownDays: 4, description: 'A colonist barely needs sleep for most of a day.' }),
     E({ key: 'nightmares', label: 'Nightmares', category: 'mood', scope: 'pawn', tone: 'bad', rarity: 'common', cost: 3, minDay: 1, cooldownDays: 2, description: 'A colonist wakes up exhausted and shaken.' }),
+    E({ key: 'quarrel', label: 'A quarrel', category: 'mood', scope: 'faction', tone: 'neutral', rarity: 'common', minDay: 2, cooldownDays: 3, description: 'Choice: two colonists are at each other over something small. Take a side (one is vindicated, the other slighted), or let them sort it out (they make up, or come to blows).' }),
+    E({ key: 'feast', label: 'A feast', category: 'mood', scope: 'faction', tone: 'neutral', rarity: 'uncommon', minDay: 3, cooldownDays: 6, description: 'Choice: a colonist wants to throw a feast. Spend meals or raw food for a mood lift for everyone and warmer feelings all round, or keep the food.' }),
     E({ key: 'festival', label: 'Festival day', category: 'mood', scope: 'map', tone: 'good', rarity: 'uncommon', minDay: 4, cooldownDays: 10, description: 'An old tradition: everyone celebrates and feels better for a day.' }),
 
     // ------------------------------------------------------------------ fortune
@@ -125,9 +132,9 @@ export const EVENTS: Record<string, EventDef> = Object.fromEntries(
     E({ key: 'refugee_betrayal', label: 'Betrayal', category: 'visitors', scope: 'faction', tone: 'bad', rarity: 'common', followUp: true, description: 'A refugee you took in robs you and runs.' }),
 
     // ------------------------------------------------------------------ threats (combat)
-    E({ key: 'raid', label: 'Raid', category: 'threat', scope: 'faction', tone: 'bad', rarity: 'uncommon', cost: 60, scaledCost: true, minDay: 5, cooldownDays: 5, weight: 1.5, description: 'Armed raiders arrive at the map edge and attack the colony. Bigger and better armed the richer the colony is; paid for from the threat budget. They flee once half of them are down.' }),
-    E({ key: 'night_raid', label: 'Night raid', category: 'threat', scope: 'faction', tone: 'bad', rarity: 'rare', cost: 60, scaledCost: true, minDay: 8, cooldownDays: 8, description: 'Raiders with knives and clubs creep in after dark. If it is daytime when the storyteller picks it, they wait for nightfall.' }),
-    E({ key: 'sapper_raid', label: 'Sapper raid', category: 'threat', scope: 'faction', tone: 'bad', rarity: 'rare', cost: 60, scaledCost: true, minDay: 12, cooldownDays: 10, description: 'Raiders who tunnel through rock and smash through walls and doors to get at the colony instead of looking for a way in.' }),
+    E({ key: 'raid', label: 'Raid', category: 'threat', scope: 'faction', tone: 'bad', rarity: 'uncommon', cost: 60, scaledCost: true, minDay: 5, cooldownDays: 5, weight: 1.5, omen: { chance: 0.75, hours: [8, 18] }, description: 'Armed raiders arrive at the map edge and attack the colony. Bigger and better armed the richer the colony is; paid for from the threat budget. They flee once half of them are down.' }),
+    E({ key: 'night_raid', label: 'Night raid', category: 'threat', scope: 'faction', tone: 'bad', rarity: 'rare', cost: 60, scaledCost: true, minDay: 8, cooldownDays: 8, omen: { chance: 0.6, hours: [6, 14] }, description: 'Raiders with knives and clubs creep in after dark. If it is daytime when the storyteller picks it, they wait for nightfall.' }),
+    E({ key: 'sapper_raid', label: 'Sapper raid', category: 'threat', scope: 'faction', tone: 'bad', rarity: 'rare', cost: 60, scaledCost: true, minDay: 12, cooldownDays: 10, omen: { chance: 0.6, hours: [10, 20] }, description: 'Raiders who tunnel through rock and smash through walls and doors to get at the colony instead of looking for a way in.' }),
     E({ key: 'scout_party', label: 'Scouting party', category: 'threat', scope: 'faction', tone: 'bad', rarity: 'common', cost: 25, minDay: 3, cooldownDays: 4, description: 'One or two raiders probe the colony’s defences. They run as soon as one of them goes down.' }),
 
     // ------------------------------------------------------------------ mysteries & unique

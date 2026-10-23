@@ -10,6 +10,7 @@ import { settlementsTick } from './settlements';
 import { diplomacyTick } from './diplomacy';
 import { animalNeeds, wildlifeTick } from './wildlife';
 import { answerUrgentCare } from './work';
+import { socialThoughts, socialTick } from './social';
 import type { Building, Item, Pawn, Plant, Room } from './types';
 import { NEIGHBORS4, type World } from './world';
 
@@ -118,8 +119,10 @@ function needsTick(w: World, p: Pawn): void {
   else if (temp > COMFORT_MAX + e.heatShift) add('Too hot', -0.04);
   if (w.map.roomAt[cell] || w.map.roof[cell]) add('Sheltered', 0.05);
   for (const [label, v] of effectsOf(w, p).thoughts) add(label, v);
+  for (const [label, v] of socialThoughts(w, p)) add(label, v);
   n.mood += (Math.max(0, Math.min(1, target)) - n.mood) * 0.2;
   p.thoughts = thoughts;
+  socialTick(w, p);
 
   // Urgent needs, sickness and mental breaks interrupt work.
   const jt = p.job?.type;

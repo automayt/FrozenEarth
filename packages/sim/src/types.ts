@@ -145,6 +145,8 @@ export interface Pawn extends Base {
   giveUp?: [target: EntityId, until: number];
   /** Settlers sent to help an ally fight off a raid, and when they head home regardless. */
   aid?: [faction: number, until: number];
+  /** Colonists: how they get on with the others (see social.ts). Missing on older saves. */
+  social?: import('./social').Social;
 }
 
 export type PrisonerState = '' | 'held' | 'leaving';

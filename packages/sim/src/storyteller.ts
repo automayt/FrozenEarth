@@ -4,6 +4,7 @@ import { SEASONS, START_TICK, TICKS_PER_DAY, TICKS_PER_HOUR } from './constants'
 import { tickChoices } from './choices';
 import { daysUntilFrost, FROST_MAX } from './frost';
 import { fireEvent } from './eventHandlers';
+import { fireOrForeshadow, inOpening, OPENING_RANDOM_MULT, openingTick } from './opening';
 import type { World } from './world';
 
 export { newStoryState, scheduleEvent, type StoryState } from './schedule';
@@ -30,6 +31,7 @@ export function tickStoryteller(w: World): void {
   }
   tickChoices(w);
   runScheduled(w);
+  if (w.tick % TICKS_PER_HOUR === 0) openingTick(w);
   if (w.tick < s.nextCheck) return;
   s.nextCheck = w.tick + TICKS_PER_HOUR * CHECK_HOURS;
   const players = [...w.factions.values()].filter((f) => f.isPlayer);
@@ -42,7 +44,7 @@ export function tickStoryteller(w: World): void {
   for (const f of players) s.threat[f.id] = (s.threat[f.id] ?? 0) + 7 * ramp;
 
   if (w.rng.chance(MAP_CHANCE)) roll(w, 'map', 0);
-  for (const f of players) if (w.rng.chance(FACTION_CHANCE)) roll(w, 'faction', f.id);
+  for (const f of players) if (w.rng.chance(FACTION_CHANCE * (inOpening(w, f.id) ? OPENING_RANDOM_MULT : 1))) roll(w, 'faction', f.id);
 }
 
 /** Tell colonies when the frost line starts moving, when it's close, and when it arrives. */
@@ -119,7 +121,7 @@ function roll(w: World, scope: 'map' | 'faction', faction: number): void {
       if (r <= 0) break;
     }
     const { def } = options.splice(k, 1)[0];
-    if (!fireEvent(w, def.key, faction)) continue;
+    if (!fireOrForeshadow(w, def, faction)) continue;
     const s = w.story;
     s.lastFired[cooldownKey(def, faction)] = w.tick;
     if (def.unique) s.uniqueFired.push(def.key);

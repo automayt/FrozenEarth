@@ -90,6 +90,8 @@ Hosts have an **Events** button (bottom bar) that fires any event on demand, for
 | **Inspiration** `inspiration` | common | good | a colonist | day 1+ | A colonist works 50% faster for a day. |
 | **Second wind** `second_wind` | uncommon | good | a colonist | day 1+ | A colonist barely needs sleep for most of a day. |
 | **Nightmares** `nightmares` | common | bad (3) | a colonist | day 1+ | A colonist wakes up exhausted and shaken. |
+| **A quarrel** `quarrel` | common | neutral | a colony | day 2+ | Choice: two colonists are at each other over something small. Take a side (one is vindicated, the other slighted), or let them sort it out (they make up, or come to blows). |
+| **A feast** `feast` | uncommon | neutral | a colony | day 3+ | Choice: a colonist wants to throw a feast. Spend meals or raw food for a mood lift for everyone and warmer feelings all round, or keep the food. |
 | **Festival day** `festival` | uncommon | good | everyone | day 4+ | An old tradition: everyone celebrates and feels better for a day. |
 
 ### Fortune
@@ -228,6 +230,16 @@ Hosts have an **Events** button (bottom bar) that fires any event on demand, for
 | **Robbed** | mood | lasts 36–60 h. Someone stole from the colony. |
 | **Betrayed** | mood | lasts 72–120 h. Someone the colony trusted turned on it. |
 | **Awestruck** | mood | lasts 36–72 h. Witnessed something wondrous. |
+| **Heartbroken** | mood | lasts 120–192 h. Lost the one they loved. |
+| **Lost a friend** | mood | lasts 72–120 h. A close friend died. |
+| **Got into a fight** | mood | lasts 16–30 h. Came to blows with someone in the colony. |
+| **Comforted** | mood | lasts 8–16 h. Someone listened when it mattered. |
+| **Vindicated** | mood | lasts 24–36 h. The colony took their side in a quarrel. |
+| **Slighted** | mood | lasts 30–48 h. Felt let down by the colony. |
+| **Feasted** | mood | lasts 24–36 h. Ate and sang with everyone at a feast. |
+| **Catharsis** | mood | lasts 20–30 h. Let it all out, and feels lighter for it. |
+| **New life** | mood | lasts 48–72 h. A child was born in the colony. |
+| **Refusing the cold** | mental | lasts 3–6 h. Will not work outdoors in this freeze. Heads somewhere warm and waits it out. |
 | **Dread** | mood | lasts 24–48 h. Something is very wrong with the world. |
 <!-- conditions:end -->
 
@@ -253,7 +265,11 @@ Colonists roll 0–2 traits, with no conflicting pairs. Event-only traits come f
 | **Volatile** | Snaps under stress much more easily. |
 | **Steady nerves** | Rarely breaks down. |
 | **Northerner** | Grew up in the cold. Tolerates it far better. |
-| **Southerner** | Loves the heat, hates the cold. |
+| **Southerner** | Loves the heat, hates the cold. Downs tools rather than work outdoors in a freeze. |
+| **Kind** | Comforts the downcast. People warm to them. |
+| **Abrasive** | Says exactly what they think. Rubs people the wrong way. |
+| **Romantic** | Falls in love easily, and hard. |
+| **Night owl** | Sleeps through the day and works through the night. |
 | **Child** (event only) | Too young for hard labour. Works at half speed. |
 | **Pilgrim of the Center** (event only) | Walked out of the frozen heart of the world. Tireless, calm, and strange. |
 <!-- traits:end -->

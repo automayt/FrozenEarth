@@ -1,7 +1,7 @@
 import { BitmapText, Container, Graphics, TextStyle } from 'pixi.js';
 import { ITEMS } from '@fe/defs';
 import type { Mirror } from '@fe/protocol';
-import type { Item, Pawn } from '@fe/sim';
+import { TALK, type Item, type Pawn, type TalkKind } from '@fe/sim';
 
 /**
  * The game answering back. Colonists say a word at the moments that matter (a raid, a first
@@ -37,7 +37,38 @@ const LINES: Record<string, string[]> = {
   road: ['On the road.', 'Onward.', 'Keep together.'],
   camp: ['Keep the fire going.', 'Rest while we can.'],
   miserable: ["I can't go on like this.", 'What are we doing here?'],
+  strike: ['Not in this cold.', "I'm not going out there.", 'My fingers! No.'],
+  grief: ['Why them…', 'Not them. Not them.'],
 };
+
+/** What colonists say to each other: the opener, then the reply from the one spoken to. */
+const TALK_LINES: Record<TalkKind, [string[], string[]]> = {
+  chat: [
+    ['Cold one today.', 'Sleep well?', 'Heard the wolves last night?', 'Smells like snow.', "How's the hand?", 'Any word from the towns?', 'Pass me that, would you?'],
+    ['Mm.', 'Aye.', 'Could be worse.', 'Not really.', 'Same as ever.', 'Here.'],
+  ],
+  joke: [
+    ['Warmest I’ve been all week!', 'I’ve named the turnip Bert.', 'Ever seen a goat in a hat?', 'Last one to the fire cooks.'],
+    ['Ha!', 'You’re terrible.', 'Hah! Stop.', 'Don’t make me laugh, it hurts.'],
+  ],
+  insult: [
+    ['You call that work?', 'Nobody asked you.', 'Pull your weight.', 'Do you ever stop talking?'],
+    ['Say that again.', 'Get lost.', 'Oh, really?', 'Watch it.'],
+  ],
+  comfort: [
+    ['It’ll be all right.', 'I’m here.', 'Sit with me a bit.', 'We’ll get through this.'],
+    ['Thank you.', '…Thanks.', 'I needed that.'],
+  ],
+  flirt: [
+    ['You look nice today.', 'Walk with me later?', 'Save me a seat by the fire?'],
+    ['Maybe I will.', 'Oh… sure.', 'Stop it, you.'],
+  ],
+  brawl: [['That’s it!', 'Come here!', 'Right, you asked for it!'], ['Oof!', 'Get off me!']],
+  makeup: [['Truce?'], ['Truce.']],
+  love: [['I think I love you.'], ['Me too. Idiot.']],
+};
+/** How long after the opener the reply comes. */
+const REPLY_MS = 1300;
 
 interface Seen {
   job: string;
@@ -47,6 +78,9 @@ interface Seen {
   cold: boolean;
   low: boolean;
   phase: string;
+  talk: number;
+  strike: boolean;
+  grief: boolean;
 }
 
 interface Bark {
@@ -73,6 +107,7 @@ export class Juice {
   private items = new Set<number>();
   private cleared: { cell: number; at: number }[] = [];
   private primed = false;
+  private replies: { pawn: number; text: string; at: number }[] = [];
 
   /** A rock cell was mined out this frame (the renderer already spots it for the dust). */
   rockMined(cell: number, now: number): void {
@@ -124,6 +159,9 @@ export class Juice {
       cold: p.conditions.some((c) => c.key === 'hypothermia' && c.severity > 0.2),
       low: p.needs.mood < 0.18,
       phase: p.job?.type === 'trek' ? p.job.phase : '',
+      talk: p.social?.talk?.[2] ?? 0,
+      strike: p.conditions.some((c) => c.key === 'cold_strike'),
+      grief: p.conditions.some((c) => c.key === 'heartbroken'),
     };
   }
 
@@ -146,13 +184,28 @@ export class Juice {
     else if (is.bed && !was.bed) what = 'bed';
     else if (is.cold && !was.cold) what = 'cold';
     else if (is.job === 'eat' && was.job !== 'eat' && p.needs.food < 0.15) what = 'starving';
+    else if (is.strike && !was.strike) what = 'strike';
+    else if (is.grief && !was.grief) what = 'grief';
     else if (is.low && !was.low) what = 'miserable';
     if (what) this.say(p.id, pick(LINES[what]), now);
+    else if (is.talk !== was.talk && p.social?.talk) {
+      // A word with a colony-mate, and their answer a moment later.
+      const [partner, kind] = p.social.talk;
+      const lines = TALK_LINES[TALK[kind]];
+      if (lines && this.say(p.id, pick(lines[0]), now)) this.replies.push({ pawn: partner, text: pick(lines[1]), at: now + REPLY_MS });
+    }
   }
 
-  private say(pawn: number, text: string, now: number): void {
-    if (now - (this.lastBark.get(pawn) ?? -Infinity) < BARK_GAP_MS) return;
-    if (this.barks.length >= MAX_BARKS) return;
+  /** Put up a bubble over a colonist, unless they spoke a moment ago or the screen is full. True if shown. */
+  private say(pawn: number, text: string, now: number, force = false): boolean {
+    if (!force && now - (this.lastBark.get(pawn) ?? -Infinity) < BARK_GAP_MS) return false;
+    // One bubble per speaker: a new line replaces the last.
+    this.barks = this.barks.filter((b) => {
+      if (b.pawn !== pawn) return true;
+      b.root.destroy({ children: true });
+      return false;
+    });
+    if (this.barks.length >= MAX_BARKS) return false;
     this.lastBark.set(pawn, now);
     const root = new Container();
     const label = new BitmapText({ text, style: BUBBLE_TEXT });
@@ -167,6 +220,7 @@ export class Juice {
     root.addChild(g, label);
     this.view.addChild(root);
     this.barks.push({ pawn, root, born: now });
+    return true;
   }
 
   /** A new stack where a tree just fell or rock was just mined: show what it gave. */
@@ -187,6 +241,12 @@ export class Juice {
   }
 
   private animate(now: number, pawnPos: (id: number) => { x: number; y: number } | null): void {
+    // Answers are owed: the one spoken to replies even if they spoke a little while ago.
+    this.replies = this.replies.filter((r) => {
+      if (now < r.at) return true;
+      if (pawnPos(r.pawn)) this.say(r.pawn, r.text, now, true);
+      return false;
+    });
     this.barks = this.barks.filter((b) => {
       const age = now - b.born;
       const at = pawnPos(b.pawn);

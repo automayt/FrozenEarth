@@ -14,8 +14,10 @@ export const MILESTONES: Record<string, string> = {
   first_colonist: 'A newcomer joined',
   first_trade: 'First trade with a town',
   first_raid: 'Drove off the first raid',
+  first_love: 'Two colonists fell in love',
   first_alliance: 'First alliance sworn',
   first_journey: 'First journey inward',
+  first_birth: 'A child was born',
   first_winter: 'Lived through a winter',
   frost: 'The frost arrived',
 };
