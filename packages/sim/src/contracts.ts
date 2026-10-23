@@ -33,9 +33,11 @@ export const CONTRACTS: Record<Contract['kind'], JobKind> = {
 const CAMP_POINTS: [number, number] = [90, 160];
 /** Goodwill lost when a colony took the job and nobody dealt with it. */
 const FAILED = -8;
-/** Where the targets turn up: this far from the town, from..to, and never this close to a colony. */
+/** Where the targets turn up: this far from the town, from..to... */
 const SITE_RANGE: [number, number] = [14, 26];
-const SITE_CLEAR = 14;
+/** ...and this far from any colony (bandits next door would be a raid, not a job) and other towns. */
+const SITE_CLEAR_COLONY = 24;
+const SITE_CLEAR_TOWN = 14;
 
 const DIRS = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
 
@@ -59,7 +61,10 @@ function site(w: World, f: Faction): number {
     if (m.solid[c] || m.roomAt[c] || m.component(c) !== m.component(home)) continue;
     if (tries < 40 && w.frostAt(c) > 0.3) continue;
     let clear = true;
-    for (const o of w.factions.values()) if ((o.isPlayer || (o.settlement && o.id !== f.id)) && Math.hypot(o.home.x - x, o.home.y - y) < SITE_CLEAR) clear = false;
+    for (const o of w.factions.values()) {
+      const gap = o.isPlayer ? SITE_CLEAR_COLONY : o.settlement && o.id !== f.id ? SITE_CLEAR_TOWN : 0;
+      if (gap && Math.hypot(o.home.x - x, o.home.y - y) < gap) clear = false;
+    }
     if (clear) return c;
   }
   return -1;

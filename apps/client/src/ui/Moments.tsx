@@ -18,6 +18,11 @@ interface Moment {
 
 /** Which letters become moments, and what the banner says. First match wins. */
 const RULES: { test: RegExp; title: string; tone: Moment['tone'] }[] = [
+  { test: /waits at the edge for your answer/, title: 'Pay or fight', tone: 'bad' },
+  { test: /(is down|is dead).*are breaking and running/, title: 'The chief is down!', tone: 'good' },
+  { test: /talked .* out of it/, title: 'Talked down', tone: 'good' },
+  { test: /is the last one standing/, title: 'Last stand', tone: 'bad' },
+  { test: /^Job done:/, title: 'Job done', tone: 'good' },
   { test: /spring an ambush/, title: 'Ambush!', tone: 'bad' },
   { test: /(have arrived from the|creeping in from the|have come from the .* with picks)/, title: 'Raiders!', tone: 'bad' },
   { test: /scouting party/, title: 'Scouts on the edge', tone: 'bad' },

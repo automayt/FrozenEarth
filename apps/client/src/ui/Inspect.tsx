@@ -156,6 +156,16 @@ function hasHunter(): boolean {
   return false;
 }
 
+/** Towns that gave you a job this pawn is part of (a wolf to kill, a bandit to deal with). */
+function wantedBy(id: number): string | null {
+  const me = store.me?.faction;
+  for (const f of store.mirror.factions.values()) {
+    const job = f.settlement?.contracts?.find((c) => c.faction === me && c.targets.includes(id));
+    if (job) return `Wanted by ${f.name}: part of the job you took.`;
+  }
+  return null;
+}
+
 function AnimalInfo({ p }: { p: Pawn }) {
   const def = ANIMALS[p.species!];
   const me = store.me?.faction ?? 0;
@@ -165,6 +175,7 @@ function AnimalInfo({ p }: { p: Pawn }) {
       <div className="kind">{def?.predator ? 'Wild animal · predator' : 'Wild animal'}</div>
       <h3>{def?.label ?? p.name}</h3>
       <p className="muted small">{def?.predator ? 'Predator. Hunts when hungry, and people once winter comes.' : def?.defends ? 'Turns on anyone who attacks it.' : 'Skittish: bolts when people come close.'}</p>
+      {wantedBy(p.id) && <p className="small good">{wantedBy(p.id)}</p>}
       <div className="combat-row">
         <span className="muted small">Health {pct(Math.max(0, 1 - woundTotal(p)))}</span>
         {p.downed && <span className="chip bad">Downed</span>}
@@ -190,7 +201,10 @@ function PawnInfo({ p }: { p: Pawn }) {
   const fac = store.mirror.factions.get(p.faction);
   const raider = !!fac?.raid;
   const settler = !!fac?.settlement && fac.settlement.state !== 'fallen';
-  const kind = mine ? (p.prisoner ? 'Prisoner' : 'Your colonist') : raider ? 'Raider' : settler ? 'Settler' : fac?.isPlayer ? "Another player's colonist" : 'Stranger';
+  const chief = raider && fac?.raid?.chief === p.id;
+  const band = raider ? (fac?.raid?.camp !== undefined ? 'Bandit' : 'Raider') : '';
+  const kind = mine ? (p.prisoner ? (p.captive?.chief ? 'Prisoner · a raider chief' : 'Prisoner') : 'Your colonist') : raider ? (chief ? `${band} chief` : band) : settler ? 'Settler' : fac?.isPlayer ? "Another player's colonist" : 'Stranger';
+  const wanted = wantedBy(p.id);
   return (
     <>
       <div className={`kind ${raider ? 'bad' : ''}`}>{kind}</div>
@@ -228,7 +242,14 @@ function PawnInfo({ p }: { p: Pawn }) {
           </button>
         )}
       </div>
-      {mine && p.prisoner === 'held' && <p className="muted small">Held prisoner. Content prisoners may come round to joining the colony.</p>}
+      {mine && p.prisoner === 'held' && (
+        <p className="muted small">
+          Held prisoner. Content prisoners may come round to joining the colony.
+          {p.captive?.offerAt ? ` ${p.captive.band} may send word about buying them back.` : ''}
+        </p>
+      )}
+      {chief && <p className="small">Leads {fac?.name}. Bring them down and the rest will break; they carry the band's purse.</p>}
+      {wanted && <p className="small good">{wanted}</p>}
       <p className="job">{describeJob(p.job, lookup)}</p>
       {mine && (
         <>

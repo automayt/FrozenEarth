@@ -1,5 +1,5 @@
 import { ITEMS } from '@fe/defs';
-import { dispositionOf, FRIENDLY_AT, goodwillOf, GOODWILL, GUARD_REACH, HOSTILE_AT, pactOf, priceFactor, requestText, rivalsOf, TICKS_PER_DAY, TICKS_PER_HOUR, TRADE_RANGE, type Faction } from '@fe/sim';
+import { contractText, dispositionOf, FRIENDLY_AT, goodwillOf, GOODWILL, GUARD_REACH, HOSTILE_AT, pactOf, priceFactor, requestText, rivalsOf, TICKS_PER_DAY, TICKS_PER_HOUR, TRADE_RANGE, type Faction } from '@fe/sim';
 import { DISPOSITION_COLOR } from '../render/renderer';
 import { store } from '../store';
 import { traderNear } from './trade';
@@ -96,6 +96,7 @@ export function SettlementCard({ f, trade = true }: { f: Faction; trade?: boolea
   const trader = traderNear(m, me, f.home);
   const met = st.met.includes(me);
   const requests = (st.requests ?? []).filter((r) => r.faction === me);
+  const jobs = (st.contracts ?? []).filter((c) => c.faction === me);
   // Their biggest stocks, by value.
   const stock = new Map<string, number>();
   for (const e of m.entities.values()) {
@@ -138,13 +139,37 @@ export function SettlementCard({ f, trade = true }: { f: Faction; trade?: boolea
                   </span>
                 );
               })
-            : met
+            : jobs.length
+              ? 'Nothing else for now.'
+              : met
               ? mood === 'hostile'
                 ? 'Nothing from enemies.'
                 : 'Nothing asked of you yet. Towns that know you send letters when they need help.'
               : `You haven't met yet: bring a colonist within ${st.radius + 10} cells.`}
         </span>
       </div>
+      {jobs.length > 0 && (
+        <div className="sc-row">
+          <span className="muted small">Job</span>
+          <span className="small">
+            {jobs.map((j) => {
+              const days = Math.max(0, (j.until - store.estTick()) / TICKS_PER_DAY);
+              const left = j.targets.filter((id) => {
+                const p = m.get(id);
+                return p?.kind === 'pawn' && !p.downed && !p.prisoner;
+              }).length;
+              return (
+                <span key={j.id} className="sc-want">
+                  Deal with <b>{contractText(j)}</b> ({left} left) within {days >= 1 ? `${Math.ceil(days)}d` : `${Math.max(1, Math.round(days * 24))}h`}, for {requestText(j.reward[0], j.reward[1])}{' '}
+                  <button className="link" onClick={() => store.set({ focus: { x: j.at % m.w, y: Math.floor(j.at / m.w) } })}>
+                    Show
+                  </button>
+                </span>
+              );
+            })}
+          </span>
+        </div>
+      )}
       {top.length > 0 && (
         <div className="sc-row">
           <span className="muted small">Has</span>
