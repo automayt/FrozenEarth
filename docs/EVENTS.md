@@ -122,7 +122,7 @@ Hosts have an **Events** button (bottom bar) that fires any event on demand, for
 | --- | --- | --- | --- | --- | --- |
 | **Wanderer joins** `wanderer_joins` | uncommon | good | a colony | day 1+ | Someone walks in from the edge of the map and joins without asking questions. |
 | **Refugee** `refugee` | common | neutral | a colony | day 2+ | Choice: take in someone fleeing trouble. They may be sick, or not who they say they are. |
-| **A settlement asks for help** `settlement_plea` | common | neutral | a colony | day 2+ | Choice: a settlement your colonists have met asks for goods, for a reward (sometimes one of their people joins you). Agree and fail to deliver, and they remember. |
+| **A settlement asks for help** `settlement_plea` | common | neutral | a colony | day 2+ | Choice: a settlement your colonists have met asks for goods, for a reward (sometimes one of their people joins you), or offers a job: clear a wolf pack or break up a bandit camp near their town. Agree and fail to deliver, and they remember. |
 | **Peddler** `peddler` | common | neutral | a colony | day 1+ | Choice: a travelling peddler offers a trade from your stockpiles. |
 | **Beggars** `beggars` | uncommon | neutral | a colony | day 2+ | Choice: hungry travellers ask for food. Kindness is sometimes repaid. |
 | **Lost child** `lost_child` | uncommon | neutral | a colony | day 3+ | Choice: a child wanders in alone. They can’t work hard, but they grow up. |
@@ -137,7 +137,7 @@ Hosts have an **Events** button (bottom bar) that fires any event on demand, for
 | Event | Rarity | Tone | Hits | When | What happens |
 | --- | --- | --- | --- | --- | --- |
 | **A settlement under attack** `settlement_raid` | uncommon | neutral | everyone | day 4+ | Raiders attack a settlement. Colonies that know them hear of it; helping drive the raiders off earns their gratitude. The town holds out behind its walls, or falls. |
-| **Raid** `raid` | uncommon | bad (60+, scaled) | a colony | day 5+ | Armed raiders arrive at the map edge and attack the colony. Bigger and better armed the richer the colony is; paid for from the threat budget. They flee once half of them are down. |
+| **Raid** `raid` | uncommon | bad (60+, scaled) | a colony | day 5+ | Armed raiders arrive at the map edge and attack the colony. Bigger and better armed the richer the colony is; paid for from the threat budget. They flee once half of them are down. Bands of three or more ride behind a named chief: bring the chief down and they break. Most chiefs stop at the edge first and demand tribute (choice: pay, talk them down, or fight). Prisoners taken may be ransomed back. |
 | **Night raid** `night_raid` | rare | bad (60+, scaled) | a colony | day 8+ | Raiders with knives and clubs creep in after dark. If it is daytime when the storyteller picks it, they wait for nightfall. |
 | **Sapper raid** `sapper_raid` | rare | bad (60+, scaled) | a colony | day 12+ | Raiders who tunnel through rock and smash through walls and doors to get at the colony instead of looking for a way in. |
 | **Scouting party** `scout_party` | common | bad (25) | a colony | day 3+ | One or two raiders probe the colony’s defences. They run as soon as one of them goes down. |

@@ -38,3 +38,5 @@ export { OPENING, omenText } from './opening';
 export { isLandmark, landmarkDef, landmarksOf, bearing, placeLandmarks, springWarmed, SPOT_RANGE, VISIT_RANGE, LANDMARK_BURY_LEVEL } from './landmarks';
 export { canTame, tameChance, beastsNear, beastHaul } from './taming';
 export { roadFind, FIND_CHANCE, MAX_FINDS, type RoadFind } from './finds';
+export { CHIEF_HIDE, DEMAND_CHANCE, DEMAND_HOURS, ROUT_DROP, talkChance, tribute, bandName } from './warband';
+export { CONTRACTS, CONTRACT_CHANCE, contractText, compass, offerContract } from './contracts';

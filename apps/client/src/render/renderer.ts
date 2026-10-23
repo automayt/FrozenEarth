@@ -1221,7 +1221,19 @@ export class GameRenderer {
       c.position.set(TILE * 0.3, -TILE * 0.05);
       rig.addChild(c);
     }
-    const label = new BitmapText({ text: e.name.split(' ')[0] + (e.prisoner ? ' (prisoner)' : '') + (e.downed ? ' (down)' : e.asleep ? ' z' : ''), style: LABEL_TEXT });
+    // A raider chief: a brass crown while they lead, and their whole name ("Corvin the Crow").
+    const named = f?.raid?.chiefName === e.name || !!e.captive?.chief;
+    if (f?.raid?.chief === e.id && !e.drafted) {
+      root.addChild(
+        this.shape('chief', (g) =>
+          g
+            .poly([-7, -TILE * 0.7, -7, -TILE * 0.9, -3.5, -TILE * 0.8, 0, -TILE * 0.94, 3.5, -TILE * 0.8, 7, -TILE * 0.9, 7, -TILE * 0.7])
+            .fill(0xc9a45c)
+            .stroke({ width: 1.2, color: 0x2a1d0c, alpha: 0.9 }),
+        ),
+      );
+    }
+    const label = new BitmapText({ text: (named ? e.name : e.name.split(' ')[0]) + (e.prisoner ? ' (prisoner)' : '') + (e.downed ? ' (down)' : e.asleep ? ' z' : ''), style: LABEL_TEXT });
     label.scale.set(this.pawnLabelScale());
     label.anchor.set(0.5, 0);
     label.position.set(0, TILE * 0.42);
@@ -1608,6 +1620,7 @@ export class GameRenderer {
         shot.wideY = (hash2(shot.target, Math.floor(now), 9) - 0.5) * TILE * 1.6;
       }
       this.shots.push(shot);
+      if (shot.hit && !stale) this.juice.hit(shot.shooter, shot.target, now);
       if (!stale) {
         const sv = this.views.get(shot.shooter)?.root;
         const wdef = weaponOf(shot.weapon);

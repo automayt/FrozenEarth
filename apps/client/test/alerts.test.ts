@@ -50,7 +50,7 @@ describe('alerts', () => {
     const m = load(w);
     const raid = () => computeAlerts().find((a) => a.key === 'raid-5');
     expect(raid()).toMatchObject({ severity: 'critical', title: 'Raiders of Test: attacking (1)', focus: { x: 5, y: 5 } });
-    const titles: Record<RaidGoal, string> = { assault: 'attacking', loot: 'looting your stores', burn: 'setting fires', siege: 'besieging you' };
+    const titles: Record<RaidGoal, string> = { assault: 'attacking', loot: 'looting your stores', burn: 'setting fires', siege: 'besieging you', camp: 'holding their camp' };
     for (const [goal, what] of Object.entries(titles)) {
       m.factions.get(5)!.raid!.goal = goal as RaidGoal;
       expect(raid()?.title).toBe(`Raiders of Test: ${what} (1)`);
@@ -132,5 +132,39 @@ describe('alerts', () => {
     load(w);
     store.me = { playerId: 9, faction: 4 };
     expect(computeAlerts().find((a) => a.key === `allywar-${ME}-3`)).toMatchObject({ severity: 'warning', title: 'Your ally Us is under attack (1)' });
+  });
+  it('a chief waiting on their demand says so; once they come in, the alert points at the chief', () => {
+    const { w } = colony();
+    const raiders: Faction = { id: 5, name: 'Raiders of Test', color: 0, home: { x: 0, y: 0 }, isPlayer: false, raid: { target: ME, size: 3, breakAt: 2, dead: 0, until: w.tick + 9999, fled: false } };
+    w.factions.set(5, raiders);
+    w.spawnPawn(5, w.map.idx(5, 5), 'Bad Guy');
+    const chief = w.spawnPawn(5, w.map.idx(6, 5), 'Corvin the Crow');
+    raiders.raid!.chief = chief.id;
+    raiders.raid!.chiefName = chief.name;
+    raiders.raid!.parley = w.tick + 3000;
+    const m = load(w);
+    const raid = () => computeAlerts().find((a) => a.key === 'raid-5')!;
+    expect(raid().title).toBe('Raiders of Test: waiting for your answer (2)');
+    expect(raid().detail).toContain('Corvin the Crow demands tribute');
+    m.factions.get(5)!.raid!.parley = 0;
+    expect(raid().detail).toContain('Bring down Corvin the Crow');
+    expect(raid().focus).toMatchObject({ x: 6, y: 5, select: chief.id });
+  });
+
+  it("a town's job shows what's left of it and where they were last seen", () => {
+    const { w } = colony();
+    const wolf = w.spawnPawn(9, w.map.idx(44, 40), 'Wolf');
+    w.factions.set(7, {
+      id: 7,
+      name: 'Pinewick',
+      color: 0,
+      home: { x: 50, y: 50 },
+      isPlayer: false,
+      settlement: { temper: 0, goodwill: {}, radius: 8, state: 'home', dest: -1, until: 0, met: [ME], contracts: [{ id: 3, faction: ME, kind: 'wolves', targets: [wolf.id, 999], at: w.map.idx(44, 40), reward: ['gold', 12], goodwill: 15, until: w.tick + 3 * TICKS_PER_DAY }] },
+    });
+    load(w);
+    const job = computeAlerts().find((a) => a.key === 'contract-3')!;
+    expect(job).toMatchObject({ severity: 'info', title: "Pinewick's job: the wolves (1 left)", focus: { x: 44, y: 40 } });
+    expect(job.detail).toMatch(/^3 days left.*12 gold/);
   });
 });

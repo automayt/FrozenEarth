@@ -538,8 +538,11 @@ registerChoice('theft_fine', (w, c, option, d) => {
   if (option === 'pay') w.message(t.id, `You don't have goods worth ${fine} in your stockpiles.`, 'bad');
 });
 
-/** Move goods worth `value` from a colony's stockpiles to another's home, cheapest kinds first. False if it can't cover it. */
-function payGoods(w: World, from: number, to: Faction, value: number): boolean {
+/**
+ * Move goods worth `value` from a colony's stockpiles to another's home (or, with `to` null, into
+ * the hands of whoever took them), cheapest kinds first. False if it can't cover it.
+ */
+export function payGoods(w: World, from: number, to: Faction | null, value: number): boolean {
   const stock = new Map<string, number>();
   for (const id of w.kinds.item) {
     const it = w.get<Item>(id)!;
@@ -550,13 +553,13 @@ function payGoods(w: World, from: number, to: Faction, value: number): boolean {
   if (total < value) return false;
   const order = [...stock.entries()].sort((a, b) => (ITEMS[a[0]].category === 'resource' ? 0 : 1) - (ITEMS[b[0]].category === 'resource' ? 0 : 1) || ITEMS[a[0]].marketValue - ITEMS[b[0]].marketValue);
   let owed = value;
-  const drop = w.map.idx(to.home.x, to.home.y);
+  const drop = to ? w.map.idx(to.home.x, to.home.y) : -1;
   for (const [def, have] of order) {
     if (owed <= 0) break;
     const per = ITEMS[def].marketValue;
     const n = Math.min(have, Math.ceil(owed / per));
     const got = takeStored(w, from, def, n);
-    if (got > 0) w.placeItemNear(def, got, drop);
+    if (got > 0 && drop >= 0) w.placeItemNear(def, got, drop);
     owed -= got * per;
   }
   return true;

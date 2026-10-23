@@ -43,6 +43,10 @@ const LINES: Record<string, string[]> = {
   found: ['Look at this!', 'Worth the walk.', "Someone's left us a gift."],
   tamed: ['Easy… good.', "There. You're one of us now.", 'Steady, friend.'],
   spring: ['Warm water!', 'Oh, that is good.'],
+  felled: ['Got one!', 'Stay down!', 'One less.'],
+  chief: ['Their chief is down!', "That's their leader!", 'The chief falls!'],
+  rescue: ['Hold on!', "I've got you.", 'Stay with me.'],
+  capture: ["You're coming with us.", 'Not so fast.'],
 };
 
 /** Letters that one named colonist would say a word about: the first word of the letter is their first name. */
@@ -121,6 +125,14 @@ export class Juice {
   private primed = false;
   private replies: { pawn: number; text: string; at: number }[] = [];
   private letters = -1;
+  /** Other people's pawns that are down, to notice one of yours dropping them... */
+  private down = new Set<number>();
+  /** ...and the ones already called out. */
+  private called = new Set<number>();
+  /** Who last landed a blow on whom, and when: target -> [shooter, ms]. */
+  private hits = new Map<number, [number, number]>();
+  private me = 0;
+  private mirror: Mirror | null = null;
 
   /** A rock cell was mined out this frame (the renderer already spots it for the dust). */
   rockMined(cell: number, now: number): void {
@@ -131,13 +143,24 @@ export class Juice {
    * Look at what changed since last frame. `me` is your faction; `pawnPos` gives where a pawn is
    * drawn (it glides between server updates).
    */
+  /** A blow landed (from the shots the server sends): if it dropped someone, the one who struck it says so. */
+  hit(shooter: number, target: number, now: number): void {
+    this.hits.set(target, [shooter, now]);
+    if (this.hits.size > 200) this.hits.delete(this.hits.keys().next().value!);
+    const t = this.mirror?.entities.get(target);
+    if (t?.kind === 'pawn' && t.downed && this.down.has(target)) this.felled(this.mirror!, t, now);
+  }
+
   frame(m: Mirror, me: number, changed: Set<number>, removed: Set<number>, now: number, pawnPos: (id: number) => { x: number; y: number } | null): void {
+    this.me = me;
+    this.mirror = m;
     // On the first look (joining), everything is new: learn it without fanfare.
     if (!this.primed) {
       for (const e of m.entities.values()) {
         if (e.kind === 'plant') this.plants.set(e.id, e.y * m.w + e.x);
         else if (e.kind === 'item') this.items.add(e.id);
         else if (e.kind === 'pawn' && e.faction === me) this.seen.set(e.id, this.state(e));
+        else if (e.kind === 'pawn' && e.downed) this.down.add(e.id);
       }
       this.primed = true;
     }
@@ -149,6 +172,8 @@ export class Juice {
       }
       this.items.delete(id);
       this.seen.delete(id);
+      this.down.delete(id);
+      this.called.delete(id);
     }
     this.cleared = this.cleared.filter((c) => now - c.at < HARVEST_WINDOW_MS);
     for (const id of changed) {
@@ -159,6 +184,7 @@ export class Juice {
         this.items.add(id);
         this.maybeGain(m, e, now);
       } else if (e.kind === 'pawn' && e.faction === me && !e.species && !e.prisoner) this.watch(m, e, now);
+      else if (e.kind === 'pawn' && e.faction !== me) this.watchFoe(m, e, now);
     }
     this.fromLetters(m, me, now);
     this.animate(now, pawnPos);
@@ -217,6 +243,29 @@ export class Juice {
     };
   }
 
+  /** Someone else just went down: if one of yours struck the blow, they say so. */
+  private watchFoe(m: Mirror, e: Pawn, now: number): void {
+    if (!e.downed) {
+      this.down.delete(e.id);
+      this.called.delete(e.id);
+      return;
+    }
+    if (this.down.has(e.id)) return;
+    this.down.add(e.id);
+    this.felled(m, e, now);
+  }
+
+  /** Whoever of yours struck the last blow on a pawn that just went down calls it out (once). */
+  private felled(m: Mirror, e: Pawn, now: number): void {
+    const hit = this.hits.get(e.id);
+    if (!hit || now - hit[1] > 2500 || this.called.has(e.id)) return;
+    const by = m.entities.get(hit[0]);
+    if (by?.kind !== 'pawn' || by.faction !== this.me || by.species) return;
+    this.called.add(e.id);
+    const raid = m.factions.get(e.faction)?.raid;
+    this.say(by.id, pick(LINES[raid?.chiefName === e.name ? 'chief' : 'felled']), now);
+  }
+
   /** Did something just happen to this colonist that they'd say a word about? */
   private watch(m: Mirror, p: Pawn, now: number): void {
     const was = this.seen.get(p.id);
@@ -225,6 +274,7 @@ export class Juice {
     if (!was) return;
     let what: string | null = null;
     if (is.downed && !was.downed) what = 'downed';
+    else if (is.job === 'rescue' && was.job !== 'rescue' && p.job?.type === 'rescue') what = p.job.capture ? 'capture' : 'rescue';
     else if (is.job === 'shelter' && was.job !== 'shelter' && p.job?.type === 'shelter') {
       const threat = m.entities.get(p.job.from) as Pawn | undefined;
       const f = threat ? m.factions.get(threat.faction) : undefined;

@@ -114,15 +114,16 @@ describe('raid goals', () => {
     expect(w.dirty.msgs.some((m) => m.faction === 2 && m.text.includes('turning to loot'))).toBe(true);
   });
 
-  it('when the defenders crumble, a raid that had held back storms in', () => {
+  it('when the defenders all go down, a raid that had held back comes in for the loot, or leaves', () => {
     const { w, defenders } = holdout(false, 6);
     const rf = raidFaction(w)!;
     rf.raid!.goal = 'siege';
     rf.raid!.goalSince = w.tick;
     for (const d of defenders) d.downed = true;
     run(w, 260);
-    expect(rf.raid!.goal).toBe('assault');
-    expect(w.dirty.msgs.some((m) => m.text.includes('storming in'))).toBe(true);
+    // Nobody left to fight: they don't stand about outside, they take what they can (warband.ts stabilise).
+    const goal: string | undefined = rf.raid!.goal;
+    expect(goal === 'loot' || rf.raid!.fled).toBe(true);
   });
 });
 

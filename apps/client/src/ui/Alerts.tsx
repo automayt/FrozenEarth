@@ -1,5 +1,5 @@
 import { BUILDINGS, CONDITIONS, ITEMS } from '@fe/defs';
-import { allied, atWar, calendar, daysUntilFrost, DAYS_PER_SEASON, requestText, stageOf, TICKS_PER_DAY, type Building, type Item, type Pawn } from '@fe/sim';
+import { allied, atWar, calendar, contractText, daysUntilFrost, DAYS_PER_SEASON, requestText, stageOf, TICKS_PER_DAY, type Building, type Item, type Pawn } from '@fe/sim';
 import { store, useStore } from '../store';
 
 export type Severity = 'critical' | 'warning' | 'info';
@@ -71,14 +71,22 @@ export function computeAlerts(): Alert[] {
     const raiders = [...m.entities.values()].filter((e): e is Pawn => e.kind === 'pawn' && e.faction === f.id && !e.downed);
     if (!raiders.length) continue;
     const goal = raid.goal ?? 'assault';
-    const what = { assault: 'Attacking', loot: 'Looting your stores', burn: 'Setting fires', siege: 'Besieging you' }[goal];
+    const chief = raid.chief ? raiders.find((p) => p.id === raid.chief) : undefined;
+    if (raid.parley && raid.parley > store.estTick()) {
+      out.push({ key: `raid-${f.id}`, severity: 'critical', title: `${f.name}: waiting for your answer (${raiders.length})`, detail: `${raid.chiefName ?? 'Their chief'} demands tribute: answer the letter. Use the time to draft (R) and get behind cover.`, focus: { x: raiders[0].x, y: raiders[0].y } });
+      continue;
+    }
+    const what = { assault: 'Attacking', loot: 'Looting your stores', burn: 'Setting fires', siege: 'Besieging you', camp: 'Holding their camp' }[goal];
     const how = {
       assault: 'Hold them off from behind cover: embrasures and sandbags.',
       loot: 'They gave up on your walls. Anything left outside is fair game to them.',
       burn: 'Firefighters will need cover; or wait them out.',
       siege: "They're dug in out there. Stay behind cover; they'll give up.",
+      camp: 'They fight anyone who comes close.',
     }[goal];
-    out.push({ key: `raid-${f.id}`, severity: 'critical', title: `${f.name}: ${what.toLowerCase()} (${raiders.length})`, detail: how, focus: { x: raiders[0].x, y: raiders[0].y } });
+    const lead = chief ? ` Bring down ${chief.name} (click) and the rest will break.` : '';
+    const spot = chief ?? raiders[0];
+    out.push({ key: `raid-${f.id}`, severity: 'critical', title: `${f.name}: ${what.toLowerCase()} (${raiders.length})`, detail: how + lead, focus: { x: spot.x, y: spot.y, select: chief?.id } });
   }
 
   // Raids on allies: you can't stop them from the alert, but you can go and help.
@@ -126,6 +134,25 @@ export function computeAlerts(): Alert[] {
         detail: `${days < 1 ? `Under ${Math.max(1, Math.round(days * 24))} hours` : `${Math.ceil(days)} days`} left. Send a colonist and deliver from the Trade panel (click).`,
         focus: { x: f.home.x, y: f.home.y },
         trade: f.id,
+      });
+    }
+  }
+
+  // Jobs taken on for towns.
+  for (const f of m.factions.values()) {
+    for (const j of f.settlement?.contracts ?? []) {
+      if (j.faction !== me) continue;
+      const days = (j.until - store.estTick()) / TICKS_PER_DAY;
+      const left = j.targets.filter((id) => {
+        const p = m.get(id);
+        return p?.kind === 'pawn' && !p.downed && !p.prisoner;
+      }).length;
+      out.push({
+        key: `contract-${j.id}`,
+        severity: days < 1 ? 'warning' : 'info',
+        title: `${f.name}'s job: ${contractText(j)} (${left} left)`,
+        detail: `${days < 1 ? `Under ${Math.max(1, Math.round(days * 24))} hours` : `${Math.ceil(days)} days`} left. Draft a few colonists and go (click to look). Reward: ${requestText(j.reward[0], j.reward[1])}.`,
+        focus: { x: j.at % m.w, y: Math.floor(j.at / m.w) },
       });
     }
   }

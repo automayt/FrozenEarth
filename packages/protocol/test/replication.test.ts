@@ -138,8 +138,8 @@ describe('replication with every system running', () => {
         const got = chaos.random(who);
         if (got) w.enqueue(who, got.cmd);
       }
-      // Say yes to settlements asking for help, so open requests are replicated too.
-      for (const c of w.choices.values()) if (c.event === 'settlement_request') w.enqueue(c.faction, { c: 'choose', choice: c.id, option: 'accept' });
+      // Say yes to settlements asking for help (goods or a job), so open requests are replicated too.
+      for (const c of w.choices.values()) if (c.event === 'settlement_request' || c.event === 'settlement_contract') w.enqueue(c.faction, { c: 'choose', choice: c.id, option: 'accept' });
       w.step();
       if (t % 4 === 0) {
         const msg = wire<DeltaMsg>({ t: 'delta', d: packer.pack(w.takeDelta(), w.map.w), time: { speed: 1, paused: false, reason: '' } });
@@ -154,7 +154,7 @@ describe('replication with every system running', () => {
         }
         for (const f of msg.d.factions) {
           seen.goal ||= !!f.raid?.goal && f.raid.goal !== 'assault';
-          seen.requests ||= !!f.settlement?.requests?.length;
+          seen.requests ||= !!f.settlement?.requests?.length || !!f.settlement?.contracts?.length;
         }
       }
       // Pawns, the busiest entities, after every few deltas: a field left stale even briefly is a bug.

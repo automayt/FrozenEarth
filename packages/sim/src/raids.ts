@@ -7,9 +7,10 @@ import { maybeReachable } from './pathfinding';
 import { pawnName } from './names';
 import { breachJob } from './siege';
 import { shiftGoodwill } from './settlements';
-import { cellDistance, coverAgainst, gaveUpOn, hostileInReach } from './combat';
+import { cellDistance, coverAgainst, gaveUpOn, hostile, hostileInReach } from './combat';
 import { fuelAt } from './fire';
 import type { Building, Faction, Item, Job, Pawn, RaidGoal, RaidState } from './types';
+import { checkLastStand, chiefFell, endParley, makeChief, maybeDemand, noteCaptive, parleying, ransomTick, routDrop, stabilise, tellLastStand } from './warband';
 import { rk, type World } from './world';
 
 export type RaidKind = 'raid' | 'night' | 'scout' | 'sapper';
@@ -169,9 +170,46 @@ export function startRaid(w: World, target: number, points: number, kind: RaidKi
   // A town's fighters set out from their compound; an ambush waits by the road; others come from the edge.
   const arrive = from ? nearOpenCell(w, m.idx(from.home.x, from.home.y), home) : near !== undefined ? nearOpenCell(w, near, near) : arrivalCell(w, home);
   if (arrive < 0) return null;
+  const weapons = armBand(w, kind, points, kind === 'scout' ? 2 : MAX_RAIDERS);
+  const rf = raiderFaction(w, target, arrive);
+  if (from) {
+    rf.name = `${from.name}'s fighters`;
+    rf.color = from.color;
+    rf.raid!.sponsor = from.id;
+  }
+  const raiders = spawnBand(w, rf, arrive, weapons);
+  rf.raid!.size = raiders.length;
+  rf.raid!.sapper = kind === 'sapper';
+  if (kind === 'scout') rf.raid!.scout = true;
+  rf.raid!.breakAt = kind === 'scout' ? 1 : Math.max(1, Math.ceil(raiders.length / 2));
+  // A band big enough rides behind a chief, who may stop at the edge and name a price first.
+  const led = f.isPlayer && !from && near === undefined && (kind === 'raid' || kind === 'sapper') && !!makeChief(w, rf, raiders);
+  const demand = led ? maybeDemand(w, rf, target, points, arrive) : '';
+  const chief = led && !demand ? ` They ride behind ${rf.raid!.chiefName}: bring the chief down and the rest will break.` : '';
+  const what =
+    kind === 'scout'
+      ? `A scouting party of ${rf.name.replace('Raiders of ', '')} (${raiders.length}) is probing your defences from the ${sideName(w, arrive)}.`
+      : kind === 'night'
+        ? `${rf.name} (${raiders.length}, knives and clubs) are creeping in from the ${sideName(w, arrive)} under cover of dark!`
+        : kind === 'sapper'
+          ? `${rf.name} (${raiders.length}) have come from the ${sideName(w, arrive)} with picks and hammers. They will dig and smash their way in!${demand || chief}`
+          : `${rf.name} (${raiders.length}) have arrived from the ${sideName(w, arrive)} edge to attack you!${demand || chief}`;
+  if (f.isPlayer) {
+    const said = near !== undefined ? `${rf.name} (${raiders.length}) spring an ambush on your caravan!` : what;
+    w.message(target, `${said} Draft your colonists (R) and right-click to fight.`, 'bad', arrive);
+    callAllies(w, target, rf);
+  } else {
+    const why = from ? ` ${from.name} and ${f.name} are rivals; whoever helps ${f.name} will be resented in ${from.name}.` : '';
+    raidNews(w, rf.raid!, `${rf.name} (${raiders.length}) are attacking ${f.name}! Help them hold out, and they'll remember it.${why}`, 'bad', m.idx(f.home.x, f.home.y));
+    townCallsAllies(w, f);
+  }
+  return raiders;
+}
+
+/** Weapons a band buys with its points, at most `max` of them (always at least one). */
+function armBand(w: World, kind: RaidKind, points: number, max: number): string[] {
   const weapons: string[] = [];
   let budget = points;
-  const max = kind === 'scout' ? 2 : MAX_RAIDERS;
   while (weapons.length < max) {
     const wk = pickWeapon(w, kind, budget);
     if (!wk) break;
@@ -179,12 +217,12 @@ export function startRaid(w: World, target: number, points: number, kind: RaidKi
     budget -= WEAPONS[wk].raidCost;
   }
   if (!weapons.length) weapons.push(kind === 'night' ? 'knife' : 'bow');
-  const rf = raiderFaction(w, target, arrive);
-  if (from) {
-    rf.name = `${from.name}'s fighters`;
-    rf.color = from.color;
-    rf.raid!.sponsor = from.id;
-  }
+  return weapons;
+}
+
+/** One raider per weapon, around `arrive`, some carrying goods. */
+function spawnBand(w: World, rf: Faction, arrive: number, weapons: string[]): Pawn[] {
+  const m = w.map;
   const raiders: Pawn[] = [];
   const ax = m.cx(arrive);
   const ay = m.cy(arrive);
@@ -208,27 +246,77 @@ export function startRaid(w: World, target: number, points: number, kind: RaidKi
     }
     raiders.push(p);
   }
-  rf.raid!.size = raiders.length;
-  rf.raid!.sapper = kind === 'sapper';
-  rf.raid!.breakAt = kind === 'scout' ? 1 : Math.max(1, Math.ceil(raiders.length / 2));
-  const what =
-    kind === 'scout'
-      ? `A scouting party of ${rf.name.replace('Raiders of ', '')} (${raiders.length}) is probing your defences from the ${sideName(w, arrive)}.`
-      : kind === 'night'
-        ? `${rf.name} (${raiders.length}, knives and clubs) are creeping in from the ${sideName(w, arrive)} under cover of dark!`
-        : kind === 'sapper'
-          ? `${rf.name} (${raiders.length}) have come from the ${sideName(w, arrive)} with picks and hammers. They will dig and smash their way in!`
-          : `${rf.name} (${raiders.length}) have arrived from the ${sideName(w, arrive)} edge to attack you!`;
-  if (f.isPlayer) {
-    const said = near !== undefined ? `${rf.name} (${raiders.length}) spring an ambush on your caravan!` : what;
-    w.message(target, `${said} Draft your colonists (R) and right-click to fight.`, 'bad', arrive);
-    callAllies(w, target, rf);
-  } else {
-    const why = from ? ` ${from.name} and ${f.name} are rivals; whoever helps ${f.name} will be resented in ${from.name}.` : '';
-    raidNews(w, rf.raid!, `${rf.name} (${raiders.length}) are attacking ${f.name}! Help them hold out, and they'll remember it.${why}`, 'bad', m.idx(f.home.x, f.home.y));
-    townCallsAllies(w, f);
-  }
   return raiders;
+}
+
+// ---------------------------------------------------------------- bandit camps
+
+/** How close to their camp someone must come before the bandits go for them. */
+const CAMP_GUARD = 9;
+/** The goods a camp sits on: what they took from the town. */
+const STASH: [string, number, number][] = [
+  ['steel', 20, 45],
+  ['cloth', 15, 35],
+  ['survival_meal', 3, 8],
+  ['gold', 3, 7],
+  ['wood', 30, 60],
+];
+
+/**
+ * Bandits who robbed a town, camped at `cell` on its stolen goods until `until`: a job a town can
+ * give a colony (contracts.ts). They hold their ground and fight anyone who comes close.
+ */
+export function startCamp(w: World, town: Faction, cell: number, points: number, until: number): { band: Faction; raiders: Pawn[] } | null {
+  if (w.map.solid[cell]) return null;
+  const rf = raiderFaction(w, town.id, cell);
+  rf.name = rf.name.replace(/^Raiders of /, 'Bandits of ');
+  const raiders = spawnBand(w, rf, cell, armBand(w, 'raid', points, 5));
+  const raid = rf.raid!;
+  raid.size = raiders.length;
+  raid.goal = 'camp';
+  raid.camp = cell;
+  raid.until = until;
+  // They hold out until most of them are down.
+  raid.breakAt = Math.max(1, Math.ceil(raiders.length * 0.75));
+  for (const p of raiders) p.apparel = ['tunic', 'parka', 'tuque'];
+  makeChief(w, rf, raiders, 2);
+  const stacks = 2 + w.rng.int(2);
+  for (let k = 0; k < stacks; k++) {
+    const [def, lo, hi] = w.rng.pick(STASH);
+    w.placeItemNear(def, lo + w.rng.int(hi - lo + 1), cell);
+  }
+  return { band: rf, raiders };
+}
+
+/** Hold the camp: fight whoever comes close, go back to it after. */
+function campThink(w: World, p: Pawn, raid: RaidState): Job {
+  const camp = raid.camp!;
+  const t = hostileInReach(w, p);
+  if (t && cellDistance(w, w.cellOf(t), camp) <= CAMP_GUARD + 4) return { type: 'attack', stage: 0, target: t.id, forced: false, chase: false, next: 0, until: w.tick + 300 };
+  const here = w.cellOf(p);
+  let best: Pawn | null = null;
+  let bestD = CAMP_GUARD;
+  for (const id of w.kinds.pawn) {
+    const o = w.get<Pawn>(id)!;
+    if (o.downed || o.prisoner || o.species || !hostile(w, p.faction, o.faction)) continue;
+    const d = cellDistance(w, w.cellOf(o), camp);
+    if (d < bestD && !gaveUpOn(w, p, o) && maybeReachable(w, here, w.cellOf(o), true)) {
+      best = o;
+      bestD = d;
+    }
+  }
+  if (best) return { type: 'attack', stage: 0, target: best.id, forced: false, chase: true, next: 0, until: w.tick + 400 };
+  if (cellDistance(w, here, camp) > 3) {
+    const m = w.map;
+    for (let k = 0; k < 8; k++) {
+      const x = m.cx(camp) + w.rng.int(5) - 2;
+      const y = m.cy(camp) + w.rng.int(5) - 2;
+      if (!m.inBounds(x, y)) continue;
+      const c = m.idx(x, y);
+      if (w.passable(c, p.faction) && maybeReachable(w, here, c, false)) return { type: 'goto', stage: 0, dest: c };
+    }
+  }
+  return { type: 'hold', stage: 0, until: w.tick + 300 + w.rng.int(300) };
 }
 
 /** An open cell outside any building near `near`, that can reach `goal`. -1 if none. */
@@ -289,7 +377,9 @@ function tellRaidOver(w: World, f: Faction, colony: number): void {
     }
   }
   const who = hero ? ` ${hero.name} did the most to see them off.` : '';
-  tell(w, colony, `${f.name} (${raid.size}) were driven off${raid.dead ? `, ${raid.dead} of them dead` : ''}.${who}`, 'first_raid');
+  const chief = raid.chiefName ? ` They rode behind ${raid.chiefName}.` : '';
+  tell(w, colony, `${f.name} (${raid.size}) were driven off${raid.dead ? `, ${raid.dead} of them dead` : ''}.${chief}${who}`, 'first_raid');
+  tellLastStand(w, raid, colony);
 }
 
 /** The raid on a settlement is over: thank those who helped. */
@@ -308,36 +398,52 @@ function thankHelpers(w: World, raid: RaidState): void {
   raid.helpers = {};
 }
 
-function breakRaid(w: World, f: Faction, why: string): void {
+/** The raid is over: everyone runs for the edge. A rout (they broke, rather than gave up) drops what it carried. */
+export function breakRaid(w: World, f: Faction, why: string, rout = false): void {
   const raid = f.raid!;
   if (raid.fled) return;
   raid.fled = true;
+  endParley(w, raid);
   w.dirty.factions.add(f.id);
   raidNews(w, raid, why, 'good');
-  for (const p of pawnsOf(w, f.id)) if (!p.downed) endJob(w, p);
+  const band = pawnsOf(w, f.id);
+  if (rout) routDrop(w, band);
+  stabilise(w, raid.target);
+  for (const p of band) if (!p.downed) endJob(w, p);
 }
 
 function checkBreak(w: World, faction: number): void {
   const f = w.factions.get(faction);
   if (!f?.raid || f.raid.fled) return;
   const down = f.raid.dead + pawnsOf(w, faction).filter((p) => p.downed).length;
-  if (down >= f.raid.breakAt) breakRaid(w, f, `${f.name} have lost their nerve and are fleeing!`);
+  if (down >= f.raid.breakAt) breakRaid(w, f, `${f.name} have lost their nerve and are fleeing!`, true);
 }
 
-export function raiderDowned(w: World, faction: number): void {
+export function raiderDowned(w: World, faction: number, p?: Pawn): void {
+  const f = w.factions.get(faction);
+  if (p && f?.raid?.chief === p.id) chiefFell(w, f, false);
   checkBreak(w, faction);
 }
 
-/** A raider died or left the map. */
-export function raiderGone(w: World, faction: number, killed: boolean): void {
+/** A raider died or left the map (`id`: who). */
+export function raiderGone(w: World, faction: number, killed: boolean, id?: number): void {
   const f = w.factions.get(faction);
   if (!f?.raid) return;
   if (killed) f.raid.dead++;
+  if (id !== undefined && f.raid.chief === id) {
+    if (killed) chiefFell(w, f, true);
+    else f.raid.chief = 0;
+  }
+  // A cleared camp is the town's job's business (contracts.ts), not news.
+  if (f.raid.camp !== undefined) return checkBreak(w, faction);
   if (pawnsOf(w, faction).length === 0) {
     const t = w.factions.get(f.raid.target);
     raidNews(w, f.raid, t?.settlement ? `${f.name} are gone. ${t.name} has held out.` : `${f.name} are gone. The raid is over.`, 'neutral');
     thankHelpers(w, f.raid);
-    if (t?.isPlayer) tellRaidOver(w, f, t.id);
+    if (t?.isPlayer) {
+      stabilise(w, t.id);
+      tellRaidOver(w, f, t.id);
+    }
     return;
   }
   checkBreak(w, faction);
@@ -401,9 +507,13 @@ function lootFor(w: World, p: Pawn, target: number): Item | null {
 export function raiderThink(w: World, p: Pawn): Job {
   const f = w.factions.get(p.faction)!;
   const raid = f.raid!;
-  if (!raid.fled && w.tick >= raid.until) breakRaid(w, f, `${f.name} have given up and are leaving.`);
+  if (!raid.fled && w.tick >= raid.until) breakRaid(w, f, raid.camp !== undefined ? `${f.name} have broken camp and moved on.` : `${f.name} have given up and are leaving.`);
   if (raid.fled) return fleeJob(w, p);
+  // Waiting at the edge for an answer to their chief's demand.
+  if (parleying(w, raid)) return { type: 'hold', stage: 0, until: w.tick + 120 };
   switch (raid.goal ?? 'assault') {
+    case 'camp':
+      return campThink(w, p, raid);
     case 'loot':
       return lootThink(w, p, raid);
     case 'burn':
@@ -459,6 +569,8 @@ const RECRUIT_CHANCE = RARE_TICK / (TICKS_PER_DAY * 3);
 /** A downed raider, carried to a bed by `captor`, is now held by the captor's colony. */
 export function takePrisoner(w: World, p: Pawn, captor: Pawn): void {
   const old = p.faction;
+  const band = w.factions.get(old);
+  if (band?.raid) noteCaptive(w, p, band);
   if (p.carrying) {
     w.placeItemNear(p.carrying.def, p.carrying.count, w.cellOf(p), p.carrying.rot);
     p.carrying = null;
@@ -469,12 +581,13 @@ export function takePrisoner(w: World, p: Pawn, captor: Pawn): void {
   for (const k of WORK_TYPES) p.priorities[k] = 0;
   p.needs.mood = 0.4;
   w.markDirty(p);
-  w.message(captor.faction, `${captor.name} has taken ${p.name} prisoner. In time they may agree to join you, or you can let them go.`, 'good', w.cellOf(p));
-  raiderGone(w, old, true);
+  w.message(captor.faction, `${captor.name} has taken ${p.name} prisoner. In time they may agree to join you, or you can let them go.${p.captive ? ' Their band may pay to get them back.' : ''}`, 'good', w.cellOf(p));
+  raiderGone(w, old, true, p.id);
 }
 
 /** Slow-tick prisoner update: a prisoner who is up and about may come round to joining. */
 export function prisonerTick(w: World, p: Pawn): void {
+  ransomTick(w, p);
   if (p.prisoner !== 'held' || p.downed) return;
   if (!w.rng.chance(RECRUIT_CHANCE * (0.5 + p.needs.mood))) return;
   p.prisoner = '';
@@ -517,7 +630,18 @@ const GOAL_NEWS: Record<RaidGoal, (name: string) => string> = {
   loot: (n) => `${n} can't break your defences. They're turning to loot whatever lies outside your walls.`,
   burn: (n) => `${n} are setting fire to your fields and outbuildings!`,
   siege: (n) => `${n} have dug in out of reach to wait you out. Anyone who shows themselves will be shot.`,
+  camp: (n) => `${n} are holding their camp.`,
 };
+
+/** A faction's people, standing or not (prisoners aside). */
+function colonists(w: World, faction: number): number {
+  let n = 0;
+  for (const id of w.kinds.pawn) {
+    const p = w.get<Pawn>(id)!;
+    if (p.faction === faction && !p.prisoner && !p.species) n++;
+  }
+  return n;
+}
 
 function standing(w: World, faction: number): number {
   let n = 0;
@@ -578,10 +702,24 @@ export function reviewRaids(w: World): void {
   if (w.tick % REVIEW_TICKS !== 0) return;
   for (const f of w.factions.values()) {
     const raid = f.raid;
-    if (!raid || raid.fled) continue;
+    // Bandits hold their camp whatever happens; a band waiting on its demand hasn't started yet.
+    if (!raid || raid.fled || raid.camp !== undefined || parleying(w, raid)) continue;
     const raiders = standing(w, f.id);
     if (!raiders) continue;
+    checkLastStand(w, f, raiders);
     const defenders = standing(w, raid.target);
+    // Scouts have what they came for once they've put someone down.
+    if (raid.scout && defenders < colonists(w, raid.target)) {
+      breakRaid(w, f, `${f.name} have seen what they came for and are slipping away.`);
+      continue;
+    }
+    // Nobody left standing at a colony: the raiders leave the fallen be, take what they can and go.
+    if (defenders === 0 && w.factions.get(raid.target)?.isPlayer) {
+      stabilise(w, raid.target);
+      if ((raid.goal ?? 'assault') !== 'loot' && lootLeft(w, f.id, raid.target)) setGoal(w, f, 'loot');
+      else if (!lootLeft(w, f.id, raid.target)) breakRaid(w, f, `${f.name} have beaten you and are leaving with what they could carry.`);
+      continue;
+    }
     const dealt = raid.dealt ?? 0;
     const taken = raid.taken ?? 0;
     // Recent blows count most.

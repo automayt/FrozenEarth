@@ -200,7 +200,7 @@ export function updateDowned(w: World, p: Pawn): void {
     }
     // Whatever they held falls from their hands.
     dropWeapon(w, p);
-    if (w.factions.get(p.faction)?.raid) raiderDowned(w, p.faction);
+    if (w.factions.get(p.faction)?.raid) raiderDowned(w, p.faction, p);
     else w.message(p.faction, `${p.name} has been downed.`, 'bad', cell);
   } else {
     w.message(p.faction, `${p.name} is back on their feet.`, 'neutral', cell);
@@ -382,7 +382,7 @@ export function killPawn(w: World, p: Pawn, cause: string, by?: Pawn): void {
     addCondition(w, o, 'mourning');
   }
   if (w.factions.get(faction)?.isPlayer) socialOnDeath(w, p);
-  if (w.factions.get(faction)?.raid) raiderGone(w, faction, true);
+  if (w.factions.get(faction)?.raid) raiderGone(w, faction, true, p.id);
   if (left === 0 && w.factions.get(faction)?.isPlayer) {
     w.message(0, `${fname} has fallen. Survivors from the wilds may yet find what is left of it.`, 'bad', cell);
     scheduleEvent(w, 'new_arrivals', faction, TICKS_PER_DAY);

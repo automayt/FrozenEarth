@@ -154,6 +154,15 @@ export interface Pawn extends Base {
   tamed?: number;
   /** Animals: the colony trying to tame it. */
   taming?: number;
+  /** Prisoners taken from a band: who they rode with, for the ransom letter (see warband.ts). */
+  captive?: Captive;
+}
+
+/** A prisoner's band, and when it sends word about buying them back (0 once it has). */
+export interface Captive {
+  band: string;
+  offerAt: number;
+  chief?: true;
 }
 
 export type PrisonerState = '' | 'held' | 'leaving';
@@ -262,10 +271,25 @@ export interface RaidState {
   sponsor?: number;
   /** Raids on settlements: wounds each player colony dealt the raiders, to thank them after. */
   helpers?: Record<number, number>;
+  // -- chiefs, demands and last stands (warband.ts)
+  /** The band's chief, and the name they ride under. */
+  chief?: EntityId;
+  chiefName?: string;
+  /** Who last landed a blow on the chief. */
+  chiefBy?: EntityId;
+  /** Waiting at the edge for an answer to their demand until this tick, and the letter asking it. */
+  parley?: number;
+  parleyChoice?: number;
+  /** A colonist left standing alone against this many raiders. */
+  lastStand?: [pawn: EntityId, odds: number];
+  /** A bandit camp a town wants cleared (contracts.ts): the cell they hold. */
+  camp?: number;
+  /** Scouts: they slip away once they've put someone down. */
+  scout?: true;
 }
 
-/** assault: go for the colonists. loot: grab goods and go. burn: torch fields and outbuildings. siege: dig in out there and pick off anyone who shows. */
-export type RaidGoal = 'assault' | 'loot' | 'burn' | 'siege';
+/** assault: go for the colonists. loot: grab goods and go. burn: torch fields and outbuildings. siege: dig in out there and pick off anyone who shows. camp: bandits holding their camp. */
+export type RaidGoal = 'assault' | 'loot' | 'burn' | 'siege' | 'camp';
 
 export interface Faction {
   id: number;
@@ -386,6 +410,24 @@ export interface SettlementState {
   memories?: Memory[];
   /** Last time a colony tried to make peace between them and another town, by that town's id. */
   mediated?: Record<number, number>;
+  /** Jobs beyond deliveries a colony took on for them (contracts.ts). Missing on older saves. */
+  contracts?: Contract[];
+}
+
+/** A job a town gave a colony: deal with these wolves or bandits before `until`. */
+export interface Contract {
+  id: number;
+  faction: number;
+  kind: 'wolves' | 'bandits';
+  /** The wolves, or the bandits, still to be dealt with. */
+  targets: EntityId[];
+  /** Where they were last seen. */
+  at: number;
+  reward: [item: string, count: number];
+  goodwill: number;
+  until: number;
+  /** Bandits: their chief's name. */
+  chief?: string;
 }
 
 /** Goods a settlement asked a colony for, and what it promised in return. */
