@@ -107,6 +107,12 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
         <Row label="Screen shake">
           <Toggle on={s.screenShake} label="Screen shake" onChange={(screenShake) => set({ screenShake })} />
         </Row>
+        <Row label="Edge scrolling" hint="Pan when the mouse rests at the edge of the screen">
+          <Toggle on={s.edgeScroll} label="Edge scrolling" onChange={(edgeScroll) => set({ edgeScroll })} />
+        </Row>
+        <Row label="Big moments" hint="The camera goes to look when something big happens">
+          <Toggle on={s.bigMoments} label="Big moments" onChange={(bigMoments) => set({ bigMoments })} />
+        </Row>
       </section>
       <section>
         <h3>Graphics</h3>

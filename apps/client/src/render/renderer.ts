@@ -1,7 +1,7 @@
 import { Application, BitmapText, Container, Graphics, GraphicsContext, Sprite, TextStyle } from 'pixi.js';
 import { ANIMALS, BUILDINGS, LANDMARKS, maxHp, PLANTS, ROCKS, TERRAINS, WEAPON_KEYS, weaponOf, type LandmarkKind, type TerrainDef } from '@fe/defs';
 import { PawnGlide, pawnPosition } from '@fe/protocol';
-import { DESIG, FROST_BAND, MIN_COLONY_GAP, pactOf, SHOT_FIELDS, bleedRate, calendar, dispositionOf, GUARD_REACH, hostile, NOISE, SETTLEMENT_WATCH, stealthMult, frostLevel, frostRadius, hash2, outdoorTempAt, weaponFor, woundTotal, type Construct, type Entity, type Pawn, type World, constructCost, constructWork, type Building } from '@fe/sim';
+import { DESIG, FROST_BAND, MIN_COLONY_GAP, pactOf, SHOT_FIELDS, calendar, dispositionOf, GUARD_REACH, hostile, NOISE, SETTLEMENT_WATCH, stealthMult, frostLevel, frostRadius, hash2, outdoorTempAt, weaponFor, type Construct, type Entity, type Pawn, type World, constructCost, type Building } from '@fe/sim';
 import { ease, Particles, Tweens, Weather, type Precip } from './fx';
 import { sound } from '../audio';
 import { fog } from './fog';
@@ -19,6 +19,9 @@ import { Lighting } from './light';
 import { Shadows } from './shadows';
 import { Life } from './life';
 import { Juice } from './juice';
+import { cameraRequests, DragTracker, edgeResist, edgeSpring, flightPose, followStep, keepOnMap, mayTakeCamera, MOMENT_HOLD_MS, MOMENT_SKIP_MS, PanBody, panRange, panSpeedFor, planFlight, Shake, shakeFalloff, type Flight } from './camera';
+import { cameraSettings } from './cameraSettings';
+import { MARK_TINT, WorldUi } from './worldui';
 
 /** World units per cell. */
 export const TILE = 32;
@@ -64,6 +67,8 @@ interface ShotFx {
 const SHOT_FLY_MS = 140;
 const SHOT_FADE_MS = 260;
 const MUZZLE_MS = 70;
+/** Weapon damage from which a hit shakes the screen. */
+const HEAVY_HIT = 0.17;
 /** Nearest threats each colonist's cover is shown against. */
 const COVER_THREATS = 3;
 
@@ -74,6 +79,8 @@ interface EntityView {
   def: string;
   /** Set for walls, so neighbours can re-join when this one goes away. */
   wallCell?: number;
+  /** A building that has taken damage: if it goes, it was knocked down rather than taken apart. */
+  battered?: boolean;
   // Pawn animation state (purely visual).
   /** Inner container for body, weapon and carried item: bobs, leans and flips without moving the label. */
   rig?: Container;
@@ -91,6 +98,8 @@ interface EntityView {
   nextZ?: number;
   /** Pawn name, or an item stack's count: hidden or resized by zoom level. */
   label?: BitmapText;
+  /** The cell a pawn is standing and working at this frame. */
+  workCell?: number | null;
 }
 
 /** What a working pawn is working on, and what that throws up. */
@@ -144,7 +153,23 @@ export class GameRenderer {
   private built = false;
   /** Rock layer as last drawn, to spot freshly mined cells. */
   private prevRock = new Uint8Array(0);
-  private glide: { fx: number; fy: number; tx: number; ty: number; t0: number } | null = null;
+  /** A camera move under way (render/camera.ts). */
+  private flight: Flight | null = null;
+  /** Pan velocity, kept between frames for the wind-up and the coast. */
+  private pan = new PanBody();
+  private dragPanned = new DragTracker();
+  /** The pawn the camera is following (F), or 0. */
+  private followId = 0;
+  /** A big-moment look: out to the spot, hold, and back to where the player was. */
+  private moment: { phase: 'out' | 'hold' | 'back'; x: number; y: number; scale: number; until: number } | null = null;
+  private lastMoment = -Infinity;
+  /** When the player last pressed something; big moments wait for a quiet spell. */
+  lastInput = 0;
+  private quake = new Shake();
+  /** The shake offset added to the world this frame, taken off again at the start of the next. */
+  private shaken = { x: 0, y: 0 };
+  /** The small line over the map while the camera is doing something of its own. */
+  private hint: HTMLDivElement | null = null;
   /** Where the zoom is heading, and the screen point it closes in on. */
   private zoomGoal: { s: number; sx: number; sy: number } | null = null;
   private lastFrame = performance.now();
@@ -166,6 +191,8 @@ export class GameRenderer {
   private life = new Life();
   private precip = 'none';
   private views = new Map<number, EntityView>();
+  /** Health bars, job tags, progress rings, selection brackets, reticles (render/worldui.ts). */
+  private worldUi = new WorldUi();
   /** Hot springs on view (they steam), what your colony knew of landmarks last frame, and the next puff. */
   private springs = new Set<number>();
   private landmarkSig = '';
@@ -195,6 +222,10 @@ export class GameRenderer {
       return;
     }
     el.appendChild(this.app.canvas);
+    this.hint = document.createElement('div');
+    this.hint.className = 'cam-hint';
+    this.hint.hidden = true;
+    el.appendChild(this.hint);
     this.tex = new TextureBank(this.app.renderer);
     await this.tex.loadArt();
     this.ground = Ground.create(this.app.renderer, this.tex, TILE);
@@ -214,7 +245,7 @@ export class GameRenderer {
     this.shadows = new Shadows(this.app.renderer, this.tex);
     this.layers.shadows.addChild(this.shadows.view);
     this.layers.fx.addChild(this.life.view);
-    this.layers.ui.addChild(this.juice.view);
+    this.layers.ui.addChild(this.worldUi.view, this.juice.view);
     this.input = new Input(this, this.app.canvas);
     this.app.ticker.add(() => this.frame());
   }
@@ -223,6 +254,7 @@ export class GameRenderer {
     this.destroyed = true;
     this.input?.destroy();
     this.ground?.destroy();
+    this.hint?.remove();
     try {
       this.app.destroy(true, { children: true });
     } catch {
@@ -257,21 +289,132 @@ export class GameRenderer {
     return { x: (this.app.screen.width / 2 - this.world.x) / s / TILE - 0.5, y: (this.app.screen.height / 2 - this.world.y) / s / TILE - 0.5 };
   }
 
-  /** Smoothly pan to a cell (jumps if it's far away). */
+  /** Fly to a cell: a quick glide when it's close, a short eased flight that lifts mid-way when it's far. */
   glideTo(x: number, y: number): void {
-    const c = this.viewCenter();
-    if (Math.hypot(c.x - x, c.y - y) > 80) {
+    this.followId = 0;
+    this.moment = null;
+    this.fly(x, y);
+  }
+
+  private fly(x: number, y: number, scale = this.world.scale.x): void {
+    this.pan.stop();
+    this.zoomGoal = null;
+    if (cameraSettings.REDUCED_MOTION) {
+      this.flight = null;
+      this.world.scale.set(scale);
       this.centerOn(x, y);
-      this.glide = null;
       return;
     }
-    this.glide = { fx: c.x, fy: c.y, tx: x, ty: y, t0: performance.now() };
+    const c = this.viewCenter();
+    const s = this.world.scale.x;
+    this.flight = planFlight(c.x, c.y, x, y, s, TILE * s, Math.min(this.app.screen.width, this.app.screen.height), performance.now(), scale, MIN_ZOOM);
+  }
+
+  /**
+   * The player reached for the camera: whatever it was doing on its own stops. During a big moment
+   * it first flies back to where they were, and they get it then (false until it has).
+   */
+  private takeCamera(): boolean {
+    if (this.moment) {
+      this.skipMoment();
+      return false;
+    }
+    this.followId = 0;
+    this.flight = null;
+    return true;
+  }
+
+  /** As takeCamera, but zooming keeps the follow going. */
+  private takeZoom(): boolean {
+    if (this.moment) {
+      this.skipMoment();
+      return false;
+    }
+    this.flight = null;
+    return true;
+  }
+
+  /** Follow a pawn until a manual pan, or stop if it's the one already followed. */
+  toggleFollow(id: number): boolean {
+    if (this.followId === id) {
+      this.followId = 0;
+      return false;
+    }
+    const e = store.mirror.get<Pawn>(id);
+    if (!e) return false;
+    this.followId = id;
+    this.moment = null;
+    this.pan.stop();
+    if (!this.onView(e.x, e.y, 0.8)) this.fly(e.x, e.y);
+    return true;
+  }
+
+  stopFollow(): void {
+    this.followId = 0;
+  }
+
+  get following(): number {
+    return this.followId;
+  }
+
+  /** Whether a cell is on screen, within the middle `share` of it. */
+  private onView(x: number, y: number, share: number): boolean {
+    const c = this.viewCenter();
+    const s = this.world.scale.x * TILE;
+    return Math.abs(x - c.x) * s < (this.app.screen.width * share) / 2 && Math.abs(y - c.y) * s < (this.app.screen.height * share) / 2;
+  }
+
+  /** Move the view by a dragged amount, with some give past the edge of the map. */
+  dragPan(dx: number, dy: number): void {
+    if (!this.takeCamera()) return;
+    this.pan.stop();
+    const { x, y } = this.panRanges();
+    this.world.x += dx * edgeResist(this.world.x, x.lo, x.hi, dx);
+    this.world.y += dy * edgeResist(this.world.y, y.lo, y.hi, dy);
+    this.dragPanned.add(dx, dy, performance.now());
+  }
+
+  dragPanStart(): void {
+    this.dragPanned.reset(performance.now());
+  }
+
+  /** The drag let go: the view carries on a little at the speed it was going. */
+  dragPanEnd(): void {
+    const v = this.dragPanned.release(performance.now());
+    if (!cameraSettings.REDUCED_MOTION) this.pan.throwAt(v.vx, v.vy);
+  }
+
+  /** Held pan keys or the screen edge, -1..1 on each axis (0 lets it coast), for dt ms. */
+  panInput(dirX: number, dirY: number, dt: number): void {
+    const manual = dirX !== 0 || dirY !== 0;
+    if (manual ? !this.takeCamera() : !this.pan.moving) return;
+    const speed = panSpeedFor(this.world.scale.x, MAX_ZOOM, MIN_ZOOM);
+    const { x, y } = this.panRanges();
+    const gx = -dirX * speed * edgeResist(this.world.x, x.lo, x.hi, -dirX);
+    const gy = -dirY * speed * edgeResist(this.world.y, y.lo, y.hi, -dirY);
+    if (cameraSettings.REDUCED_MOTION) {
+      this.pan.stop();
+      this.world.x += (gx * dt) / 1000;
+      this.world.y += (gy * dt) / 1000;
+      return;
+    }
+    const d = this.pan.step(gx, gy, dt);
+    this.world.x += d.dx * edgeResist(this.world.x, x.lo, x.hi, d.dx);
+    this.world.y += d.dy * edgeResist(this.world.y, y.lo, y.hi, d.dy);
+  }
+
+  private panRanges(): { x: { lo: number; hi: number }; y: { lo: number; hi: number } } {
+    const s = this.world.scale.x;
+    return { x: panRange(this.app.screen.width, this.mapW * TILE, s), y: panRange(this.app.screen.height, this.mapH * TILE, s) };
   }
 
   /** Zoom by a factor about a screen point. The camera eases there over a few frames; more wheel turns stack. */
   zoomAt(sx: number, sy: number, factor: number): void {
+    if (!this.takeZoom()) return;
     const from = this.zoomGoal?.s ?? this.world.scale.x;
-    this.zoomGoal = { s: Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, from * factor)), sx, sy };
+    // Following, the colonist stays in the middle of the screen whatever the cursor is over.
+    const held = this.followId !== 0;
+    this.zoomGoal = { s: Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, from * factor)), sx: held ? this.app.screen.width / 2 : sx, sy: held ? this.app.screen.height / 2 : sy };
   }
 
   /** Set the scale, keeping the world point under (sx, sy) where it is. */
@@ -297,6 +440,119 @@ export class GameRenderer {
 
   // ---------------------------------------------------------------- per frame
 
+  /** Everything that moves the view this frame, in order: requests, flight, zoom, input, follow, edges, shake. */
+  private stepCamera(now: number, dt: number): void {
+    this.world.x -= this.shaken.x;
+    this.world.y -= this.shaken.y;
+    this.shaken.x = this.shaken.y = 0;
+    if (store.focus) {
+      if (this.built) this.glideTo(store.focus.x, store.focus.y);
+      else this.centerOn(store.focus.x, store.focus.y);
+      store.focus = null;
+    }
+    this.askMoment(now);
+    if (this.flight) {
+      const p = flightPose(this.flight, now);
+      this.world.scale.set(p.scale);
+      this.centerOn(p.x, p.y);
+      if (p.done) this.flight = null;
+    }
+    this.stepMoment(now);
+    this.easeZoom(dt);
+    this.input.update(dt);
+    const followed = this.followId ? this.views.get(this.followId) : undefined;
+    if (this.followId && (!followed || !followed.root.visible)) this.followId = 0;
+    if (followed && !this.flight) {
+      const s = this.world.scale.x;
+      this.world.x = followStep(this.world.x, this.app.screen.width / 2 - followed.root.x * s, dt);
+      this.world.y = followStep(this.world.y, this.app.screen.height / 2 - followed.root.y * s, dt);
+    }
+    // Past the edge of the map, the view eases back, unless a hand is still pulling it out there.
+    if (!this.flight && !this.followId && !this.input.panning && !this.possessedId) {
+      const { x, y } = this.panRanges();
+      this.world.x = edgeSpring(this.world.x, x.lo, x.hi, dt);
+      this.world.y = edgeSpring(this.world.y, y.lo, y.hi, dt);
+    }
+    this.setHint(this.moment && this.moment.phase !== 'back' ? 'Click to skip' : followed ? `Following ${followed.label?.text ?? 'them'}. F or a pan stops it.` : null);
+    this.quake.step(dt);
+    if (this.quake.trauma > 0 && !cameraSettings.REDUCED_MOTION) {
+      const o = this.quake.offset(now, cameraSettings.SCREEN_SHAKE);
+      this.shaken.x = o.x;
+      this.shaken.y = o.y;
+      this.world.x += o.x;
+      this.world.y += o.y;
+    }
+  }
+
+  /** Something big happened somewhere: go and look, if the player isn't using the camera themselves. */
+  private askMoment(now: number): void {
+    const q = cameraRequests.moment;
+    if (!q) return;
+    cameraRequests.moment = null;
+    if (!cameraSettings.BIG_MOMENTS || cameraSettings.REDUCED_MOTION || this.onView(q.x, q.y, 0.7)) return;
+    const free = mayTakeCamera({
+      tool: store.tool.kind !== 'select',
+      busyPointer: this.input.busy,
+      overlay: !!store.menu || store.panel !== 'none' || store.help,
+      steering: !!this.controlled(),
+      following: this.followId !== 0,
+      cameraBusy: !!this.flight || !!this.moment || this.pan.moving || !!this.zoomGoal,
+      sinceInput: now - this.lastInput,
+      sinceMoment: now - this.lastMoment,
+    });
+    if (!free) return;
+    this.lastMoment = now;
+    const c = this.viewCenter();
+    const s = this.world.scale.x * TILE;
+    this.moment = { phase: 'out', x: c.x, y: c.y, scale: this.world.scale.x, until: 0 };
+    // Raiders arrive at the very edge: stop short, so the look is at them and not at the void.
+    this.fly(keepOnMap(q.x, this.app.screen.width / s, this.mapW), keepOnMap(q.y, this.app.screen.height / s, this.mapH));
+  }
+
+  private stepMoment(now: number): void {
+    const b = this.moment;
+    if (!b || this.flight) return;
+    if (b.phase === 'out') {
+      b.phase = 'hold';
+      b.until = now + MOMENT_HOLD_MS;
+    } else if (b.phase === 'hold' && now >= b.until) {
+      b.phase = 'back';
+      this.fly(b.x, b.y, b.scale);
+    } else if (b.phase === 'back') this.moment = null;
+  }
+
+  /** A click or key during a big moment: back to where the player was, quickly. */
+  skipMoment(): void {
+    const b = this.moment;
+    if (!b || b.phase === 'back') return;
+    b.phase = 'back';
+    this.fly(b.x, b.y, b.scale);
+    if (this.flight) this.flight.ms = MOMENT_SKIP_MS;
+  }
+
+  /** True while the camera is off on a big moment, so the click that skips it does nothing else. */
+  get inMoment(): boolean {
+    return !!this.moment && this.moment.phase !== 'back';
+  }
+
+  private setHint(text: string | null): void {
+    const h = this.hint;
+    if (!h) return;
+    h.hidden = text === null;
+    if (text !== null && h.textContent !== text) h.textContent = text;
+  }
+
+  /** Shake the screen for something heavy at a world point: less the further it is from the view. */
+  shakeAt(x: number, y: number, power: number): void {
+    if (cameraSettings.REDUCED_MOTION || cameraSettings.SCREEN_SHAKE <= 0) return;
+    const s = this.world.scale.x;
+    const w = this.app.screen.width;
+    const h = this.app.screen.height;
+    const dist = Math.hypot(x * s + this.world.x - w / 2, y * s + this.world.y - h / 2);
+    // A blow seen from high up is a smaller thing.
+    this.quake.add(power * shakeFalloff(dist, Math.hypot(w, h) / 2) * Math.min(1, 0.45 + s * 0.55));
+  }
+
   private frame(): void {
     const m = store.mirror;
     if (!m.w) return;
@@ -304,19 +560,7 @@ export class GameRenderer {
     const now = performance.now();
     const dt = Math.min(100, now - this.lastFrame);
     this.lastFrame = now;
-    if (store.focus) {
-      if (this.built) this.glideTo(store.focus.x, store.focus.y);
-      else this.centerOn(store.focus.x, store.focus.y);
-      store.focus = null;
-    }
-    if (this.glide) {
-      const k = Math.min(1, (now - this.glide.t0) / 380);
-      const e = ease.outQuad(k);
-      this.centerOn(this.glide.fx + (this.glide.tx - this.glide.fx) * e, this.glide.fy + (this.glide.ty - this.glide.fy) * e);
-      if (k >= 1) this.glide = null;
-    }
-    this.easeZoom(dt);
-    this.input.update(this.app.ticker.deltaMS);
+    this.stepCamera(now, dt);
     this.ground?.tick(now);
 
     if (m.allCellsChanged) {
@@ -345,6 +589,7 @@ export class GameRenderer {
     for (const c of m.changedCells) this.prevRock[c] = m.rock[c];
     this.shadows.note(m, m.changedEnts, m.removedEnts, m.changedCells.size > 0);
     sound.note(m, m.changedEnts, m.removedEnts);
+    this.worldUi.note(m, m.changedEnts, m.removedEnts, now);
     this.juice.frame(m, store.me?.faction ?? 0, m.changedEnts, m.removedEnts, now, (id) => {
       const v = this.views.get(id);
       return v && v.root.visible ? { x: v.root.x, y: v.root.y } : null;
@@ -392,6 +637,13 @@ export class GameRenderer {
       if (!e) continue;
       this.updateView(e);
       if (e.kind === 'pawn' && e.possessed && e.faction === mine) this.possessedId = e.id;
+      if (e.kind === 'pawn' && this.built) {
+        // Someone going down is the heaviest blow of a fight.
+        if (e.downed && !this.felled.has(e.id)) {
+          this.felled.add(e.id);
+          this.shakeAt((e.x + 0.5) * TILE, (e.y + 0.5) * TILE, e.species ? 0.3 : 0.5);
+        } else if (!e.downed) this.felled.delete(e.id);
+      }
     }
     m.changedEnts.clear();
 
@@ -400,6 +652,13 @@ export class GameRenderer {
     const tick = store.estTick();
     if (fog.update(now)) this.drawFog();
     const me = store.me?.faction;
+    {
+      const a = this.screenToWorld(0, 0);
+      const b = this.screenToWorld(this.app.screen.width, this.app.screen.height);
+      store.view = { x0: a.x, y0: a.y, x1: b.x, y1: b.y };
+      sound.setListener(((a.x + b.x) / 2) * TILE, ((a.y + b.y) / 2) * TILE, (b.x - a.x) * TILE);
+      this.worldUi.begin(m, me ?? 0, now, dt, tick, this.world.scale.x, store.view, store.hoverCell, store.squad);
+    }
     for (const id of this.pawnIds) {
       const e = m.entities.get(id);
       const v = this.views.get(id);
@@ -412,6 +671,7 @@ export class GameRenderer {
       // Others indoors, out of your people's sight, aren't shown.
       v.root.visible = e.faction === me || !fog.hidden(Math.round(pos.y) * m.w + Math.round(pos.x));
       this.animatePawn(e, v, now);
+      this.worldUi.pawn(e, v.root.x, v.root.y, v.root.visible, id === store.selected, v.workCell ?? null);
     }
     if (now >= this.nextSteam && this.springs.size) {
       // Warm water breathing out into the cold.
@@ -423,12 +683,6 @@ export class GameRenderer {
       }
     }
     this.cullChunks();
-    {
-      const a = this.screenToWorld(0, 0);
-      const b = this.screenToWorld(this.app.screen.width, this.app.screen.height);
-      store.view = { x0: a.x, y0: a.y, x1: b.x, y1: b.y };
-      sound.setListener(((a.x + b.x) / 2) * TILE, ((a.y + b.y) / 2) * TILE, (b.x - a.x) * TILE);
-    }
     this.drawFrost(tick);
     // Too small to see when zoomed out, and it touches every visible plant.
     if (this.world.scale.x >= 0.35 && settings.plantSway && !settings.reducedMotion) this.swayPlants(now);
@@ -438,6 +692,7 @@ export class GameRenderer {
     this.particles.update(dt);
     this.tweens.update(now);
     this.drawUi();
+    this.worldUi.end();
     this.drawWeather(tick, dt);
     this.drawLight(tick, now, dt);
   }
@@ -448,6 +703,7 @@ export class GameRenderer {
   private animatePawn(e: Pawn, v: EntityView, now: number): void {
     const rig = v.rig;
     if (!rig) return;
+    v.workCell = null;
     const x = v.root.x;
     const y = v.root.y;
     const dx = v.lastX === undefined ? 0 : x - v.lastX;
@@ -480,6 +736,7 @@ export class GameRenderer {
       this.setWalkFrame(v, -1);
       const work = this.workTarget(e);
       if (work) {
+        v.workCell = work.cell;
         // Face the work and swing at it.
         const tx = (work.cell % store.mirror.w) + 0.5;
         const ty = Math.floor(work.cell / store.mirror.w) + 0.5;
@@ -788,11 +1045,13 @@ export class GameRenderer {
     this.pawnIds.delete(id);
     this.springs.delete(id);
     this.pawnGlide.forget(id);
+    if (leaving) this.felled.delete(id);
     const root = v.root;
     if (!leaving || !this.built || !root.visible || !root.parent?.visible) {
       root.destroy({ children: true });
       return;
     }
+    if (v.kind === 'building' && v.battered) this.shakeAt(root.x, root.y, 0.55);
     const kill = () => root.destroy({ children: true });
     if (v.kind === 'plant' && PLANTS[v.def]?.tree) {
       // Timber: the tree tips over from its base and fades, shedding leaves.
@@ -879,10 +1138,10 @@ export class GameRenderer {
       case 'construct': {
         const total = Object.values(constructCost(e)).reduce((a, b) => a + b, 0);
         const got = Object.values(e.delivered).reduce((a, b) => a + b, 0);
-        return `c:${e.def}:${got}/${total}:${Math.floor((e.progress / constructWork(e)) * 10)}:${e.kit ? 'k' : ''}`;
+        return `c:${e.def}:${got >= total}:${e.kit ? 'k' : ''}`;
       }
       case 'pawn':
-        return `w:${e.faction}:${e.name}:${e.tamed ?? 0}:${e.taming ?? 0}:${e.hunted ?? 0}:${e.asleep ? 1 : 0}:${e.carrying?.def ?? ''}:${e.weapon}:${e.drafted ? 1 : 0}:${e.downed ? 1 : 0}:${Math.ceil(woundTotal(e) * 20)}:${bleedRate(e) > 0 ? 1 : 0}:${e.prisoner}`;
+        return `w:${e.faction}:${e.name}:${e.tamed ?? 0}:${e.taming ?? 0}:${e.hunted ?? 0}:${e.asleep ? 1 : 0}:${e.carrying?.def ?? ''}:${e.weapon}:${e.drafted ? 1 : 0}:${e.downed ? 1 : 0}:${e.prisoner}`;
     }
   }
 
@@ -945,6 +1204,7 @@ export class GameRenderer {
           s.tint = 0xb8b0a4;
         } else if (health < 1) {
           // Battered: darker, with a strip showing what's left.
+          v.battered = true;
           const k = Math.round(0x60 + 0x9f * health);
           s.tint = (k << 16) | (k << 8) | k;
           const left = Math.round(health * 32) / 32;
@@ -996,22 +1256,6 @@ export class GameRenderer {
       this.shapes.set(key, ctx);
     }
     return new Graphics(ctx);
-  }
-
-  /**
-   * A pawn's health strip: dark outlined track, fill coloured by how bad it is (green, amber, red),
-   * bright red while bleeding.
-   */
-  private healthBar(width: number, y: number, hurt: number, bleeding: boolean): Graphics {
-    const left = Math.round(Math.max(0, 1 - hurt) * 24) / 24;
-    const fill = bleeding ? 0xff4848 : left > 0.6 ? 0x5ccf5c : left > 0.3 ? 0xe8b83c : 0xe85a3c;
-    return this.shape(`hp:${width}:${y}:${left}:${fill}`, (g) =>
-      g
-        .rect(-width / 2 - 1, y - 1, width + 2, 6)
-        .fill({ color: 0x000000, alpha: 0.75 })
-        .rect(-width / 2, y, width * left, 4)
-        .fill(fill),
-    );
   }
 
   /** The stack size in an item's corner, shown for stacks of two or more. */
@@ -1078,7 +1322,6 @@ export class GameRenderer {
   }
 
   private drawConstruct(root: Container, e: Construct): void {
-    const d = BUILDINGS[e.def];
     const cost = constructCost(e);
     const total = Object.values(cost).reduce((a, b) => a + b, 0);
     const got = Object.values(e.delivered).reduce((a, b) => a + b, 0);
@@ -1095,8 +1338,6 @@ export class GameRenderer {
         .stroke({ width: 1.5, color: ready ? 0xc8a878 : 0x8ac8ff, alpha: 0.9 }),
     );
     root.addChild(frame, ghost);
-    const p = Math.min(1, Math.round((ready ? e.progress / d.work : total ? got / total : 0) * 20) / 20);
-    if (p > 0) root.addChild(this.shape(`cprog:${ready}:${p}`, (g) => g.rect(-TILE / 2 + 3, TILE / 2 - 6, (TILE - 6) * p, 3).fill(ready ? 0xf0c060 : 0x8ac8ff)));
   }
 
   /**
@@ -1153,10 +1394,6 @@ export class GameRenderer {
     v.body = body;
     v.baseTint = body.tint;
     v.animal = true;
-    const hurt = woundTotal(e);
-    if (hurt > 0.02 || e.downed) {
-      root.addChild(this.healthBar(TILE * 0.6, -size * 0.75, hurt, bleedRate(e) > 0));
-    }
     if (e.taming && e.taming === store.me?.faction) {
       // Marked for taming: a small heart, in ember.
       const y = -size * 0.75 - 8;
@@ -1238,10 +1475,6 @@ export class GameRenderer {
             .stroke({ width: 1.2, color: 0x000000, alpha: 0.8 }),
         ),
       );
-    }
-    const hurt = woundTotal(e);
-    if (hurt > 0.02 || e.downed) {
-      root.addChild(this.healthBar(TILE * 0.7, -TILE * 0.68, hurt, bleedRate(e) > 0));
     }
     if (e.carrying) {
       const c = new Sprite(this.tex.item(e.carrying.def));
@@ -1337,12 +1570,11 @@ export class GameRenderer {
       return;
     }
     const sw = 1 / this.world.scale.x;
+    const ui = this.worldUi;
     for (const id of store.squad) {
       if (id === store.selected) continue;
       const v = this.views.get(id);
-      if (!v) continue;
-      const r = TILE * 0.5;
-      g.rect(v.root.x - r, v.root.y - r, r * 2, r * 2).stroke({ width: 1.5 * sw, color: 0xffffff, alpha: 0.6 });
+      if (v) ui.bracket(id, v.root.x, v.root.y, TILE * 0.5, MARK_TINT.own, 0.72);
     }
     // Who your selected fighters are going after.
     for (const id of store.squad) {
@@ -1350,7 +1582,9 @@ export class GameRenderer {
       const v = this.views.get(id);
       if (!p || !v || p.job?.type !== 'attack') continue;
       const tv = this.views.get(p.job.target);
-      if (tv) g.moveTo(v.root.x, v.root.y).lineTo(tv.root.x, tv.root.y).stroke({ width: 1.5 * sw, color: 0xff5040, alpha: 0.45 });
+      if (!tv || !tv.root.visible) continue;
+      g.moveTo(v.root.x, v.root.y).lineTo(tv.root.x, tv.root.y).stroke({ width: 1.5 * sw, color: 0xff5040, alpha: 0.45 });
+      ui.reticle(-1 - p.job.target, tv.root.x, tv.root.y);
     }
     const om = this.orderMark;
     if (om) {
@@ -1366,8 +1600,8 @@ export class GameRenderer {
       const v = this.views.get(sel.id);
       const x = v ? v.root.x : (sel.x + 0.5) * TILE;
       const y = v ? v.root.y : (sel.y + 0.5) * TILE;
-      const r = TILE * 0.55;
-      g.rect(x - r, y - r, r * 2, r * 2).stroke({ width: 2 / this.world.scale.x, color: 0xffffff, alpha: 0.9 });
+      const foe = sel.kind === 'pawn' ? sel.faction !== store.me?.faction && !sel.species && hostile({ factions: m.factions } as unknown as World, store.me?.faction ?? 0, sel.faction) : false;
+      ui.bracket(sel.id, x, y, TILE * (sel.kind === 'building' ? (LANDMARK_SCALE[sel.def] ?? 1) * 0.55 : 0.55), foe ? MARK_TINT.foe : sel.kind === 'pawn' && sel.faction === store.me?.faction ? MARK_TINT.own : MARK_TINT.other, 1);
       if (sel.kind === 'pawn' && sel.path) {
         const pts = sel.path.cells.filter((_, i) => sel.path!.times[i] > store.estTick());
         if (pts.length) {
@@ -1378,7 +1612,7 @@ export class GameRenderer {
       }
     } else if (store.selectedCell !== null) {
       const c = store.selectedCell;
-      g.rect((c % m.w) * TILE, ((c / m.w) | 0) * TILE, TILE, TILE).stroke({ width: 2 / this.world.scale.x, color: 0xffffff, alpha: 0.6 });
+      ui.bracket(-2_000_000_000 - c, ((c % m.w) + 0.5) * TILE, (((c / m.w) | 0) + 0.5) * TILE, TILE * 0.5, MARK_TINT.other, 0.8);
     }
     this.input.drawPreview(g);
   }
@@ -1625,6 +1859,9 @@ export class GameRenderer {
     }
   }
 
+  /** Pawns already down, so each fall shakes the screen once. */
+  private felled = new Set<number>();
+
   /** Mark where a right-click order went. */
   flashOrder(x: number, y: number, attack: boolean): void {
     this.orderMark = { x, y, attack, born: performance.now() };
@@ -1651,6 +1888,10 @@ export class GameRenderer {
       this.shots.push(shot);
       if (shot.hit && !stale) this.juice.hit(shot.shooter, shot.target, now);
       if (!stale) {
+        this.worldUi.struck(shot.shooter, now);
+        this.worldUi.struck(shot.target, now);
+      }
+      if (!stale) {
         const sv = this.views.get(shot.shooter)?.root;
         const wdef = weaponOf(shot.weapon);
         sound.play((m.entities.get(shot.shooter) as Pawn | undefined)?.species ? 'bite' : wdef.melee ? 'melee' : shot.weapon === 'bow' ? 'bow' : 'rifle', sv?.x ?? (shot.sx + 0.5) * TILE, sv?.y ?? (shot.sy + 0.5) * TILE);
@@ -1675,6 +1916,9 @@ export class GameRenderer {
           if (!tv) return;
           tv.flashUntil = performance.now() + 160;
           sound.play('hit', tv.root.x, tv.root.y);
+          // A heavy blow lands on the camera too; ordinary shots don't, or a firefight never stops shaking.
+          const heavy = weaponOf(shot.weapon).damage;
+          if (heavy >= HEAVY_HIT) this.shakeAt(tv.root.x, tv.root.y, 0.3 + (heavy - HEAVY_HIT));
           this.particles.burst(tv.root.x, tv.root.y - TILE * 0.15, { count: 6, color: [0xc02020, 0x901010], speed: 55, size: 1.5, life: 450, gravity: 120 });
         });
       }

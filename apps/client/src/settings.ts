@@ -17,9 +17,12 @@ export interface Settings {
   shadows: boolean;
   /** Birds, fireflies and falling leaves. */
   wildlife: boolean;
-  /** Read by whatever shakes the camera. */
   screenShake: boolean;
   reducedMotion: boolean;
+  /** Pan when the mouse rests against the edge of the screen. */
+  edgeScroll: boolean;
+  /** Let the camera go and look when something big happens. */
+  bigMoments: boolean;
   fullscreen: boolean;
 }
 
@@ -49,7 +52,7 @@ function prefersReducedMotion(): boolean {
 }
 
 function defaults(): Settings {
-  return { uiScale: 1, ...QUALITY.high, screenShake: true, reducedMotion: prefersReducedMotion(), fullscreen: false };
+  return { uiScale: 1, ...QUALITY.high, screenShake: true, reducedMotion: prefersReducedMotion(), edgeScroll: true, bigMoments: true, fullscreen: false };
 }
 
 /** Whatever was stored, made safe: unknown keys are dropped and bad values fall back to the default. */
@@ -59,7 +62,7 @@ export function sanitize(raw: unknown, base: Settings = defaults()): Settings {
   const r = raw as Record<string, unknown>;
   const scale = r.uiScale;
   if (typeof scale === 'number' && Number.isFinite(scale)) out.uiScale = Math.max(UI_SCALE_MIN, Math.min(UI_SCALE_MAX, Math.round(scale * 20) / 20));
-  for (const k of ['plantSway', 'shadows', 'wildlife', 'screenShake', 'reducedMotion', 'fullscreen'] as const) {
+  for (const k of ['plantSway', 'shadows', 'wildlife', 'screenShake', 'reducedMotion', 'edgeScroll', 'bigMoments', 'fullscreen'] as const) {
     const v = r[k];
     if (typeof v === 'boolean') out[k] = v;
   }

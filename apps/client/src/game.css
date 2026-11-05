@@ -2212,3 +2212,181 @@ html[data-calm] *::after {
     gap: 0;
   }
 }
+
+/* ------------------------------------------------------------------ camera and in-world UI */
+
+/* A line over the map while the camera is doing something of its own. */
+.cam-hint {
+  position: absolute;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 14px 4px;
+  font: 500 15px/1.2 var(--display);
+  color: #eadfc8;
+  background: rgba(17, 21, 29, 0.78);
+  border-top: 1px solid rgba(201, 164, 92, 0.6);
+  border-bottom: 1px solid rgba(201, 164, 92, 0.6);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.cam-hint[hidden] {
+  display: none;
+}
+
+/* The ring of orders: a hoop of soot and brass, cut into wedges, with the lit wedge in ember. */
+#root .hud > .ring-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  pointer-events: auto;
+}
+
+.hud:has(> .ring-backdrop) > .order-preview {
+  display: none;
+}
+
+.ring-menu {
+  position: absolute;
+  width: 0;
+  height: 0;
+  outline: none;
+  animation: ring-in 0.13s cubic-bezier(0.2, 1.5, 0.45, 1) both;
+}
+
+.ring-menu.calm {
+  animation: none;
+}
+
+@keyframes ring-in {
+  from {
+    transform: scale(0.74);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ring-menu {
+    animation: none;
+  }
+}
+
+.ring-band {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, -50%);
+  overflow: visible;
+  filter: drop-shadow(0 3px 10px rgba(5, 8, 12, 0.55));
+}
+
+.ring-rim {
+  fill: none;
+  stroke: var(--brass-dark);
+  stroke-width: 1.5;
+}
+
+.ring-hub {
+  fill: var(--soot);
+  stroke: var(--brass);
+  stroke-width: 1.5;
+}
+
+.ring-wedge {
+  fill: rgba(17, 21, 29, 0.93);
+  stroke: rgba(201, 164, 92, 0.42);
+  stroke-width: 1;
+  transition: fill 0.07s linear;
+}
+
+.ring-wedge.lit {
+  fill: var(--ember);
+  stroke: #ffd9a0;
+}
+
+.ring-wedge.lit.danger {
+  fill: #d8503c;
+  stroke: #ffc0a8;
+}
+
+.ring-wedge.lit.refused {
+  fill: #2a303c;
+  stroke: var(--tallow-dim);
+}
+
+.ring-item {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 74px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  text-align: center;
+  font: 600 12.5px/1.05 var(--body);
+  color: var(--tallow);
+  pointer-events: none;
+}
+
+.ring-item svg {
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ring-item.lit {
+  color: var(--soot);
+}
+
+.ring-item.lit.danger {
+  color: #fff4ea;
+}
+
+.ring-item.refused,
+.ring-item.lit.refused {
+  color: var(--tallow-dim);
+}
+
+.ring-title {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 78px;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  font: 600 16px/1.02 var(--display);
+  color: var(--tallow);
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+
+.ring-caption {
+  position: absolute;
+  left: 0;
+  top: 122px;
+  width: max-content;
+  max-width: 300px;
+  transform: translateX(-50%);
+  padding: 4px 12px 5px;
+  text-align: center;
+  font: 500 13.5px/1.22 var(--body);
+  color: var(--tallow);
+  background: rgba(17, 21, 29, 0.92);
+  border-top: 1px solid rgba(201, 164, 92, 0.6);
+  border-bottom: 1px solid rgba(201, 164, 92, 0.6);
+  pointer-events: none;
+}
+
+.ring-caption.danger {
+  color: #ffc9b0;
+  border-color: #d8503c;
+}
+
+.ring-caption.refused {
+  color: var(--tallow-dim);
+}

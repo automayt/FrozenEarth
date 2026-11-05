@@ -38,7 +38,7 @@ export function frostDays(x: number, y: number): number {
 
 export const daysText = (d: number) => (d === 0 ? 'already frozen' : d === Infinity ? 'over 60 days away' : `about ${d} day${d === 1 ? '' : 's'} away`);
 
-/** What a right-click (or the active tool) would do on this cell, and what it risks. Mirrors Input.order. */
+/** What a right-click (or the active tool) would do on this cell, and what it risks. Mirrors render/ringOptions.ts. */
 function preview(x: number, y: number): Preview | null {
   const m = store.mirror;
   const me = store.me?.faction;

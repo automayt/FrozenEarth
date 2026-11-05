@@ -26,6 +26,7 @@ import { EscapeMenu } from './EscapeMenu';
 import { LoadingScreen } from './LoadingScreen';
 import { TabTitle } from './TabTitle';
 import { TipLayer } from './Tooltip';
+import { RingMenu } from './RingMenu';
 
 export function App() {
   const s = useStore();
@@ -62,6 +63,7 @@ export function App() {
           {s.panel === 'chronicle' && <ChroniclePanel />}
           <Architect />
           <OrderPreview />
+          <RingMenu />
           <Toasts />
           <Help />
         </div>
