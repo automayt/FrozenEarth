@@ -22,6 +22,7 @@ import { OrderPreview } from './OrderPreview';
 import { CaravanCard, JourneyPanel } from './JourneyPanel';
 import { Moments } from './Moments';
 import { ChroniclePanel } from './ChroniclePanel';
+import { RingMenu } from './RingMenu';
 
 export function App() {
   const s = useStore();
@@ -58,6 +59,7 @@ export function App() {
           {s.panel === 'chronicle' && <ChroniclePanel />}
           <Architect />
           <OrderPreview />
+          <RingMenu />
           <Toasts />
           <Help />
         </div>

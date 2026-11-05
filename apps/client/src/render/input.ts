@@ -1,14 +1,16 @@
 import type { Graphics } from 'pixi.js';
-import { ANIMALS, BUILDINGS, ITEMS, WEAPONS } from '@fe/defs';
+import { ANIMALS, BUILDINGS } from '@fe/defs';
 import { pawnPosition } from '@fe/protocol';
-import { attackRefusal, atWar, dispositionOf, type Pawn, type Rect, MAX_VIA } from '@fe/sim';
+import { type Pawn, type Rect, MAX_VIA } from '@fe/sim';
 import { command } from '../net';
 import { store } from '../store';
 import { sound } from '../audio';
-import { helpers, mySquad, setSpeed, toggleDraft, togglePause } from '../actions';
+import { mySquad, setSpeed, toggleDraft, togglePause } from '../actions';
 import { TILE, type GameRenderer } from './renderer';
 import { EDGE_SCROLL_DELAY_MS, edgePush } from './camera';
 import { cameraSettings } from './cameraSettings';
+import { HOLD_MS, ring } from './ring';
+import { ringPlan } from './ringOptions';
 
 interface Drag {
   start: { x: number; y: number };
@@ -25,20 +27,15 @@ const MENU_KEYS: Record<string, string> = { o: 'orders', z: 'zones', b: 'structu
 const DRAG_SLOP = 4;
 const NO_PUSH = { x: 0, y: 0 };
 
-/** How long a "right-click again to attack" warning stays armed. */
-const CONFIRM_MS = 3000;
-
 export class Input {
   private keys = new Set<string>();
   private drag: Drag | null = null;
-  private pan: { x: number; y: number; sx: number; sy: number; moved: boolean } | null = null;
+  private pan: { x: number; y: number; sx: number; sy: number; moved: boolean; button: number; at: number } | null = null;
   /** Where the mouse is, while it's over the map (null over the panels or off the window). */
   private mouse: { x: number; y: number } | null = null;
   /** When the mouse came to rest against the screen edge. */
   private edgeSince = 0;
   private off: (() => void)[] = [];
-  /** A peaceful target the player was warned about attacking; a second right-click confirms. */
-  private armed: { target: number; until: number } | null = null;
   /** Times we've explained that right-click orders need drafted colonists (stop after a few). */
   private draftNags = 0;
 
@@ -68,6 +65,7 @@ export class Input {
 
   destroy(): void {
     for (const f of this.off) f();
+    ring.close();
   }
 
   /** A hand on the map right now: a held button of any kind. */
@@ -96,7 +94,7 @@ export class Input {
   private down(e: PointerEvent): void {
     const p = this.local(e);
     if (e.button === 1 || e.button === 2) {
-      this.pan = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moved: false };
+      this.pan = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moved: false, button: e.button, at: performance.now() };
       this.r.dragPanStart();
       return;
     }
@@ -149,10 +147,7 @@ export class Input {
       this.pan = null;
       if (clicked) {
         if (store.tool.kind !== 'select') store.set({ tool: { kind: 'select' } });
-        else if (!this.order(e)) {
-          if (mySquad().some((p) => !p.downed) && this.draftNags++ < 3) store.toast('Right-click orders need drafted colonists: press R to draft the selection.', 'neutral');
-          store.set({ selected: null, selectedCell: null, squad: [] });
-        }
+        else this.rightClick(this.local(e));
       }
       return;
     }
@@ -238,6 +233,11 @@ export class Input {
     }
     const k = e.key.toLowerCase();
     if (e.ctrlKey || e.metaKey || e.altKey) return;
+    // An open ring menu hears the keys first: Esc closes it before anything else.
+    if (down && ring.state && ring.key(k)) {
+      e.preventDefault();
+      return;
+    }
     // The help overlay sits on top of everything and takes Esc (and ?) first.
     if (store.help) {
       if (down && (k === 'escape' || k === '?' || k === 'f1')) {
@@ -340,6 +340,8 @@ export class Input {
   }
 
   update(dtMs: number): void {
+    const held = this.pan;
+    if (held && !held.moved && held.button === 2 && performance.now() - held.at >= HOLD_MS && store.tool.kind === 'select') this.holdOpen(held);
     const steering = this.r.controlled();
     if (steering) {
       this.r.follow(steering.id);
@@ -359,6 +361,8 @@ export class Input {
       y = push.y;
     }
     this.r.panInput(x, y, dtMs);
+    // A box being dragged out reaches on as the view scrolls under the cursor.
+    if (this.drag && this.mouse) this.drag.cur = this.r.screenToCell(this.mouse.x, this.mouse.y);
   }
 
   /**
@@ -417,74 +421,45 @@ export class Input {
     return best;
   }
 
-  /**
-   * Right-click with drafted colonists selected: capture a downed raider, attack whoever else is
-   * under the cursor, pick up a weapon lying there, or move there.
-   */
-  private order(e: PointerEvent): boolean {
-    const squad = mySquad().filter((p) => p.drafted && !p.downed);
-    if (!squad.length) return false;
-    const p = this.local(e);
-    const ids = squad.map((s) => s.id);
-    const target = this.pawnAt(p.x, p.y, (o) => o.faction !== store.me?.faction);
-    const t = target ? store.mirror.get<Pawn>(target) : undefined;
-    if (t && t.faction !== store.me?.faction) {
-      const f = store.mirror.factions.get(t.faction);
-      const raider = !!f?.raid;
-      if (t.downed && raider) {
-        command({ c: 'capture', pawns: ids, target: t.id });
-        store.toast(`Capturing ${t.name.split(' ')[0]}: they'll be carried to a free bed.`, 'neutral');
-        this.r.flashOrder(t.x, t.y, false);
-        return true;
-      }
-      // Allies and truces: your colonists won't (the server says the same).
-      const refusal = attackRefusal(store.mirror, store.me!.faction, t.faction);
-      if (refusal) {
-        store.toast(refusal, 'bad');
-        return true;
-      }
-      // Attacking someone you aren't at war with starts a war: ask once more first.
-      const st = f?.settlement;
-      const colonyAtPeace = !!f?.isPlayer && !atWar(store.mirror, store.me!.faction, t.faction);
-      const peaceful = !t.species && !raider && !t.prisoner && (colonyAtPeace || (!!st && st.state !== 'fallen' && dispositionOf(st, store.me!.faction) !== 'hostile'));
-      if (peaceful && !(this.armed?.target === t.id && performance.now() < this.armed.until)) {
-        this.armed = { target: t.id, until: performance.now() + CONFIRM_MS };
-        store.toast(
-          f?.isPlayer
-            ? `Right-click ${t.name.split(' ')[0]} again to attack. That is a surprise attack: it starts a war with ${f.name}, and every town that knows you hears of it.`
-            : `Right-click ${t.name.split(' ')[0]} again to attack. ${f?.name} will treat you as enemies.`,
-          'bad',
-        );
-        return true;
-      }
-      this.armed = null;
-      command({ c: 'attack', pawns: ids, target: t.id });
-      this.r.flashOrder(t.x, t.y, !t.downed);
-      return true;
-    }
+  /** The orders for a screen point (render/ringOptions.ts). */
+  private planAt(p: { x: number; y: number }) {
+    const id = this.pawnAt(p.x, p.y, (o) => o.faction !== store.me?.faction);
     const cell = this.r.screenToCell(p.x, p.y);
-    if (!store.mirror.inBounds(cell.x, cell.y)) return true;
-    const it = store.mirror.get(store.mirror.itemAt[store.mirror.idx(cell.x, cell.y)]);
-    // Goods in a settlement's or another colony's stockpile: the nearest drafted colonist goes to take them.
-    const zone = store.mirror.zones.get(store.mirror.zoneAt[store.mirror.idx(cell.x, cell.y)]);
-    const owner = zone ? store.mirror.factions.get(zone.faction) : undefined;
-    if (it && it.kind === 'item' && zone?.kind === 'stockpile' && zone.faction !== store.me?.faction && (owner?.settlement || owner?.isPlayer)) {
-      const who = squad.reduce((a, b) => (Math.hypot(b.x - cell.x, b.y - cell.y) < Math.hypot(a.x - cell.x, a.y - cell.y) ? b : a));
-      command({ c: 'steal', pawn: who.id, item: it.id });
-      store.toast(`${who.name.split(' ')[0]} goes to steal the ${ITEMS[it.def]?.label.toLowerCase() ?? 'goods'}. Anyone awake who sees it raises the alarm.`, 'neutral');
-      this.r.flashOrder(cell.x, cell.y, true);
-      return true;
+    return ringPlan({
+      target: id ? store.mirror.get<Pawn>(id) : undefined,
+      x: cell.x,
+      y: cell.y,
+      flash: (x, y, attack) => this.r.flashOrder(x, y, attack),
+      inspect: () => this.select(p.x, p.y),
+    });
+  }
+
+  /**
+   * A plain right-click: open ground with drafted colonists moves them at once; anything with
+   * orders to give opens the ring; nothing at all deselects, as it always has.
+   */
+  private rightClick(p: { x: number; y: number }): void {
+    const plan = this.planAt(p);
+    if (plan.quick) plan.quick.run();
+    else if (plan.options.length) ring.open(p.x, p.y, this.el.clientWidth, this.el.clientHeight, plan, false);
+    else {
+      if (mySquad().some((s) => !s.downed) && this.draftNags++ < 3) store.toast('Right-click orders need drafted colonists: press R to draft the selection.', 'neutral');
+      store.set({ selected: null, selectedCell: null, squad: [] });
     }
-    if (it && it.kind === 'item' && WEAPONS[it.def]) {
-      const who = helpers(cell.x, cell.y).find((s) => s.drafted) ?? squad[0];
-      command({ c: 'equip', pawn: who.id, item: it.id });
-      store.toast(`${who.name.split(' ')[0]} will pick up the ${ITEMS[it.def]?.label.toLowerCase() ?? 'weapon'}.`, 'neutral');
-      this.r.flashOrder(cell.x, cell.y, false);
-      return true;
+  }
+
+  /** The right button held still: the ring opens wherever it is, and the release chooses. */
+  private holdOpen(held: { x: number; y: number }): void {
+    const b = this.el.getBoundingClientRect();
+    const p = { x: held.x - b.left, y: held.y - b.top };
+    const plan = this.planAt(p);
+    // One choice is no choice: leave it to the release, which does what a click does.
+    if (plan.options.length < 2) {
+      this.pan!.at = Infinity;
+      return;
     }
-    command({ c: 'move', pawns: ids, x: cell.x, y: cell.y });
-    this.r.flashOrder(cell.x, cell.y, false);
-    return true;
+    this.pan = null;
+    ring.open(p.x, p.y, this.el.clientWidth, this.el.clientHeight, plan, true);
   }
 
   private select(sx: number, sy: number): void {

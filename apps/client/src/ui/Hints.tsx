@@ -51,7 +51,7 @@ function current(): Hint[] {
     out.push({
       key: 'raid',
       title: 'Raiders are coming',
-      text: 'Draft your colonists (R), then right-click to put them behind sandbags or embrasures (build them from the Defense menu). Right-click a raider to attack. The alert on the right says what the raiders are up to.',
+      text: 'Draft your colonists (R), then right-click to put them behind sandbags or embrasures (build them from the Defense menu). Right-click a raider twice to attack. The alert on the right says what the raiders are up to.',
       action: mine.some((p) => p.drafted) ? undefined : { label: 'Draft', run: toggleDraft },
     });
   }
@@ -89,7 +89,7 @@ function current(): Hint[] {
     out.push({
       key: 'drafted',
       title: 'Drafted colonists wait for orders',
-      text: 'They stop working. Right-click the ground to move them, someone else to attack, goods in a foreign stockpile to steal, or a weapon to pick it up. Press R again to send them back to work.',
+      text: 'They stop working. Right-click the ground to move them. Right-click someone, a weapon or goods in a foreign stockpile for the ring of orders, and again to take the first. Press R again to send them back to work.',
     });
   }
   const f = m.factions.get(me);

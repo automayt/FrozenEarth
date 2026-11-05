@@ -126,7 +126,7 @@ export function Architect() {
         </div>
       )}
       {s.tool.kind === 'select' && mySquad().some((p) => p.drafted) && (
-        <div className="panel tool-hint">Right-click: move · on someone: attack · on goods: steal or pick up · R: back to work</div>
+        <div className="panel tool-hint">Right-click: move · on someone or goods: the ring of orders, right-click again for the first · R: back to work</div>
       )}
       <div className="panel bar" role="toolbar" aria-label="Commands">
         <div className="slots">
