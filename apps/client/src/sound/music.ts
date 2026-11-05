@@ -40,6 +40,7 @@ export class Music {
   private nextCalm = -1;
   private nextTense = 0;
   private lastStinger = -Infinity;
+  private tenseAt = -1;
   private out: GainNode;
 
   constructor(
@@ -63,8 +64,11 @@ export class Music {
     if (this.nextCalm < 0) this.nextCalm = t + FIRST_PHRASE[0] + this.rng() * (FIRST_PHRASE[1] - FIRST_PHRASE[0]);
     // Danger brings the tense fader up fast; calm comes back slowly, and music never just stops.
     const tense = Math.max(0, Math.min(1, (level - 0.15) / 0.55));
-    this.calm.gain.setTargetAtTime(1 - 0.9 * tense, t, tense > 0.3 ? 1.5 : 5);
-    this.tense.gain.setTargetAtTime(tense, t, tense > 0.3 ? 1.5 : 6);
+    if (tense !== this.tenseAt) {
+      this.tenseAt = tense;
+      this.calm.gain.setTargetAtTime(1 - 0.9 * tense, t, tense > 0.3 ? 1.5 : 5);
+      this.tense.gain.setTargetAtTime(tense, t, tense > 0.3 ? 1.5 : 6);
+    }
     this.dread.set(MUSIC_LEVEL.dread * tense, 0, t);
     if (level >= CALM_BELOW) {
       this.nextCalm = Math.max(this.nextCalm, t + CALM_AFTER);
@@ -137,6 +141,7 @@ export class Music {
   /** The page is hidden: nothing new starts, and the tense floor fades. */
   sleep(t: number): void {
     this.queue = [];
+    this.tenseAt = -1;
     this.calm.gain.setTargetAtTime(0, t, 1);
     this.tense.gain.setTargetAtTime(0, t, 1);
     this.dread.set(0, 0, t);

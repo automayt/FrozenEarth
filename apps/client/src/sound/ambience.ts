@@ -16,6 +16,8 @@ const CALLS = {
   wolves: { sample: 'call.wolves', perMin: 0.9, level: 0.3, width: 0.7 },
   thunder: { sample: 'call.thunder', perMin: 1.3, level: 0.75, width: 0.5 },
   ice: { sample: 'call.ice', perMin: 3, level: 0.34, width: 0.8 },
+  // Single snaps over the fire's loop, so no two passes through it are the same.
+  fire: { sample: 'fire', perMin: 30, level: 1, width: 0.5 },
 } as const;
 /** Tuning: seconds for a layer to fade toward where it should be. */
 const FADE_S = 2.2;
@@ -129,8 +131,9 @@ export class Ambience {
     }
     this.gust += (this.gustTo - this.gust) * 0.25;
     const air = l.wind * this.gust;
-    w.body.gain.setTargetAtTime(AMBIENCE_LEVEL.wind * air, t, 0.9);
-    w.low.frequency.setTargetAtTime(220 + 620 * air, t, 0.9);
+    // Light air is mostly felt as a low movement; the curve keeps it present without making gales deafening.
+    w.body.gain.setTargetAtTime(AMBIENCE_LEVEL.wind * air ** 0.6, t, 0.9);
+    w.low.frequency.setTargetAtTime(300 + 560 * air, t, 0.9);
     w.edge.gain.setTargetAtTime(AMBIENCE_LEVEL.whistle * l.whistle * this.gust * this.gust, t, 0.9);
     w.high.frequency.setTargetAtTime(800 + 1500 * air, t, 0.7);
   }

@@ -50,21 +50,24 @@ const water: SampleDef = {
   },
 };
 
+const FIRE_S = 13;
+
+/** Long for a bed: its pops are the one thing here an ear could learn the loop by. */
 const fire: SampleDef = {
-  dur: 7, loop: 0.6, rate: BED_RATE, rms: BED_RMS,
+  dur: FIRE_S, loop: 0.6, rate: BED_RATE, rms: BED_RMS,
   build(o) {
     const { ctx } = o;
     const roar = filter(ctx, 'lowpass', 190, 0.6);
     const breath = gain(ctx, 0.6);
-    wander(breath.gain, o, 8, 0.45, 0.35, 0.8);
+    wander(breath.gain, o, FIRE_S + 1, 0.45, 0.35, 0.8);
     noiseLoop(o, 0.7).connect(roar).connect(breath).connect(o.dest);
     noiseLoop(o).connect(filter(ctx, 'highpass', 5500, 0.7)).connect(gain(ctx, 0.012)).connect(o.dest);
-    for (let i = 0; i < 90; i++) {
+    for (let i = 0; i < 170; i++) {
       const p = panned(o, rand(-0.7, 0.7));
       const hard = Math.random() ** 3;
-      burst({ ...p, t: o.t + rand(0, 7.6) }, 0.06 + hard * 0.3, rand(0.004, 0.022), 'bandpass', rand(1200, 6500), 0.8);
+      burst({ ...p, t: o.t + rand(0, FIRE_S) }, 0.06 + hard * 0.3, rand(0.004, 0.022), 'bandpass', rand(1200, 6500), 0.8);
     }
-    for (let i = 0; i < 9; i++) burst({ ...o, t: o.t + rand(0, 7.4) }, rand(0.1, 0.22), rand(0.03, 0.07), 'lowpass', rand(500, 1100));
+    for (let i = 0; i < 16; i++) burst({ ...o, t: o.t + rand(0, FIRE_S) }, rand(0.1, 0.22), rand(0.03, 0.07), 'lowpass', rand(500, 1100));
   },
 };
 

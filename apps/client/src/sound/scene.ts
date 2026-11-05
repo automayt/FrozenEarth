@@ -177,11 +177,12 @@ export function layerTargets(s: Scene): Layers {
   const heavy = s.precip === 'storm' || s.precip === 'blizzard';
   const falling = heavy ? 1 : s.precip === 'rain' ? 0.65 : s.precip === 'ash' ? 0.4 : 0;
   const cold = rise(-s.temp, -2, 14);
-  const wind = clamp01(0.08 + s.wind * 0.72 + frost * 0.42 + cold * 0.16 + s.altitude * 0.1);
+  // Never quite nothing: a little moving air is what stops the game sounding switched off.
+  const wind = clamp01(0.16 + s.wind * 0.68 + frost * 0.4 + cold * 0.14 + s.altitude * 0.1);
   // From high up the ground's small sounds are lost, but the wind isn't.
   const ground = 1 - s.altitude * 0.9;
   // Small life goes quiet near the cold, in the wet, and in the wrong season.
-  const life = SEASON_LIFE[s.season] * (1 - frost) * (1 - falling) * rise(s.temp, 3, 11) * ground;
+  const life = SEASON_LIFE[s.season] * (1 - frost) * (1 - falling) * rise(s.temp, -3, 7) * ground;
   const day = 1 - rise(s.dark, 0.05, 0.4);
   const evening = s.hour >= 17 ? rise(s.hour, 18, 20) * (1 - rise(s.hour, 22.5, 24)) : s.hour < 5 ? 0.45 * (1 - rise(s.hour, 3, 5)) : 0;
   const night = rise(s.dark, 0.6, 0.95);
@@ -192,7 +193,7 @@ export function layerTargets(s: Scene): Layers {
     water: s.water * ground,
     fire: s.fire * ground,
     insects: life * day * rise(s.temp, 12, 19) * (0.5 + 0.5 * s.green),
-    crickets: life * evening,
+    crickets: life * evening * rise(s.temp, 7, 13),
     birds: life * day * (0.35 + 0.65 * s.green),
     wolves: night * SEASON_WOLVES[s.season] * (1 - falling) * ground,
     thunder: s.precip === 'storm' ? 1 : 0,

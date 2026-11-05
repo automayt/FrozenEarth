@@ -150,6 +150,17 @@ describe('layerTargets', () => {
     expect(winter.birds).toBe(0);
   });
 
+  it('always has a little air moving, so nowhere is dead silent', () => {
+    expect(layerTargets({ ...calm, temp: 15 }).wind).toBeGreaterThan(0.1);
+  });
+
+  it('has birds from the cold start of spring, before the insects wake', () => {
+    const early = layerTargets({ ...calm, season: 'Spring', temp: 4 });
+    expect(early.birds).toBeGreaterThan(0.2);
+    expect(early.insects).toBe(0);
+    expect(layerTargets({ ...calm, season: 'Spring', temp: 4, hour: 20.5, dark: 0.75 }).crickets).toBe(0);
+  });
+
   it('silences small life in winter days and in the rain', () => {
     expect(layerTargets({ ...calm, season: 'Winter', temp: -4 }).birds).toBe(0);
     expect(layerTargets({ ...calm, precip: 'storm', wind: 0.8 }).birds).toBe(0);
