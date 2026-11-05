@@ -6,6 +6,7 @@ import { ease, Particles, Tweens, Weather, type Precip } from './fx';
 import { sound } from '../audio';
 import { fog } from './fog';
 import { store } from '../store';
+import { settings, WEATHER_DENSITY } from '../settings';
 import { TextureBank } from './textures';
 import { ChunkedBitmap, MapBitmap } from './bitmap';
 import { Ground } from './ground';
@@ -429,7 +430,7 @@ export class GameRenderer {
     }
     this.drawFrost(tick);
     // Too small to see when zoomed out, and it touches every visible plant.
-    if (this.world.scale.x >= 0.35) this.swayPlants(now);
+    if (this.world.scale.x >= 0.35 && settings.plantSway && !settings.reducedMotion) this.swayPlants(now);
     this.updateLod();
     this.drawFire(dt);
     this.drawShots();
@@ -1886,7 +1887,7 @@ export class GameRenderer {
       wind = 0.6;
     }
     sound.ambience(Math.min(1, 0.12 + wind * 0.75 + frozenView * 0.3), kind === 'rain' ? 0.6 : kind === 'storm' ? 1 : 0);
-    this.weather.update(dt, kind, this.app.screen.width, this.app.screen.height, wind);
+    this.weather.update(dt, kind, this.app.screen.width, this.app.screen.height, wind, WEATHER_DENSITY[settings.weather]);
   }
 
   /** Time of day: colour grade and night light, then sun shadows and ambient life that follow it. */
@@ -1907,10 +1908,12 @@ export class GameRenderer {
       this.app.screen.width,
       this.app.screen.height,
     );
-    this.shadows.update(m, this.lighting.sun, now, this.pawnIds, this.views);
+    if (settings.shadows) this.shadows.update(m, this.lighting.sun, now, this.pawnIds, this.views);
+    else this.shadows.view.visible = false;
     const a = this.screenToWorld(0, 0);
     const b = this.screenToWorld(this.app.screen.width, this.app.screen.height);
-    this.life.update(dt, now, { tick, mirror: m, sun: this.lighting.sun, dark: this.lighting.dark, precip: this.precip, x0: a.x * TILE, y0: a.y * TILE, x1: b.x * TILE, y1: b.y * TILE });
+    this.life.view.visible = settings.wildlife;
+    if (settings.wildlife) this.life.update(dt, now, { tick, mirror: m, sun: this.lighting.sun, dark: this.lighting.dark, precip: this.precip, x0: a.x * TILE, y0: a.y * TILE, x1: b.x * TILE, y1: b.y * TILE });
   }
 }
 

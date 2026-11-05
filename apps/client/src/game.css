@@ -50,11 +50,6 @@ body,
   background: var(--soot);
 }
 
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--brass-dark) transparent;
-}
-
 ::selection {
   background: rgba(255, 154, 60, 0.35);
 }
@@ -237,38 +232,6 @@ input[type='checkbox'] {
 
 .bad {
   color: var(--blood);
-}
-
-/* ------------------------------------------------------------------ join */
-
-.join {
-  background:
-    radial-gradient(ellipse at 50% 115%, rgba(255, 154, 60, 0.16), transparent 55%),
-    radial-gradient(ellipse at 50% -20%, #22324a, #0c0f16 70%);
-}
-
-.join-card {
-  border: 8px solid transparent;
-  border-image: var(--frame) 8 fill / 8px stretch;
-  border-radius: 0;
-  background: var(--felt);
-  background-clip: padding-box;
-  filter: drop-shadow(0 18px 30px rgba(0, 0, 0, 0.6));
-}
-
-.join-card h1 {
-  font: 700 46px/1 var(--display);
-  letter-spacing: 0;
-  color: var(--tallow);
-}
-
-.join-card h1 span {
-  color: var(--rime);
-  text-shadow: 0 0 18px rgba(195, 228, 243, 0.45);
-}
-
-.join-card label {
-  color: var(--tallow-dim);
 }
 
 /* ------------------------------------------------------------------ frost dial */
@@ -467,7 +430,7 @@ input[type='checkbox'] {
 
 .speed-plate {
   display: grid;
-  grid-template-columns: auto auto auto;
+  grid-template-columns: auto auto auto auto;
   align-items: center;
   column-gap: 8px;
   row-gap: 2px;
@@ -599,7 +562,7 @@ input[type='checkbox'] {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  max-width: min(760px, calc(100vw - 20px));
+  max-width: min(760px, calc(var(--vw) - 20px));
 }
 
 .tool-menu button {
@@ -827,14 +790,14 @@ input[type='checkbox'] {
   bottom: var(--gap);
   transform: translateX(-50%);
   align-items: center;
-  max-width: calc(100vw - 20px);
+  max-width: calc(var(--vw) - 20px);
 }
 
 #root .hud > .inspect {
   right: var(--gap);
   bottom: calc(var(--bar-h) + var(--gap) * 2);
   top: auto;
-  max-height: calc(100vh - 420px);
+  max-height: calc(var(--vh) - 420px);
   min-height: 0;
 }
 
@@ -856,7 +819,7 @@ input[type='checkbox'] {
 #root .hud > .colonists-panel,
 #root .hud > .events-panel {
   bottom: calc(var(--bar-h) + var(--gap) * 2);
-  max-height: calc(100vh - var(--bar-h) - 150px);
+  max-height: calc(var(--vh) - var(--bar-h) - 150px);
 }
 
 /* Narrower windows: tighter slots, then icons only. */
@@ -909,7 +872,7 @@ input[type='checkbox'] {
   }
 
   #root .hud > .feed {
-    width: min(260px, calc(100vw - 20px));
+    width: min(260px, calc(var(--vw) - 20px));
   }
 
   #root .speed-plate .sound input[type='range'] {
@@ -1091,7 +1054,7 @@ input[type='checkbox'] {
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  width: min(680px, calc(100vw - 40px));
+  width: min(680px, calc(var(--vw) - 40px));
   padding: 22px 60px 26px;
   text-align: center;
   color: var(--tallow);
@@ -1170,10 +1133,1005 @@ input[type='checkbox'] {
 }
 
 
+/* ------------------------------------------------------------------ interface size */
+
+:root {
+  --ui-scale: 1;
+  --vw: 100vw;
+  --vh: 100vh;
+  --ease-out: cubic-bezier(0.16, 0.9, 0.3, 1.08);
+}
+
+/* The HUD is one zoomed layer; lengths taken from the window go through the same scale. */
+.hud {
+  --vw: calc(100vw / var(--ui-scale));
+  --vh: calc(100vh / var(--ui-scale));
+  zoom: var(--ui-scale);
+}
+
+/* ------------------------------------------------------------------ not a web page */
+
+html,
+body,
+#root {
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  cursor: var(--cur-arrow, default);
+}
+
+input,
+textarea,
+.chat .lines,
+.rejoin code,
+.selectable {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+button,
+summary,
+select,
+label,
+a,
+[role='button'],
+input[type='range'],
+input[type='checkbox'] {
+  cursor: var(--cur-act, pointer);
+}
+
+button:disabled {
+  cursor: var(--cur-arrow, default);
+}
+
+input:not([type='range'], [type='checkbox']),
+textarea {
+  cursor: text;
+}
+
+.game canvas {
+  cursor: var(--cur-arrow, default);
+}
+
+html[data-cursor='build'] .game canvas {
+  cursor: var(--cur-build, crosshair);
+}
+
+html[data-cursor='attack'] .game canvas {
+  cursor: var(--cur-attack, crosshair);
+}
+
+html[data-cursor='haul'] .game canvas {
+  cursor: var(--cur-haul, pointer);
+}
+
+html[data-cursor='grabbing'] .game canvas {
+  cursor: var(--cur-grabbing, grabbing);
+}
+
+/* The browser's rings go; keyboard players get an ember one. */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ember);
+  outline-offset: 2px;
+}
+
+input:not([type='range'], [type='checkbox']):focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+}
+
+/* Chromium ignores these pseudo-elements on anything with scrollbar-width set, so that stays a fallback. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(8, 10, 15, 0.45);
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(90deg, #8a6a2f, #6f5729) padding-box;
+  border: 2px solid transparent;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(90deg, var(--brass), #8a6a2f) padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--brass-dark) transparent;
+  }
+}
+
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 18px;
+  padding: 0;
+  --at: 0%;
+}
+
+input[type='range']::-webkit-slider-runnable-track {
+  height: 6px;
+  background: linear-gradient(90deg, var(--ember) var(--at), #0b0e14 var(--at));
+  border: 1px solid #3a3324;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+input[type='range']::-moz-range-track {
+  height: 4px;
+  background: linear-gradient(90deg, var(--ember) var(--at), #0b0e14 var(--at));
+  border: 1px solid #3a3324;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 13px;
+  height: 13px;
+  margin-top: -5px;
+  border: none;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #f6dda4, #8a6a2f 70%);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.8);
+}
+
+input[type='range']::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border: none;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #f6dda4, #8a6a2f 70%);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.8);
+}
+
+input[type='checkbox'] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  margin: 0 6px 0 0;
+  padding: 0;
+  vertical-align: -2px;
+  background: rgba(8, 10, 15, 0.7);
+  border: 1px solid var(--brass-dark);
+  border-radius: 1px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+input[type='checkbox']:checked {
+  border-color: var(--ember);
+}
+
+input[type='checkbox']:checked::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  background: var(--ember);
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+}
+
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 20px;
+  background: rgba(8, 10, 15, 0.6) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0h10L5 6z' fill='%23c9a45c'/%3E%3C/svg%3E") no-repeat right 6px center;
+}
+
+select option {
+  color: var(--tallow);
+  background: var(--woad);
+}
+
+/* ------------------------------------------------------------------ tooltips */
+
+.tip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 60;
+  max-width: 300px;
+  padding: 5px 10px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--tallow);
+  background: var(--felt), #141925;
+  border: 1px solid var(--brass-dark);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.tip.placed {
+  visibility: visible;
+  animation: tip-in 0.13s ease-out backwards;
+}
+
+.tip[data-from='above'].placed {
+  animation-name: tip-in-down;
+}
+
+.tip kbd {
+  margin-left: 8px;
+}
+
+@keyframes tip-in {
+  from {
+    opacity: 0;
+    translate: 0 4px;
+  }
+}
+
+@keyframes tip-in-down {
+  from {
+    opacity: 0;
+    translate: 0 -4px;
+  }
+}
+
+/* ------------------------------------------------------------------ numbers that roll */
+
+.roll {
+  display: inline-flex;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+}
+
+.roll-d {
+  position: relative;
+  display: inline-block;
+}
+
+.roll-d.up {
+  animation: roll-up 0.34s var(--ease-out) backwards;
+}
+
+.roll-d.down {
+  animation: roll-down 0.34s var(--ease-out) backwards;
+}
+
+.roll-d[data-was]::before {
+  content: attr(data-was);
+  position: absolute;
+  left: 0;
+}
+
+.roll-d.up[data-was]::before {
+  bottom: 100%;
+}
+
+.roll-d.down[data-was]::before {
+  top: 100%;
+}
+
+@keyframes roll-up {
+  from {
+    translate: 0 100%;
+  }
+}
+
+@keyframes roll-down {
+  from {
+    translate: 0 -100%;
+  }
+}
+
+/* ------------------------------------------------------------------ panels arriving */
+
+.work-panel,
+.colonists-panel,
+.events-panel,
+.trade-panel,
+.chronicle-panel,
+.help,
+.tool-menu,
+.settle,
+.control-bar,
+.caravan-card {
+  animation: rise-in 0.22s var(--ease-out) backwards;
+}
+
+.inspect {
+  animation: slide-left 0.2s var(--ease-out) backwards;
+}
+
+.tool-hint {
+  animation: fade-up 0.16s ease-out backwards;
+}
+
+.help-backdrop,
+.esc-dim {
+  animation: fade 0.18s ease-out backwards;
+}
+
+.slot .icon {
+  transition: translate 0.1s ease-out;
+}
+
+.slot:hover:not(:disabled) .icon {
+  translate: 0 -1px;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    translate: 0 16px;
+    scale: 0.96;
+  }
+}
+
+@keyframes slide-left {
+  from {
+    opacity: 0;
+    translate: 18px 0;
+    scale: 0.98;
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Reduced motion, set in the game (it starts from the system's own setting). */
+html[data-calm] *,
+html[data-calm] *::before,
+html[data-calm] *::after {
+  animation-duration: 0.001ms !important;
+  animation-delay: 0s !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}
+
+/* ------------------------------------------------------------------ title screen */
+
+.title-screen,
+.esc-menu {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 26px;
+  padding: 0 16px 0 clamp(16px, 6vw, 96px);
+  overflow: hidden;
+}
+
+.title-screen {
+  background: var(--soot);
+}
+
+.esc-menu {
+  z-index: 30;
+  pointer-events: auto;
+}
+
+.esc-dim {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 12, 20, 0.5);
+}
+
+.title-art {
+  position: absolute;
+  inset: 0;
+  background: url('./art/title.jpg') 62% 70% / cover no-repeat;
+}
+
+.frost-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* No WebGL: a still frame of frost. */
+.frost-canvas.no-gl {
+  background:
+    radial-gradient(ellipse at center, transparent 58%, rgba(195, 228, 243, 0.3) 86%, rgba(230, 246, 255, 0.75) 100%);
+}
+
+/* The standard: cut felt on a brass rod, the same one on the title and over the world. */
+.standard-hang {
+  position: relative;
+  z-index: 2;
+  flex: none;
+  width: min(330px, calc(100vw - 48px));
+  padding-top: 11px;
+  filter: drop-shadow(0 14px 20px rgba(0, 0, 0, 0.6));
+  animation: standard-drop 0.62s cubic-bezier(0.2, 1.3, 0.4, 1) backwards;
+}
+
+.standard-hang::before {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  top: 6px;
+  left: -13px;
+  right: -13px;
+  height: 9px;
+  border-radius: 5px;
+  background: linear-gradient(180deg, #f1d9a4, #a8833f 55%, #5d4620);
+  box-shadow: 0 2px 3px rgba(0, 0, 0, 0.55);
+}
+
+.standard {
+  --notch: 28px;
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 30px 30px calc(var(--notch) + 22px);
+  text-align: center;
+  background: #b8934f;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--notch)), 50% 100%, 0 calc(100% - var(--notch)));
+}
+
+.standard::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0 2px 2px;
+  background: var(--felt), linear-gradient(180deg, #2a3449, #1c2331 45%, #161c28);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--notch)), 50% 100%, 0 calc(100% - var(--notch)));
+}
+
+/* Stitching down the sides. */
+.standard::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  left: 10px;
+  right: 10px;
+  bottom: calc(var(--notch) + 4px);
+  border-left: 1px dashed rgba(201, 164, 92, 0.32);
+  border-right: 1px dashed rgba(201, 164, 92, 0.32);
+}
+
+@keyframes standard-drop {
+  from {
+    translate: 0 -105%;
+  }
+}
+
+.wordmark {
+  margin: 0;
+  font: 700 60px/1 var(--display);
+  letter-spacing: -0.005em;
+  color: transparent;
+  background: linear-gradient(180deg, #fff 8%, var(--rime) 40%, var(--tallow) 74%, #b9ab8c);
+  -webkit-background-clip: text;
+  background-clip: text;
+  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.65));
+}
+
+.motto {
+  margin: 8px 0 0;
+  max-width: 26ch;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--tallow-dim);
+}
+
+.standard-day {
+  margin: 0;
+  font: 600 22px/1.1 var(--display);
+  color: var(--brass);
+}
+
+.choices {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  margin-top: 18px;
+  gap: 2px;
+}
+
+.standard .choice {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  padding: 6px 8px 7px;
+  font: 600 28px/1.05 var(--display);
+  color: var(--tallow);
+  background: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  transition: color 0.1s;
+}
+
+.standard .choice.first {
+  color: #ffe3b8;
+}
+
+.standard .choice.quiet {
+  font-size: 21px;
+  color: var(--tallow-dim);
+}
+
+.standard .choice small {
+  font: 400 12px/1.25 var(--body);
+  color: var(--tallow-dim);
+}
+
+/* Warmth under whatever you're about to pick. */
+.standard .choice::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: radial-gradient(closest-side, rgba(255, 154, 60, 0.26), transparent);
+  opacity: 0;
+  scale: 0.7 1;
+  transition:
+    opacity 0.12s,
+    scale 0.16s var(--ease-out);
+}
+
+.standard .choice:hover:not(:disabled),
+.standard .choice:focus-visible {
+  color: var(--ember);
+  background: none;
+  outline: none;
+}
+
+.standard .choice:hover:not(:disabled)::before,
+.standard .choice:focus-visible::before {
+  opacity: 1;
+  scale: 1;
+}
+
+.standard .choice:focus-visible::after {
+  content: '';
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  bottom: 1px;
+  height: 1px;
+  background: var(--ember);
+}
+
+.standard .choice:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+
+.standard .choice:disabled {
+  opacity: 0.55;
+}
+
+.naming {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  align-self: stretch;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.naming h2 {
+  margin: 0;
+  font: 600 28px/1.05 var(--display);
+  color: var(--brass);
+}
+
+.naming .primary {
+  align-self: stretch;
+  margin-top: 4px;
+  font-size: 15px;
+}
+
+/* Written on the felt, not typed in a box. */
+.carved {
+  width: 100%;
+  padding: 3px 4px 4px;
+  font: 600 30px/1.1 var(--display);
+  text-align: center;
+  color: var(--tallow);
+  background: none;
+  border: none;
+  border-bottom: 2px solid var(--brass-dark);
+  border-radius: 0;
+  box-shadow: none;
+  caret-color: var(--ember);
+  transition: border-color 0.12s;
+}
+
+.carved.small {
+  font: 400 15px/1.3 var(--body);
+}
+
+.carved::placeholder {
+  color: rgba(169, 159, 139, 0.55);
+}
+
+.carved:focus {
+  border-bottom-color: var(--ember);
+}
+
+.gate {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  gap: 2px;
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--tallow);
+  animation: fade-up 0.2s ease-out backwards;
+}
+
+.fine {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--tallow-dim);
+}
+
+.choices + .fine {
+  margin-top: 8px;
+}
+
+.standard .error {
+  margin-top: 8px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: #ffb4a4;
+}
+
+/* ------------------------------------------------------------------ settings */
+
+.sheet {
+  position: relative;
+  z-index: 2;
+  flex: 0 1 490px;
+  min-width: 0;
+  max-height: calc(100vh - 44px);
+  margin-top: 22px;
+  padding: 12px 20px 14px;
+  overflow-y: auto;
+  animation: sheet-in 0.24s var(--ease-out) backwards;
+}
+
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    translate: -22px 0;
+    scale: 0.98;
+  }
+}
+
+.sheet h2 {
+  margin: 0 0 2px;
+  font: 700 28px/1.1 var(--display);
+}
+
+.sheet h3 {
+  margin: 12px 0 2px;
+  padding-bottom: 2px;
+  font: 600 18px/1.15 var(--display);
+  color: var(--brass);
+  border-bottom: 1px solid rgba(201, 164, 92, 0.3);
+}
+
+.sheet .close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
+.set-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 16px;
+  min-height: 33px;
+  padding: 2px 0;
+}
+
+.set-label {
+  display: flex;
+  flex-direction: column;
+  font-size: 13.5px;
+}
+
+.set-label small {
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--tallow-dim);
+}
+
+.lever {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: 78px;
+  height: 25px;
+  padding: 0 6px 0 4px;
+  font-size: 12px;
+}
+
+.lever i {
+  position: relative;
+  flex: none;
+  width: 32px;
+  height: 15px;
+  background: #0c0f15;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+.lever i::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 13px;
+  height: 13px;
+  background: radial-gradient(circle at 35% 30%, #f6dda4, #8a6a2f 75%);
+  transition: translate 0.14s var(--ease-out);
+}
+
+.lever.on {
+  color: #fff4e3;
+}
+
+.lever.on i {
+  background: linear-gradient(90deg, #6b3a12, #2b1a10);
+}
+
+.lever.on i::after {
+  translate: 17px 0;
+  background: radial-gradient(circle at 35% 30%, #ffd29a, var(--ember-deep) 75%);
+  box-shadow: 0 0 6px rgba(255, 154, 60, 0.7);
+}
+
+.seg {
+  display: inline-flex;
+}
+
+.seg button {
+  padding: 3px 12px;
+  font-size: 12.5px;
+  border-radius: 0;
+}
+
+.seg button + button {
+  margin-left: -1px;
+}
+
+.seg button.on {
+  position: relative;
+}
+
+.slide {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.slide input[type='range'] {
+  width: 150px;
+}
+
+.slide output {
+  min-width: 42px;
+  text-align: right;
+  font: 600 16px/1 var(--display);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------ loading screen */
+
+.loading-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--soot);
+  transition: opacity 0.5s ease-in;
+}
+
+.loading-screen.lifting {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.loading-art {
+  position: absolute;
+  inset: 0;
+  background: url('./art/loading.jpg') center 60% / cover no-repeat;
+}
+
+.loading-foot {
+  position: absolute;
+  left: 50%;
+  bottom: clamp(16px, 8vh, 64px);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: min(620px, calc(100vw - 32px));
+  padding: 10px 16px;
+  border: 8px solid transparent;
+  border-image: var(--frame) 8 fill / 8px stretch;
+  background: var(--felt);
+  background-clip: padding-box;
+  filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.55));
+  transform: translateX(-50%);
+}
+
+.loading-foot h2 {
+  margin: 0 0 3px;
+  font: 600 24px/1.1 var(--display);
+}
+
+.loading-ring {
+  flex: none;
+}
+
+.loading-ice {
+  stroke: var(--rime);
+  stroke-width: 4;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 3px rgba(195, 228, 243, 0.9));
+  animation: ice-round 2.6s ease-in-out infinite alternate;
+}
+
+@keyframes ice-round {
+  from {
+    stroke-dashoffset: 92;
+  }
+  to {
+    stroke-dashoffset: 8;
+  }
+}
+
+.tip-line {
+  margin: 0;
+  max-width: 60ch;
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: var(--tallow);
+  animation: fade-up 0.3s ease-out backwards;
+}
+
+/* ------------------------------------------------------------------ large and small windows */
+
+@media (min-height: 900px) {
+  .standard-hang {
+    zoom: 1.3;
+  }
+}
+
+@media (max-height: 620px) {
+  .standard {
+    --notch: 20px;
+    padding: 22px 26px calc(var(--notch) + 12px);
+  }
+
+  /* A form on a short window needs the room more than the name does. */
+  .standard:has(.naming) .wordmark {
+    display: none;
+  }
+
+  .wordmark {
+    font-size: 48px;
+  }
+
+  .motto {
+    margin-top: 4px;
+    font-size: 12px;
+  }
+
+  .choices {
+    margin-top: 10px;
+    gap: 0;
+  }
+
+  .standard .choice {
+    padding: 3px 6px 4px;
+    font-size: 24px;
+  }
+
+  .standard .choice.quiet {
+    font-size: 19px;
+  }
+
+  .naming {
+    gap: 6px;
+    margin-top: 4px;
+  }
+
+  .naming h2 {
+    font-size: 23px;
+  }
+
+  .carved {
+    font-size: 26px;
+  }
+
+  .sheet {
+    max-height: calc(100vh - 28px);
+    margin-top: 14px;
+  }
+}
+
+@media (max-width: 860px) {
+  .title-screen,
+  .esc-menu {
+    gap: 14px;
+    padding-left: 22px;
+  }
+
+  .standard-hang {
+    width: min(270px, calc(100vw - 48px));
+  }
+
+  .standard {
+    padding-left: 22px;
+    padding-right: 22px;
+  }
+
+  .wordmark {
+    font-size: 46px;
+  }
+
+  .slide input[type='range'] {
+    width: 96px;
+  }
+}
+
+/* A phone: the sheet takes the screen rather than sitting beside the standard. */
+@media (max-width: 640px) {
+  .title-screen,
+  .esc-menu {
+    justify-content: center;
+    padding: 0 16px;
+  }
+
+  .title-screen:has(.sheet) .standard-hang,
+  .esc-menu:has(.sheet) .standard-hang {
+    display: none;
+  }
+
+  .sheet {
+    flex-basis: 100%;
+  }
+}
+
 /* ------------------------------------------------------------------ the colony's story */
 
 .chronicle-panel {
-  width: min(560px, calc(100vw - 16px));
+  width: min(560px, calc(var(--vw) - 16px));
 }
 
 .milestones {
@@ -1245,7 +2203,7 @@ input[type='checkbox'] {
 
 #root .hud > .chronicle-panel {
   bottom: calc(var(--bar-h) + var(--gap) * 2);
-  max-height: calc(100vh - var(--bar-h) - 150px);
+  max-height: calc(var(--vh) - var(--bar-h) - 150px);
 }
 
 @media (max-width: 560px) {

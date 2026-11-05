@@ -38,7 +38,7 @@ select {
 }
 
 button {
-  cursor: pointer;
+  cursor: var(--cur-act, pointer);
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--line);
   border-radius: 4px;
@@ -58,7 +58,7 @@ button.on {
 
 button:disabled {
   opacity: 0.5;
-  cursor: default;
+  cursor: var(--cur-arrow, default);
 }
 
 input,
@@ -113,66 +113,6 @@ h4 {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
-}
-
-/* ------------------------------------------------------------------ join */
-
-.join {
-  position: relative;
-  height: 100%;
-  display: grid;
-  place-items: center;
-  background: radial-gradient(ellipse at 50% 120%, #1c3247 0%, #0b0f14 60%);
-  overflow: hidden;
-}
-
-.frost {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(ellipse at center, transparent 45%, rgba(190, 225, 255, 0.12) 100%);
-  pointer-events: none;
-}
-
-.join-card {
-  position: relative;
-  width: min(400px, calc(100vw - 32px));
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 28px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-}
-
-.join-card h1 {
-  margin: 0;
-  font-size: 34px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-
-.join-card h1 span {
-  color: var(--ice);
-}
-
-.tagline {
-  margin: 0;
-  color: var(--muted);
-}
-
-.join-card label {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.join-card input {
-  font-size: 15px;
-  padding: 8px 10px;
-  color: var(--text);
 }
 
 button.primary {
@@ -335,7 +275,7 @@ button.primary:hover {
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
-  max-width: calc(100vw - 16px);
+  max-width: calc(var(--vw) - 16px);
 }
 
 .architect .bar {
@@ -358,7 +298,7 @@ button.primary:hover {
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 4px;
   padding: 6px;
-  width: min(640px, calc(100vw - 16px));
+  width: min(640px, calc(var(--vw) - 16px));
 }
 
 .tool-menu button {
@@ -379,11 +319,11 @@ button.primary:hover {
   padding: 4px 10px;
   color: var(--amber);
   font-size: 12px;
-  max-width: calc(100vw - 16px);
+  max-width: calc(var(--vw) - 16px);
 }
 
 .hud:has(> .inspect) .tool-hint {
-  max-width: calc(100vw - 340px);
+  max-width: calc(var(--vw) - 340px);
 }
 
 /* ------------------------------------------------------------------ inspect */
@@ -393,7 +333,7 @@ button.primary:hover {
   right: 8px;
   bottom: 8px;
   width: 300px;
-  max-height: calc(100vh - 90px);
+  max-height: calc(var(--vh) - 90px);
   overflow-y: auto;
   padding: 12px 14px;
 }
@@ -532,7 +472,6 @@ button.primary:hover {
   /* In a short window the letters scroll rather than push the chat under the architect bar. */
   min-height: 0;
   overflow-y: auto;
-  scrollbar-width: thin;
 }
 
 .letter {
@@ -598,8 +537,8 @@ button.primary:hover {
   bottom: 70px;
   transform: translateX(-50%);
   padding: 12px 14px;
-  max-width: calc(100vw - 16px);
-  max-height: calc(100vh - 160px);
+  max-width: calc(var(--vw) - 16px);
+  max-height: calc(var(--vh) - 160px);
   overflow: auto;
 }
 
@@ -620,12 +559,12 @@ td {
 }
 
 td.name {
-  cursor: pointer;
+  cursor: var(--cur-act, pointer);
   white-space: nowrap;
 }
 
 .colonists-panel tr {
-  cursor: pointer;
+  cursor: var(--cur-act, pointer);
 }
 
 .colonists-panel tbody tr:hover {
@@ -658,7 +597,7 @@ td.name {
 
 @media (max-width: 720px) {
   .inspect {
-    width: calc(100vw - 16px);
+    width: calc(var(--vw) - 16px);
     bottom: 110px;
   }
 }
@@ -713,8 +652,8 @@ td.name {
   left: 50%;
   bottom: 70px;
   transform: translateX(-50%);
-  width: min(1100px, calc(100vw - 16px));
-  max-height: calc(100vh - 160px);
+  width: min(1100px, calc(var(--vw) - 16px));
+  max-height: calc(var(--vh) - 160px);
   overflow: auto;
   padding: 12px 14px;
 }
@@ -858,7 +797,7 @@ td.name {
   position: absolute;
   right: 8px;
   bottom: 8px;
-  width: min(360px, calc(100vw - 16px));
+  width: min(360px, calc(var(--vw) - 16px));
   padding: 14px;
 }
 
@@ -901,8 +840,8 @@ td.name {
   left: 50%;
   bottom: 70px;
   transform: translateX(-50%);
-  width: min(560px, calc(100vw - 16px));
-  max-height: calc(100vh - 140px);
+  width: min(560px, calc(var(--vw) - 16px));
+  max-height: calc(var(--vh) - 140px);
   overflow-y: auto;
   padding: 12px 14px;
   display: flex;
@@ -987,7 +926,7 @@ td.name {
 .minimap canvas {
   width: 180px;
   height: 180px;
-  cursor: pointer;
+  cursor: var(--cur-act, pointer);
   border-radius: 3px;
 }
 
@@ -1029,7 +968,7 @@ td.name {
   /* The bar now reaches under the inspect panel's corner: lift the panel above it. */
   .inspect {
     bottom: 56px;
-    max-height: calc(100vh - 56px - 70px);
+    max-height: calc(var(--vh) - 56px - 70px);
   }
 }
 
@@ -1140,7 +1079,7 @@ td.name {
   }
 
   .inspect {
-    max-height: calc(100vh - 56px - 52px);
+    max-height: calc(var(--vh) - 56px - 52px);
     padding: 10px 12px;
   }
 
@@ -1153,7 +1092,7 @@ td.name {
   .events-panel,
   .trade-panel {
     bottom: 56px;
-    max-height: calc(100vh - 110px);
+    max-height: calc(var(--vh) - 110px);
   }
 }
 
@@ -1328,7 +1267,7 @@ kbd,
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  width: min(520px, calc(100vw - 16px));
+  width: min(520px, calc(var(--vw) - 16px));
   pointer-events: none;
   z-index: 5;
 }
@@ -1397,8 +1336,8 @@ button.toast-text:hover {
 
 .help {
   position: relative;
-  width: min(880px, calc(100vw - 32px));
-  max-height: calc(100vh - 48px);
+  width: min(880px, calc(var(--vw) - 32px));
+  max-height: calc(var(--vh) - 48px);
   overflow-y: auto;
   padding: 16px 20px;
 }
@@ -1484,7 +1423,7 @@ button.toast-text:hover {
 
 .letter-body:disabled {
   opacity: 1;
-  cursor: default;
+  cursor: var(--cur-arrow, default);
 }
 
 .letter-body .jump {
@@ -1531,7 +1470,7 @@ button.toast-text:hover {
 
 .log-line:disabled {
   opacity: 1;
-  cursor: default;
+  cursor: var(--cur-arrow, default);
 }
 
 .log-line.good {
@@ -1632,8 +1571,8 @@ button.toast-text:hover {
 /* ------------------------------------------------------------------ trade */
 
 .trade-panel {
-  width: min(700px, calc(100vw - 16px));
-  max-height: calc(100vh - 160px);
+  width: min(700px, calc(var(--vw) - 16px));
+  max-height: calc(var(--vh) - 160px);
   overflow-y: auto;
 }
 
@@ -1955,7 +1894,7 @@ button.danger {
 }
 
 .gw-rules summary {
-  cursor: pointer;
+  cursor: var(--cur-act, pointer);
 }
 
 .gw-rules ul {
@@ -1985,16 +1924,16 @@ button.danger {
 .hud:has(> .inspect) .trade-panel,
 .hud:has(> .inspect) .work-panel,
 .hud:has(> .inspect) .colonists-panel {
-  left: calc((100vw - 316px) / 2);
-  max-width: calc(100vw - 332px);
+  left: calc((var(--vw) - 316px) / 2);
+  max-width: calc(var(--vw) - 332px);
 }
 
 @media (max-width: 860px) {
   .hud:has(> .inspect) .trade-panel,
   .hud:has(> .inspect) .work-panel,
   .hud:has(> .inspect) .colonists-panel {
-    left: calc((100vw - 286px) / 2);
-    max-width: calc(100vw - 302px);
+    left: calc((var(--vw) - 286px) / 2);
+    max-width: calc(var(--vw) - 302px);
   }
 }
 
@@ -2003,7 +1942,7 @@ button.danger {
   .hud:has(> .inspect) .work-panel,
   .hud:has(> .inspect) .colonists-panel {
     left: 50%;
-    max-width: calc(100vw - 16px);
+    max-width: calc(var(--vw) - 16px);
   }
 }
 
@@ -2013,9 +1952,9 @@ button.danger {
      just those, in a compact stack under the top bar. Replies still arrive as toasts. */
   .feed {
     bottom: auto;
-    width: min(260px, calc(100vw - 290px));
+    width: min(260px, calc(var(--vw) - 290px));
     min-width: 200px;
-    max-height: calc(100vh - 180px);
+    max-height: calc(var(--vh) - 180px);
   }
 
   .feed .chat,
@@ -2031,7 +1970,7 @@ button.danger {
 @media (max-width: 1340px) {
   .inspect {
     bottom: 56px;
-    max-height: calc(100vh - 56px - 70px);
+    max-height: calc(var(--vh) - 56px - 70px);
   }
 }
 
@@ -2116,7 +2055,7 @@ button.danger {
 .hud:has(.tool-hint) .events-panel,
 .hud:has(.tool-hint) .trade-panel {
   bottom: 100px;
-  max-height: calc(100vh - 170px);
+  max-height: calc(var(--vh) - 170px);
 }
 
 /* The game runs slower than your vote: point at who is holding it back. */
@@ -2135,7 +2074,7 @@ button.danger {
 /* ------------------------------------------------------------------ diplomacy */
 
 .diplo-panel {
-  width: min(820px, calc(100vw - 16px));
+  width: min(820px, calc(var(--vw) - 16px));
 }
 
 .diplo-body {
@@ -2447,7 +2386,7 @@ button.player.ally {
 /* ------------------------------------------------------------------ the journey */
 
 .journey-panel {
-  width: min(640px, calc(100vw - 16px));
+  width: min(640px, calc(var(--vw) - 16px));
 }
 
 .journey-facts {
@@ -2533,6 +2472,6 @@ button.player.ally {
 
   .caravan-card {
     flex-wrap: wrap;
-    max-width: calc(100vw - 16px);
+    max-width: calc(var(--vw) - 16px);
   }
 }

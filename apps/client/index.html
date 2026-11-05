@@ -3,13 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#11151d" />
     <title>FrozenEarth</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14.5' fill='%23c9a45c'/%3E%3Ccircle cx='16' cy='16' r='12' fill='%231c2331'/%3E%3Cpath d='M16 7v18M8.2 11.5l15.6 9M23.8 11.5l-15.6 9' stroke='%23c3e4f3' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Grenze:wght@500;600;700&family=Signika:wght@400;500;600&display=swap" rel="stylesheet" />
+    <style>
+      /* Before the stylesheets arrive: no white page, and the name instead of nothing. */
+      html, body { margin: 0; height: 100%; background: #11151d; }
+      .boot { height: 100%; display: grid; place-items: center; font: 700 44px 'Grenze', Georgia, serif; color: #c3e4f3; opacity: 0.8; }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div class="boot">FrozenEarth</div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

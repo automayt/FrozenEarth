@@ -3,6 +3,7 @@ import { ANIMALS, ITEMS, WEAPONS, weaponOf } from '@fe/defs';
 import { pawnPosition } from '@fe/protocol';
 import { daysUntilFrost, dispositionOf, GOODWILL, tameChance, type Item, type Pawn } from '@fe/sim';
 import { helpers, mySquad, myPawnsAll } from '../actions';
+import { uiScale } from '../settings';
 import { store, useStore } from '../store';
 import { goodwillShift, hostileLandAt, hostileLandText, shiftText, stealableOwner, stealRisk, type RiskLine, type Tone } from './risk';
 
@@ -166,10 +167,12 @@ export function OrderPreview() {
   if (!p) return null;
   // Beside the cursor, flipped to stay on screen.
   const W = 290;
-  const left = pos.x + 18 + W > window.innerWidth ? pos.x - 18 - W : pos.x + 18;
+  // The HUD is scaled, the mouse isn't: work in screen pixels and hand the card interface pixels.
+  const k = uiScale();
+  const left = pos.x + 18 + W * k > window.innerWidth ? pos.x - 18 - W * k : pos.x + 18;
   // In the lower half it sits above the cursor, so it never runs under the bottom bar.
   const below = pos.y < window.innerHeight * 0.55;
-  const style = below ? { left: Math.max(4, left), top: pos.y + 18, width: W } : { left: Math.max(4, left), bottom: window.innerHeight - pos.y + 14, width: W };
+  const style = below ? { left: Math.max(4, left) / k, top: (pos.y + 18) / k, width: W } : { left: Math.max(4, left) / k, bottom: (window.innerHeight - pos.y + 14) / k, width: W };
   return (
     <div className={`panel order-preview ${p.tone}`} style={style} role="status" aria-live="polite">
       <b>{p.title}</b>
