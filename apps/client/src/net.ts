@@ -5,6 +5,7 @@ import { sound } from './audio';
 
 const tokenKey = (name: string) => `fe.token.${name.trim().toLowerCase()}`;
 const NAME_KEY = 'fe.name';
+const FAREWELL_KEY = 'fe.farewell';
 
 function readLocal(key: string): string | null {
   try {
@@ -49,7 +50,6 @@ export function rejoinCode(name: string): string | null {
 /** `code` is a rejoin code from another device; it replaces whatever this browser remembers for the name. */
 export function connect(name: string, password?: string, code?: string): void {
   joinArgs = { name, password };
-  writeLocal(NAME_KEY, name);
   if (code) writeLocal(tokenKey(name), code);
   open();
 }
@@ -104,6 +104,8 @@ function handle(msg: ServerMsg): void {
   switch (msg.t) {
     case 'welcome':
       writeLocal(tokenKey(joinArgs!.name), msg.token);
+      // Only now: a refused name must not replace the colony this browser can already continue.
+      writeLocal(NAME_KEY, joinArgs!.name);
       store.mirror.applySnapshot(msg.snap);
       store.restartClock(msg.snap.tick);
       // What happened while we were gone: letters (the mirror only collects them live) and chat.
@@ -155,8 +157,11 @@ function handle(msg: ServerMsg): void {
       store.emit();
       return;
     case 'error':
-      if (msg.fatal) store.set({ status: 'error', error: msg.msg });
-      else store.toast(msg.msg, 'bad');
+      if (!msg.fatal) store.toast(msg.msg, 'bad');
+      // Turned away while in the world (kicked, or playing from somewhere else): a page only starts
+      // one renderer, so go back to the title through a fresh page, with the reason.
+      else if (store.me) showAfterReload(msg.msg);
+      else store.set({ status: 'error', error: msg.msg });
       return;
     case 'pong':
       store.set({ ping: Math.round(performance.now() - msg.at) });
@@ -173,6 +178,38 @@ export function send(msg: ClientMsg): void {
 
 export function command(cmd: Command): void {
   send({ t: 'cmd', cmd });
+}
+
+function showAfterReload(text: string): void {
+  try {
+    sessionStorage.setItem(FAREWELL_KEY, text);
+  } catch {
+    // Storage blocked: the title just won't say why.
+  }
+  location.reload();
+}
+
+/** A reason left by showAfterReload, for the title screen to show. */
+function takeFarewell(): void {
+  try {
+    const text = sessionStorage.getItem(FAREWELL_KEY);
+    if (text === null) return;
+    sessionStorage.removeItem(FAREWELL_KEY);
+    store.set({ status: 'error', error: text });
+  } catch {
+    // Storage blocked or missing: nothing to show.
+  }
+}
+
+if (typeof window !== 'undefined') takeFarewell();
+
+/** Back to the title screen. The colony stays in the world; a fresh page drops every trace of it from the client. */
+export function leaveWorld(): void {
+  const sock = ws;
+  ws = null;
+  clearInterval(pingTimer);
+  sock?.close();
+  location.reload();
 }
 
 export function forgetIdentity(name: string): void {

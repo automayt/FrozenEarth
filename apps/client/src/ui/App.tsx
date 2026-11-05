@@ -22,6 +22,7 @@ import { OrderPreview } from './OrderPreview';
 import { CaravanCard, JourneyPanel } from './JourneyPanel';
 import { Moments } from './Moments';
 import { ChroniclePanel } from './ChroniclePanel';
+import { LoadingScreen } from './LoadingScreen';
 
 export function App() {
   const s = useStore();
@@ -64,6 +65,7 @@ export function App() {
       ) : (
         <JoinScreen />
       )}
+      {playing && <LoadingScreen />}
     </>
   );
 }
@@ -72,9 +74,26 @@ function GameView() {
   const host = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const r = new GameRenderer();
-    r.init(host.current!);
+    let live = true;
+    // The first frames build the whole map; the loading screen lifts once they're on screen.
+    const reveal = (frames: number) => {
+      if (!live) return;
+      if (frames > 0) requestAnimationFrame(() => reveal(frames - 1));
+      else store.set({ worldReady: true });
+    };
+    r.init(host.current!).then(
+      () => reveal(3),
+      (e) => {
+        console.error(e);
+        store.set({ status: 'error', error: "This browser couldn't start the game's graphics." });
+      },
+    );
     if (import.meta.env.DEV) Object.assign(window, { __fe: { store, renderer: r, command } });
-    return () => r.destroy();
+    return () => {
+      live = false;
+      store.worldReady = false;
+      r.destroy();
+    };
   }, []);
   return <div className="game" ref={host} />;
 }

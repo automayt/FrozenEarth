@@ -35,6 +35,8 @@ export interface Toast {
 const TOAST_MS = 6000;
 
 export type Status = 'join' | 'connecting' | 'playing' | 'error';
+/** The Escape menu: closed, open, or showing its settings sheet. */
+export type EscMenu = 'closed' | 'open' | 'settings';
 export type Panel = 'none' | 'work' | 'colonists' | 'events' | 'trade' | 'diplomacy' | 'chronicle';
 
 /** All client state. React reads it through useStore; the renderer reads it directly. */
@@ -68,6 +70,9 @@ class Store {
   toasts: Toast[] = [];
   /** Keyboard and how-to overlay. */
   help = false;
+  escMenu: EscMenu = 'closed';
+  /** The renderer has drawn the world; the loading screen can lift. */
+  worldReady = false;
   /** Partner the Trade panel opens on. */
   tradeWith: number | null = null;
   /** Faction the Diplomacy panel shows. */
@@ -100,7 +105,7 @@ class Store {
     this.clock.restart(tick);
   }
 
-  set(patch: Partial<Pick<Store, 'status' | 'error' | 'me' | 'players' | 'time' | 'tool' | 'selected' | 'squad' | 'selectedCell' | 'panel' | 'menu' | 'hoverCell' | 'focus' | 'ping' | 'sites' | 'settlePick' | 'help' | 'tradeWith' | 'diploWith' | 'journey' | 'lastSeen'>>): void {
+  set(patch: Partial<Pick<Store, 'status' | 'error' | 'me' | 'players' | 'time' | 'tool' | 'selected' | 'squad' | 'selectedCell' | 'panel' | 'menu' | 'hoverCell' | 'focus' | 'ping' | 'sites' | 'settlePick' | 'help' | 'escMenu' | 'worldReady' | 'tradeWith' | 'diploWith' | 'journey' | 'lastSeen'>>): void {
     Object.assign(this, patch);
     this.emit();
   }
