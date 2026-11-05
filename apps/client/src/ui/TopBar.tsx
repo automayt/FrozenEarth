@@ -5,6 +5,7 @@ import { store, useStore } from '../store';
 import { hex } from './util';
 import { SoundControl } from './SoundControl';
 import { Icon } from './Icon';
+import { Roll } from './Roll';
 
 /** Players, then the speed clasp: who's here, and how fast the shared clock runs. Top right. */
 export function TopBar() {
@@ -74,6 +75,9 @@ export function TopBar() {
           <button className="icon-btn help-btn" onClick={() => store.set({ help: !s.help })} title="Controls and how-tos (?)" aria-label="Help">
             <Icon name="help" size={18} />
           </button>
+          <button className="icon-btn help-btn" onClick={() => store.set({ escMenu: 'open' })} title="Game menu (Esc)" aria-label="Game menu">
+            <Icon name="menu" size={18} />
+          </button>
           <div className="speed-state" title={`${s.time.paused ? 'Paused' : `${s.time.speed}×`} ${s.time.reason}`.trim()}>
             {s.time.paused ? <b>Paused</b> : <b>{s.time.speed}×</b>}
             {held ? (
@@ -141,9 +145,9 @@ function FrostDial() {
         </svg>
         <div className="dial-face">
           <span className="dial-season">{cal.season}</span>
-          <span className="dial-day">{cal.dayOfSeason}</span>
+          <Roll className="dial-day" value={cal.dayOfSeason} />
           <span className="dial-time">{time}</span>
-          <span className={`dial-temp ${temp < 0 ? 'cold' : temp > 30 ? 'hot' : ''}`}>{temp.toFixed(0)}°</span>
+          <Roll className={`dial-temp ${temp < 0 ? 'cold' : temp > 30 ? 'hot' : ''}`} value={Math.round(temp)} text={`${temp.toFixed(0)}°`} />
         </div>
       </div>
       <div className="dial-notes">
@@ -192,7 +196,15 @@ function FrostChip() {
       }
     >
       <Icon name="frost" size={14} />
-      <span className="fc-long">{label}</span>
+      <span className="fc-long">
+        {days > 0 && days !== Infinity ? (
+          <>
+            Frost in <Roll value={days} /> day{days === 1 ? '' : 's'}
+          </>
+        ) : (
+          label
+        )}
+      </span>
       <span className="fc-short">{short}</span>
     </button>
   );

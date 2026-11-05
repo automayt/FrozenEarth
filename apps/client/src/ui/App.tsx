@@ -24,6 +24,8 @@ import { Moments } from './Moments';
 import { ChroniclePanel } from './ChroniclePanel';
 import { EscapeMenu } from './EscapeMenu';
 import { LoadingScreen } from './LoadingScreen';
+import { TabTitle } from './TabTitle';
+import { TipLayer } from './Tooltip';
 
 export function App() {
   const s = useStore();
@@ -68,6 +70,8 @@ export function App() {
       )}
       {playing && <EscapeMenu />}
       {playing && <LoadingScreen />}
+      <TipLayer />
+      <TabTitle />
     </>
   );
 }
