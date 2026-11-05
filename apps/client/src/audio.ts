@@ -4,7 +4,9 @@
  * thing stays silent until the first user gesture (browsers require that).
  */
 
-const VOLUME_KEY = 'fe.volume';
+import { Volumes, type Channel } from './sound/levels';
+import { Mixer } from './sound/mixer';
+
 const MUTE_KEY = 'fe.muted';
 
 type Kind = 'stone' | 'wood' | 'leaf' | 'build' | 'soil' | 'craft' | 'steam' | 'tend' | 'rifle' | 'bow' | 'melee' | 'hit' | 'fall' | 'crumble' | 'rock' | 'fire' | 'click' | 'good' | 'bad' | 'neutral' | 'pop';
@@ -28,13 +30,13 @@ function write(key: string, value: string): void {
 
 class Sound {
   private ctx: AudioContext | null = null;
-  private master: GainNode | null = null;
+  private mixer: Mixer | null = null;
   private noise: AudioBuffer | null = null;
   private wind: { src: AudioBufferSourceNode; gain: GainNode; filter: BiquadFilterNode } | null = null;
   private rain: { src: AudioBufferSourceNode; gain: GainNode } | null = null;
   private last = new Map<Kind, number>();
   private listener = { x: 0, y: 0, span: 1000 };
-  volume = readNum(VOLUME_KEY, 0.5);
+  private volumes = new Volumes();
   muted = readNum(MUTE_KEY, 0) === 1;
   private changeListeners = new Set<() => void>();
 
@@ -48,8 +50,7 @@ class Sound {
     if (!Ctx) return;
     const ctx = new Ctx();
     this.ctx = ctx;
-    this.master = ctx.createGain();
-    this.master.connect(ctx.destination);
+    this.mixer = new Mixer(ctx);
     this.applyVolume();
     const len = ctx.sampleRate * 2;
     this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
@@ -57,9 +58,21 @@ class Sound {
     for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
   }
 
-  setVolume(v: number): void {
-    this.volume = Math.max(0, Math.min(1, v));
-    write(VOLUME_KEY, String(this.volume));
+  /** The master volume. */
+  get volume(): number {
+    return this.volumes.get('master');
+  }
+
+  getVolume(channel: Channel): number {
+    return this.volumes.get(channel);
+  }
+
+  /** Set one channel's volume, 0..1; saved for next time. With just a number, sets the master. */
+  setVolume(v: number): void;
+  setVolume(channel: Channel, v: number): void;
+  setVolume(a: Channel | number, b?: number): void {
+    const channel = typeof a === 'number' ? 'master' : a;
+    this.volumes.set(channel, typeof a === 'number' ? a : (b ?? 0));
     this.applyVolume();
   }
 
@@ -75,7 +88,7 @@ class Sound {
   }
 
   private applyVolume(): void {
-    if (this.master && this.ctx) this.master.gain.setTargetAtTime(this.muted ? 0 : this.volume * 0.8, this.ctx.currentTime, 0.05);
+    this.mixer?.apply((c) => this.volumes.get(c), this.muted);
     for (const fn of this.changeListeners) fn();
   }
 
@@ -94,7 +107,7 @@ class Sound {
   }
 
   private ready(kind: Kind, minGapMs: number): boolean {
-    if (!this.ctx || !this.master || this.muted || this.ctx.state !== 'running') return false;
+    if (!this.ctx || !this.mixer || this.muted || this.ctx.state !== 'running') return false;
     const now = performance.now();
     if (now - (this.last.get(kind) ?? 0) < minGapMs) return false;
     this.last.set(kind, now);
@@ -119,7 +132,7 @@ class Sound {
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(gain, t + 0.005);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    src.connect(f).connect(g).connect(this.master!);
+    src.connect(f).connect(g).connect(this.mixer!.buses.effects);
     src.start(t, Math.random() * 1.5, dur + 0.05);
   }
 
@@ -135,7 +148,7 @@ class Sound {
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(gain, t + 0.008);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g).connect(this.master!);
+    o.connect(g).connect(this.mixer!.buses.effects);
     o.start(t);
     o.stop(t + dur + 0.05);
   }
@@ -228,7 +241,7 @@ class Sound {
 
   /** Continuous wind and rain, eased toward the current weather. 0..1 each. */
   ambience(wind: number, rain: number): void {
-    if (!this.ctx || !this.master || !this.noise) return;
+    if (!this.ctx || !this.mixer || !this.noise) return;
     const ctx = this.ctx;
     const t = ctx.currentTime;
     if (!this.wind) {
@@ -240,7 +253,7 @@ class Sound {
       filter.frequency.value = 400;
       const gain = ctx.createGain();
       gain.gain.value = 0;
-      src.connect(filter).connect(gain).connect(this.master);
+      src.connect(filter).connect(gain).connect(this.mixer.buses.ambience);
       src.start();
       this.wind = { src, gain, filter };
     }
@@ -254,7 +267,7 @@ class Sound {
       filter.frequency.value = 1800;
       const gain = ctx.createGain();
       gain.gain.value = 0;
-      src.connect(filter).connect(gain).connect(this.master);
+      src.connect(filter).connect(gain).connect(this.mixer.buses.ambience);
       src.start();
       this.rain = { src, gain };
     }
