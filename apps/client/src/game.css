@@ -1254,3 +1254,25 @@ input[type='checkbox'] {
     gap: 0;
   }
 }
+
+/* ------------------------------------------------------------------ camera and in-world UI */
+
+/* A line over the map while the camera is doing something of its own. */
+.cam-hint {
+  position: absolute;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 14px 4px;
+  font: 500 15px/1.2 var(--display);
+  color: #eadfc8;
+  background: rgba(17, 21, 29, 0.78);
+  border-top: 1px solid rgba(201, 164, 92, 0.6);
+  border-bottom: 1px solid rgba(201, 164, 92, 0.6);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.cam-hint[hidden] {
+  display: none;
+}

@@ -7,13 +7,13 @@ import { store } from '../store';
 import { sound } from '../audio';
 import { helpers, mySquad, setSpeed, toggleDraft, togglePause } from '../actions';
 import { TILE, type GameRenderer } from './renderer';
+import { EDGE_SCROLL_DELAY_MS, edgePush } from './camera';
+import { cameraSettings } from './cameraSettings';
 
 interface Drag {
   start: { x: number; y: number };
   cur: { x: number; y: number };
 }
-
-const PAN_SPEED = 900;
 
 const STEER_KEYS = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright']);
 
@@ -21,13 +21,21 @@ const STEER_KEYS = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowle
 const PANEL_KEYS: Record<string, 'work' | 'colonists' | 'trade' | 'diplomacy' | 'chronicle'> = { p: 'work', l: 'colonists', t: 'trade', g: 'diplomacy', j: 'chronicle' };
 const MENU_KEYS: Record<string, string> = { o: 'orders', z: 'zones', b: 'structure' };
 
+/** A right-press that moves less than this is a click, not a pan. */
+const DRAG_SLOP = 4;
+const NO_PUSH = { x: 0, y: 0 };
+
 /** How long a "right-click again to attack" warning stays armed. */
 const CONFIRM_MS = 3000;
 
 export class Input {
   private keys = new Set<string>();
   private drag: Drag | null = null;
-  private pan: { x: number; y: number; moved: boolean } | null = null;
+  private pan: { x: number; y: number; sx: number; sy: number; moved: boolean } | null = null;
+  /** Where the mouse is, while it's over the map (null over the panels or off the window). */
+  private mouse: { x: number; y: number } | null = null;
+  /** When the mouse came to rest against the screen edge. */
+  private edgeSince = 0;
   private off: (() => void)[] = [];
   /** A peaceful target the player was warned about attacking; a second right-click confirms. */
   private armed: { target: number; until: number } | null = null;
@@ -49,11 +57,35 @@ export class Input {
     on(el, 'wheel', (e) => this.wheel(e), { passive: false });
     on(window, 'keydown', (e) => this.key(e, true));
     on(window, 'keyup', (e) => this.key(e, false));
-    on(window, 'blur', () => this.keys.clear());
+    on(window, 'blur', () => {
+      this.keys.clear();
+      this.mouse = null;
+    });
+    on(document.documentElement, 'pointerleave', () => (this.mouse = null));
+    // Any press during a big moment skips it; on the map that's all the click does.
+    on(window, 'pointerdown', (e) => this.anyPress(e), { capture: true });
   }
 
   destroy(): void {
     for (const f of this.off) f();
+  }
+
+  /** A hand on the map right now: a held button of any kind. */
+  get busy(): boolean {
+    return !!this.drag || !!this.pan;
+  }
+
+  /** A pan drag is under way. */
+  get panning(): boolean {
+    return !!this.pan;
+  }
+
+  private anyPress(e: PointerEvent): void {
+    this.r.lastInput = performance.now();
+    if (this.r.inMoment) {
+      this.r.skipMoment();
+      if (e.target === this.el) e.stopPropagation();
+    }
   }
 
   private local(e: PointerEvent | WheelEvent): { x: number; y: number } {
@@ -64,7 +96,8 @@ export class Input {
   private down(e: PointerEvent): void {
     const p = this.local(e);
     if (e.button === 1 || e.button === 2) {
-      this.pan = { x: e.clientX, y: e.clientY, moved: false };
+      this.pan = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moved: false };
+      this.r.dragPanStart();
       return;
     }
     if (e.button !== 0) return;
@@ -90,16 +123,18 @@ export class Input {
 
   private move(e: PointerEvent): void {
     if (this.pan) {
-      const dx = e.clientX - this.pan.x;
-      const dy = e.clientY - this.pan.y;
-      if (Math.abs(dx) + Math.abs(dy) > 2) this.pan.moved = true;
-      this.r.world.x += dx;
-      this.r.world.y += dy;
-      this.pan.x = e.clientX;
-      this.pan.y = e.clientY;
+      // A few pixels of wobble is still a click; past that it's a drag, and the view catches up.
+      if (Math.hypot(e.clientX - this.pan.sx, e.clientY - this.pan.sy) > DRAG_SLOP) this.pan.moved = true;
+      if (this.pan.moved) {
+        this.r.dragPan(e.clientX - this.pan.x, e.clientY - this.pan.y);
+        this.pan.x = e.clientX;
+        this.pan.y = e.clientY;
+      }
     }
+    if (e.target !== this.el) this.mouse = null;
     if (e.target !== this.el && !this.drag) return;
     const p = this.local(e);
+    if (e.target === this.el) this.mouse = p;
     const cell = this.r.screenToCell(p.x, p.y);
     if (this.drag) this.drag.cur = cell;
     const m = store.mirror;
@@ -110,6 +145,7 @@ export class Input {
   private up(e: PointerEvent): void {
     if (this.pan && (e.button === 1 || e.button === 2)) {
       const clicked = !this.pan.moved && e.button === 2;
+      if (this.pan.moved) this.r.dragPanEnd();
       this.pan = null;
       if (clicked) {
         if (store.tool.kind !== 'select') store.set({ tool: { kind: 'select' } });
@@ -187,6 +223,7 @@ export class Input {
 
   private wheel(e: WheelEvent): void {
     e.preventDefault();
+    this.r.lastInput = performance.now();
     const p = this.local(e);
     this.r.zoomAt(p.x, p.y, Math.exp(-e.deltaY * 0.0015));
   }
@@ -214,8 +251,14 @@ export class Input {
       store.set({ help: true });
       return;
     }
-    if (down) this.keys.add(k);
-    else this.keys.delete(k);
+    if (down) {
+      this.keys.add(k);
+      this.r.lastInput = performance.now();
+      if (this.r.inMoment) {
+        this.r.skipMoment();
+        return;
+      }
+    } else this.keys.delete(k);
     // Steering a colonist: WASD walks them, C sneaks, E takes or drops, Esc lets go.
     const steering = this.r.controlled();
     if (steering) {
@@ -261,9 +304,12 @@ export class Input {
       const menu = MENU_KEYS[k];
       store.set({ menu: store.menu === menu ? null : menu, panel: 'none' });
     } else if (k === 'f') {
+      // On a colonist, follow them (again to stop); on anything else, go and look.
       const sel = store.selected ? store.mirror.get(store.selected) : undefined;
       const c = store.selectedCell;
-      if (sel) store.set({ focus: { x: sel.x, y: sel.y } });
+      if (sel?.kind === 'pawn') this.r.toggleFollow(sel.id);
+      else if (this.r.following) this.r.stopFollow();
+      else if (sel) store.set({ focus: { x: sel.x, y: sel.y } });
       else if (c !== null) store.set({ focus: { x: c % store.mirror.w, y: Math.floor(c / store.mirror.w) } });
     } else if (k === ' ') {
       e.preventDefault();
@@ -300,12 +346,37 @@ export class Input {
       return;
     }
     this.lastSteer = '';
-    const step = (PAN_SPEED * dtMs) / 1000;
     const k = this.keys;
-    if (k.has('w') || k.has('arrowup')) this.r.world.y += step;
-    if (k.has('s') || k.has('arrowdown')) this.r.world.y -= step;
-    if (k.has('a') || k.has('arrowleft')) this.r.world.x += step;
-    if (k.has('d') || k.has('arrowright')) this.r.world.x -= step;
+    let x = (k.has('d') || k.has('arrowright') ? 1 : 0) - (k.has('a') || k.has('arrowleft') ? 1 : 0);
+    let y = (k.has('s') || k.has('arrowdown') ? 1 : 0) - (k.has('w') || k.has('arrowup') ? 1 : 0);
+    if (x && y) {
+      x *= Math.SQRT1_2;
+      y *= Math.SQRT1_2;
+    }
+    if (!x && !y) {
+      const push = this.edgePush();
+      x = push.x;
+      y = push.y;
+    }
+    this.r.panInput(x, y, dtMs);
+  }
+
+  /**
+   * The mouse pushing on the edge of the screen. Only with the mouse on the map itself (over a
+   * panel `mouse` is null, so reaching for one never scrolls), the window in front, no pan drag in
+   * hand, and after a moment's rest, so passing through doesn't jolt the view.
+   */
+  private edgePush(): { x: number; y: number } {
+    const m = this.mouse;
+    if (!m || !cameraSettings.EDGE_SCROLL || this.pan || !document.hasFocus()) return NO_PUSH;
+    const push = edgePush(m.x, m.y, this.el.clientWidth, this.el.clientHeight);
+    if (!push.x && !push.y) {
+      this.edgeSince = 0;
+      return NO_PUSH;
+    }
+    const now = performance.now();
+    if (!this.edgeSince) this.edgeSince = now;
+    return now - this.edgeSince >= EDGE_SCROLL_DELAY_MS ? push : NO_PUSH;
   }
 
   /** Own pawn ids under a dragged box. */
