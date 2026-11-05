@@ -22,6 +22,7 @@ import { OrderPreview } from './OrderPreview';
 import { CaravanCard, JourneyPanel } from './JourneyPanel';
 import { Moments } from './Moments';
 import { ChroniclePanel } from './ChroniclePanel';
+import { EscapeMenu } from './EscapeMenu';
 import { LoadingScreen } from './LoadingScreen';
 
 export function App() {
@@ -65,6 +66,7 @@ export function App() {
       ) : (
         <JoinScreen />
       )}
+      {playing && <EscapeMenu />}
       {playing && <LoadingScreen />}
     </>
   );
