@@ -68,9 +68,9 @@ export class Input {
     ring.close();
   }
 
-  /** A hand on the map right now: a held button of any kind. */
+  /** A hand on the map right now: a held button of any kind, or the ring of orders open. */
   get busy(): boolean {
-    return !!this.drag || !!this.pan;
+    return !!this.drag || !!this.pan || !!ring.state;
   }
 
   /** A pan drag is under way. */

@@ -1043,6 +1043,7 @@ export class GameRenderer {
     this.pawnIds.delete(id);
     this.springs.delete(id);
     this.pawnGlide.forget(id);
+    if (leaving) this.felled.delete(id);
     const root = v.root;
     if (!leaving || !this.built || !root.visible || !root.parent?.visible) {
       root.destroy({ children: true });
@@ -1579,7 +1580,7 @@ export class GameRenderer {
       const v = this.views.get(id);
       if (!p || !v || p.job?.type !== 'attack') continue;
       const tv = this.views.get(p.job.target);
-      if (!tv) continue;
+      if (!tv || !tv.root.visible) continue;
       g.moveTo(v.root.x, v.root.y).lineTo(tv.root.x, tv.root.y).stroke({ width: 1.5 * sw, color: 0xff5040, alpha: 0.45 });
       ui.reticle(-1 - p.job.target, tv.root.x, tv.root.y);
     }
@@ -1856,7 +1857,7 @@ export class GameRenderer {
     }
   }
 
-  /** A pawn drew down: heavy enough to feel. */
+  /** Pawns already down, so each fall shakes the screen once. */
   private felled = new Set<number>();
 
   /** Mark where a right-click order went. */

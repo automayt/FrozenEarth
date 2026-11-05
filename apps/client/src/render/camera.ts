@@ -43,8 +43,8 @@ export const MOMENT_GAP_MS = 40000;
 export const MOMENT_QUIET_MS = 2200;
 export const MOMENT_SKIP_MS = 300;
 /** Screen shake: pixels at full trauma, and trauma lost per second. */
-export const SHAKE_PX = 11;
-export const SHAKE_DECAY = 1.9;
+export const SHAKE_PX = 15;
+export const SHAKE_DECAY = 1.5;
 
 // ---------------------------------------------------------------- panning
 

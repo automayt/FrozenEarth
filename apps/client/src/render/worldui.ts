@@ -215,7 +215,7 @@ export class WorldUi {
   private ringDone = new Set<number>();
   private squad = new Set<number>();
   private squadFrom: number[] | null = null;
-  private desigCells: { x: number; y: number; cell: number; tag: string; tint: number }[] = [];
+  private desigCells: { x: number; y: number; phase: number; tag: string; tint: number }[] = [];
   private desigAt = 0;
   private desigKey = '';
   private desigDirty = true;
@@ -342,7 +342,7 @@ export class WorldUi {
     const noticed = hovered || selected || this.squad.has(e.id);
     const hurt = memo.hurt > HURT_MIN || !!e.downed;
     if (e.job?.type === 'attack') memo.touched = this.now;
-    const alpha = (hurt && (noticed || e.downed || memo.bleeding)) || (e.job?.type === 'attack' && !e.species) ? 1 : barAlpha(this.now - memo.touched);
+    const alpha = hurt && (noticed || e.downed || memo.bleeding) ? 1 : barAlpha(this.now - memo.touched);
     if (alpha > 0) this.bar(memo, x, y, alpha);
     else memo.ghost = 1 - memo.hurt;
     const mine = e.faction === this.me;
@@ -528,7 +528,7 @@ export class WorldUi {
           const c = y * m.w + x;
           const d = m.desig[c];
           if (!d || (d === DESIG.steal && m.desigFaction[c] !== me)) continue;
-          list.push({ x: (x + 0.5) * TILE, y: (y + 0.5) * TILE, cell: x + y, tag: d === DESIG.mine ? 'mine' : d === DESIG.cut ? 'chop' : d === DESIG.steal ? 'steal' : 'plant', tint: d === DESIG.mine ? 0xf0b43c : d === DESIG.cut ? 0xf07050 : d === DESIG.steal ? 0xd8a0ff : 0x9ae070 });
+          list.push({ x: (x + 0.5) * TILE, y: (y + 0.5) * TILE, phase: (x + y) * 0.55, tag: d === DESIG.mine ? 'mine' : d === DESIG.cut ? 'chop' : d === DESIG.steal ? 'steal' : 'plant', tint: d === DESIG.mine ? 0xf0b43c : d === DESIG.cut ? 0xf07050 : d === DESIG.steal ? 0xd8a0ff : 0x9ae070 });
         }
       }
     }
@@ -538,7 +538,7 @@ export class WorldUi {
       const sp = this.desigs.next();
       const tex = a.bare[d.tag];
       if (sp.texture !== tex) sp.texture = tex;
-      const wave = this.calm ? 0.5 : 0.5 + 0.5 * Math.sin(t * 2.4 - d.cell * 0.55);
+      const wave = this.calm ? 0.5 : 0.5 + 0.5 * Math.sin(t * 2.4 - d.phase);
       sp.position.set(d.x, d.y);
       sp.scale.set(size * (0.92 + 0.12 * wave));
       sp.tint = d.tint;
