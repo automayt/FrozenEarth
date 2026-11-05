@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { MILESTONES, type GameMessage } from '@fe/sim';
 import { sound } from '../audio';
+import { cameraRequests } from '../render/camera';
 import { store, useStore } from '../store';
 
 /**
@@ -49,6 +50,15 @@ const RULES: { test: RegExp; title: string; tone: Moment['tone'] }[] = [
 
 const SHOW_MS = 4200;
 
+/** A letter about someone falling doesn't say where; find them by the name it opens with. */
+function whereNamed(text: string): number | undefined {
+  const m = store.mirror;
+  const who = /^(.+?)(?:,| is (?:down|dead))/.exec(text)?.[1];
+  if (!who) return undefined;
+  for (const e of m.entities.values()) if (e.kind === 'pawn' && e.name === who) return e.y * m.w + e.x;
+  return undefined;
+}
+
 export function Moments() {
   const s = useStore();
   const me = s.me?.faction ?? 0;
@@ -69,11 +79,13 @@ export function Moments() {
     fresh.forEach((x: GameMessage, i) => {
       if (x.reply || (x.faction !== 0 && x.faction !== me)) return;
       const rule = RULES.find((r) => r.test.test(x.text));
-      if (rule) found = { key: total * 100 + i, title: rule.title, text: x.text, tone: rule.tone, at: x.at };
+      if (rule) found = { key: total * 100 + i, title: rule.title, text: x.text, tone: rule.tone, at: x.at ?? whereNamed(x.text) };
     });
     if (!found) return;
     const shown: Moment = found;
     setMoment(shown);
+    // The camera may go and look, if the player isn't busy with it.
+    if (shown.at !== undefined) cameraRequests.moment = { x: shown.at % s.mirror.w, y: Math.floor(shown.at / s.mirror.w) };
     sound.play(shown.tone === 'good' ? 'good' : shown.tone === 'bad' ? 'bad' : 'neutral');
     // Its own timer: later letters arriving mustn't keep it on screen.
     clearTimeout(timer.current);

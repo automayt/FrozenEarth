@@ -204,6 +204,12 @@ export function flightPose(f: Flight, now: number): { x: number; y: number; scal
   return { x: f.fx + (f.tx - f.fx) * e, y: f.fy + (f.ty - f.fy) * e, scale, done: k >= 1 };
 }
 
+/** Keep a view centre far enough in from the map's edge that the view stays on the map, if it can. */
+export function keepOnMap(c: number, viewCells: number, mapCells: number): number {
+  const half = viewCells / 2;
+  return half * 2 >= mapCells ? mapCells / 2 : Math.max(half, Math.min(mapCells - half, c));
+}
+
 /** One frame of the follow camera closing on where it should be. */
 export function followStep(from: number, to: number, dt: number): number {
   return from + (to - from) * (1 - Math.exp(-dt / FOLLOW_EASE_MS));

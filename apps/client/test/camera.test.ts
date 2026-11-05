@@ -7,6 +7,7 @@ import {
   edgeSpring,
   flightPose,
   followStep,
+  keepOnMap,
   mayTakeCamera,
   MOMENT_GAP_MS,
   MOMENT_QUIET_MS,
@@ -169,6 +170,13 @@ describe('flights', () => {
   it('take longer the further they go, up to a limit', () => {
     expect(far.ms).toBeGreaterThan(near.ms);
     expect(planFlight(0, 0, 5000, 0, 1, 32, 720, 0).ms).toBeLessThanOrEqual(1150);
+  });
+
+  it('a look at the map edge stops short of the void', () => {
+    expect(keepOnMap(0, 40, 200)).toBe(20);
+    expect(keepOnMap(199, 40, 200)).toBe(180);
+    expect(keepOnMap(100, 40, 200)).toBe(100);
+    expect(keepOnMap(3, 300, 200)).toBe(100);
   });
 
   it('do not lift past the zoom limit', () => {

@@ -1,7 +1,7 @@
 import { Application, BitmapText, Container, Graphics, GraphicsContext, Sprite, TextStyle } from 'pixi.js';
 import { ANIMALS, BUILDINGS, LANDMARKS, maxHp, PLANTS, ROCKS, TERRAINS, WEAPON_KEYS, weaponOf, type LandmarkKind, type TerrainDef } from '@fe/defs';
 import { PawnGlide, pawnPosition } from '@fe/protocol';
-import { DESIG, FROST_BAND, MIN_COLONY_GAP, pactOf, SHOT_FIELDS, bleedRate, calendar, dispositionOf, GUARD_REACH, hostile, NOISE, SETTLEMENT_WATCH, stealthMult, frostLevel, frostRadius, hash2, outdoorTempAt, weaponFor, woundTotal, type Construct, type Entity, type Pawn, type World, constructCost, constructWork, type Building } from '@fe/sim';
+import { DESIG, FROST_BAND, MIN_COLONY_GAP, pactOf, SHOT_FIELDS, calendar, dispositionOf, GUARD_REACH, hostile, NOISE, SETTLEMENT_WATCH, stealthMult, frostLevel, frostRadius, hash2, outdoorTempAt, weaponFor, type Construct, type Entity, type Pawn, type World, constructCost, type Building } from '@fe/sim';
 import { ease, Particles, Tweens, Weather, type Precip } from './fx';
 import { sound } from '../audio';
 import { fog } from './fog';
@@ -18,8 +18,9 @@ import { Lighting } from './light';
 import { Shadows } from './shadows';
 import { Life } from './life';
 import { Juice } from './juice';
-import { cameraRequests, DragTracker, edgeResist, edgeSpring, flightPose, followStep, mayTakeCamera, MOMENT_HOLD_MS, MOMENT_SKIP_MS, PanBody, panRange, panSpeedFor, planFlight, Shake, shakeFalloff, type Flight } from './camera';
+import { cameraRequests, DragTracker, edgeResist, edgeSpring, flightPose, followStep, keepOnMap, mayTakeCamera, MOMENT_HOLD_MS, MOMENT_SKIP_MS, PanBody, panRange, panSpeedFor, planFlight, Shake, shakeFalloff, type Flight } from './camera';
 import { cameraSettings } from './cameraSettings';
+import { MARK_TINT, WorldUi } from './worldui';
 
 /** World units per cell. */
 export const TILE = 32;
@@ -96,6 +97,8 @@ interface EntityView {
   nextZ?: number;
   /** Pawn name, or an item stack's count: hidden or resized by zoom level. */
   label?: BitmapText;
+  /** The cell a pawn is standing and working at this frame. */
+  workCell?: number | null;
 }
 
 /** What a working pawn is working on, and what that throws up. */
@@ -187,6 +190,8 @@ export class GameRenderer {
   private life = new Life();
   private precip = 'none';
   private views = new Map<number, EntityView>();
+  /** Health bars, job tags, progress rings, selection brackets, reticles (render/worldui.ts). */
+  private worldUi = new WorldUi();
   /** Hot springs on view (they steam), what your colony knew of landmarks last frame, and the next puff. */
   private springs = new Set<number>();
   private landmarkSig = '';
@@ -239,7 +244,7 @@ export class GameRenderer {
     this.shadows = new Shadows(this.app.renderer, this.tex);
     this.layers.shadows.addChild(this.shadows.view);
     this.layers.fx.addChild(this.life.view);
-    this.layers.ui.addChild(this.juice.view);
+    this.layers.ui.addChild(this.worldUi.view, this.juice.view);
     this.input = new Input(this, this.app.canvas);
     this.app.ticker.add(() => this.frame());
   }
@@ -304,11 +309,28 @@ export class GameRenderer {
     this.flight = planFlight(c.x, c.y, x, y, s, TILE * s, Math.min(this.app.screen.width, this.app.screen.height), performance.now(), scale, MIN_ZOOM);
   }
 
-  /** The player reached for the camera: whatever it was doing on its own stops. */
-  private takeCamera(): void {
+  /**
+   * The player reached for the camera: whatever it was doing on its own stops. During a big moment
+   * it first flies back to where they were, and they get it then (false until it has).
+   */
+  private takeCamera(): boolean {
+    if (this.moment) {
+      this.skipMoment();
+      return false;
+    }
     this.followId = 0;
     this.flight = null;
-    this.skipMoment();
+    return true;
+  }
+
+  /** As takeCamera, but zooming keeps the follow going. */
+  private takeZoom(): boolean {
+    if (this.moment) {
+      this.skipMoment();
+      return false;
+    }
+    this.flight = null;
+    return true;
   }
 
   /** Follow a pawn until a manual pan, or stop if it's the one already followed. */
@@ -343,7 +365,7 @@ export class GameRenderer {
 
   /** Move the view by a dragged amount, with some give past the edge of the map. */
   dragPan(dx: number, dy: number): void {
-    this.takeCamera();
+    if (!this.takeCamera()) return;
     this.pan.stop();
     const { x, y } = this.panRanges();
     this.world.x += dx * edgeResist(this.world.x, x.lo, x.hi, dx);
@@ -364,8 +386,7 @@ export class GameRenderer {
   /** Held pan keys or the screen edge, -1..1 on each axis (0 lets it coast), for dt ms. */
   panInput(dirX: number, dirY: number, dt: number): void {
     const manual = dirX !== 0 || dirY !== 0;
-    if (manual) this.takeCamera();
-    else if (!this.pan.moving) return;
+    if (manual ? !this.takeCamera() : !this.pan.moving) return;
     const speed = panSpeedFor(this.world.scale.x, MAX_ZOOM, MIN_ZOOM);
     const { x, y } = this.panRanges();
     const gx = -dirX * speed * edgeResist(this.world.x, x.lo, x.hi, -dirX);
@@ -388,8 +409,7 @@ export class GameRenderer {
 
   /** Zoom by a factor about a screen point. The camera eases there over a few frames; more wheel turns stack. */
   zoomAt(sx: number, sy: number, factor: number): void {
-    this.flight = null;
-    this.skipMoment();
+    if (!this.takeZoom()) return;
     const from = this.zoomGoal?.s ?? this.world.scale.x;
     // Following, the colonist stays in the middle of the screen whatever the cursor is over.
     const held = this.followId !== 0;
@@ -482,8 +502,10 @@ export class GameRenderer {
     if (!free) return;
     this.lastMoment = now;
     const c = this.viewCenter();
+    const s = this.world.scale.x * TILE;
     this.moment = { phase: 'out', x: c.x, y: c.y, scale: this.world.scale.x, until: 0 };
-    this.fly(q.x, q.y);
+    // Raiders arrive at the very edge: stop short, so the look is at them and not at the void.
+    this.fly(keepOnMap(q.x, this.app.screen.width / s, this.mapW), keepOnMap(q.y, this.app.screen.height / s, this.mapH));
   }
 
   private stepMoment(now: number): void {
@@ -565,6 +587,7 @@ export class GameRenderer {
     }
     for (const c of m.changedCells) this.prevRock[c] = m.rock[c];
     this.shadows.note(m, m.changedEnts, m.removedEnts, m.changedCells.size > 0);
+    this.worldUi.note(m, m.changedEnts, m.removedEnts, now);
     this.juice.frame(m, store.me?.faction ?? 0, m.changedEnts, m.removedEnts, now, (id) => {
       const v = this.views.get(id);
       return v && v.root.visible ? { x: v.root.x, y: v.root.y } : null;
@@ -612,6 +635,13 @@ export class GameRenderer {
       if (!e) continue;
       this.updateView(e);
       if (e.kind === 'pawn' && e.possessed && e.faction === mine) this.possessedId = e.id;
+      if (e.kind === 'pawn' && this.built) {
+        // Someone going down is the heaviest blow of a fight.
+        if (e.downed && !this.felled.has(e.id)) {
+          this.felled.add(e.id);
+          this.shakeAt((e.x + 0.5) * TILE, (e.y + 0.5) * TILE, e.species ? 0.3 : 0.5);
+        } else if (!e.downed) this.felled.delete(e.id);
+      }
     }
     m.changedEnts.clear();
 
@@ -620,6 +650,13 @@ export class GameRenderer {
     const tick = store.estTick();
     if (fog.update(now)) this.drawFog();
     const me = store.me?.faction;
+    {
+      const a = this.screenToWorld(0, 0);
+      const b = this.screenToWorld(this.app.screen.width, this.app.screen.height);
+      store.view = { x0: a.x, y0: a.y, x1: b.x, y1: b.y };
+      sound.setListener(((a.x + b.x) / 2) * TILE, ((a.y + b.y) / 2) * TILE, (b.x - a.x) * TILE);
+      this.worldUi.begin(m, me ?? 0, now, dt, tick, this.world.scale.x, store.view, store.hoverCell, store.squad);
+    }
     for (const id of this.pawnIds) {
       const e = m.entities.get(id);
       const v = this.views.get(id);
@@ -632,6 +669,7 @@ export class GameRenderer {
       // Others indoors, out of your people's sight, aren't shown.
       v.root.visible = e.faction === me || !fog.hidden(Math.round(pos.y) * m.w + Math.round(pos.x));
       this.animatePawn(e, v, now);
+      this.worldUi.pawn(e, v.root.x, v.root.y, v.root.visible, id === store.selected, v.workCell ?? null);
     }
     if (now >= this.nextSteam && this.springs.size) {
       // Warm water breathing out into the cold.
@@ -643,12 +681,6 @@ export class GameRenderer {
       }
     }
     this.cullChunks();
-    {
-      const a = this.screenToWorld(0, 0);
-      const b = this.screenToWorld(this.app.screen.width, this.app.screen.height);
-      store.view = { x0: a.x, y0: a.y, x1: b.x, y1: b.y };
-      sound.setListener(((a.x + b.x) / 2) * TILE, ((a.y + b.y) / 2) * TILE, (b.x - a.x) * TILE);
-    }
     this.drawFrost(tick);
     // Too small to see when zoomed out, and it touches every visible plant.
     if (this.world.scale.x >= 0.35) this.swayPlants(now);
@@ -658,6 +690,7 @@ export class GameRenderer {
     this.particles.update(dt);
     this.tweens.update(now);
     this.drawUi();
+    this.worldUi.end();
     this.drawWeather(tick, dt);
     this.drawLight(tick, now, dt);
   }
@@ -668,6 +701,7 @@ export class GameRenderer {
   private animatePawn(e: Pawn, v: EntityView, now: number): void {
     const rig = v.rig;
     if (!rig) return;
+    v.workCell = null;
     const x = v.root.x;
     const y = v.root.y;
     const dx = v.lastX === undefined ? 0 : x - v.lastX;
@@ -700,6 +734,7 @@ export class GameRenderer {
       this.setWalkFrame(v, -1);
       const work = this.workTarget(e);
       if (work) {
+        v.workCell = work.cell;
         // Face the work and swing at it.
         const tx = (work.cell % store.mirror.w) + 0.5;
         const ty = Math.floor(work.cell / store.mirror.w) + 0.5;
@@ -1100,10 +1135,10 @@ export class GameRenderer {
       case 'construct': {
         const total = Object.values(constructCost(e)).reduce((a, b) => a + b, 0);
         const got = Object.values(e.delivered).reduce((a, b) => a + b, 0);
-        return `c:${e.def}:${got}/${total}:${Math.floor((e.progress / constructWork(e)) * 10)}:${e.kit ? 'k' : ''}`;
+        return `c:${e.def}:${got >= total}:${e.kit ? 'k' : ''}`;
       }
       case 'pawn':
-        return `w:${e.faction}:${e.name}:${e.tamed ?? 0}:${e.taming ?? 0}:${e.hunted ?? 0}:${e.asleep ? 1 : 0}:${e.carrying?.def ?? ''}:${e.weapon}:${e.drafted ? 1 : 0}:${e.downed ? 1 : 0}:${Math.ceil(woundTotal(e) * 20)}:${bleedRate(e) > 0 ? 1 : 0}:${e.prisoner}`;
+        return `w:${e.faction}:${e.name}:${e.tamed ?? 0}:${e.taming ?? 0}:${e.hunted ?? 0}:${e.asleep ? 1 : 0}:${e.carrying?.def ?? ''}:${e.weapon}:${e.drafted ? 1 : 0}:${e.downed ? 1 : 0}:${e.prisoner}`;
     }
   }
 
@@ -1220,22 +1255,6 @@ export class GameRenderer {
     return new Graphics(ctx);
   }
 
-  /**
-   * A pawn's health strip: dark outlined track, fill coloured by how bad it is (green, amber, red),
-   * bright red while bleeding.
-   */
-  private healthBar(width: number, y: number, hurt: number, bleeding: boolean): Graphics {
-    const left = Math.round(Math.max(0, 1 - hurt) * 24) / 24;
-    const fill = bleeding ? 0xff4848 : left > 0.6 ? 0x5ccf5c : left > 0.3 ? 0xe8b83c : 0xe85a3c;
-    return this.shape(`hp:${width}:${y}:${left}:${fill}`, (g) =>
-      g
-        .rect(-width / 2 - 1, y - 1, width + 2, 6)
-        .fill({ color: 0x000000, alpha: 0.75 })
-        .rect(-width / 2, y, width * left, 4)
-        .fill(fill),
-    );
-  }
-
   /** The stack size in an item's corner, shown for stacks of two or more. */
   private setCountLabel(v: EntityView, count: number): void {
     if (count <= 1) {
@@ -1300,7 +1319,6 @@ export class GameRenderer {
   }
 
   private drawConstruct(root: Container, e: Construct): void {
-    const d = BUILDINGS[e.def];
     const cost = constructCost(e);
     const total = Object.values(cost).reduce((a, b) => a + b, 0);
     const got = Object.values(e.delivered).reduce((a, b) => a + b, 0);
@@ -1317,8 +1335,6 @@ export class GameRenderer {
         .stroke({ width: 1.5, color: ready ? 0xc8a878 : 0x8ac8ff, alpha: 0.9 }),
     );
     root.addChild(frame, ghost);
-    const p = Math.min(1, Math.round((ready ? e.progress / d.work : total ? got / total : 0) * 20) / 20);
-    if (p > 0) root.addChild(this.shape(`cprog:${ready}:${p}`, (g) => g.rect(-TILE / 2 + 3, TILE / 2 - 6, (TILE - 6) * p, 3).fill(ready ? 0xf0c060 : 0x8ac8ff)));
   }
 
   /**
@@ -1375,10 +1391,6 @@ export class GameRenderer {
     v.body = body;
     v.baseTint = body.tint;
     v.animal = true;
-    const hurt = woundTotal(e);
-    if (hurt > 0.02 || e.downed) {
-      root.addChild(this.healthBar(TILE * 0.6, -size * 0.75, hurt, bleedRate(e) > 0));
-    }
     if (e.taming && e.taming === store.me?.faction) {
       // Marked for taming: a small heart, in ember.
       const y = -size * 0.75 - 8;
@@ -1460,10 +1472,6 @@ export class GameRenderer {
             .stroke({ width: 1.2, color: 0x000000, alpha: 0.8 }),
         ),
       );
-    }
-    const hurt = woundTotal(e);
-    if (hurt > 0.02 || e.downed) {
-      root.addChild(this.healthBar(TILE * 0.7, -TILE * 0.68, hurt, bleedRate(e) > 0));
     }
     if (e.carrying) {
       const c = new Sprite(this.tex.item(e.carrying.def));
@@ -1559,12 +1567,11 @@ export class GameRenderer {
       return;
     }
     const sw = 1 / this.world.scale.x;
+    const ui = this.worldUi;
     for (const id of store.squad) {
       if (id === store.selected) continue;
       const v = this.views.get(id);
-      if (!v) continue;
-      const r = TILE * 0.5;
-      g.rect(v.root.x - r, v.root.y - r, r * 2, r * 2).stroke({ width: 1.5 * sw, color: 0xffffff, alpha: 0.6 });
+      if (v) ui.bracket(id, v.root.x, v.root.y, TILE * 0.5, MARK_TINT.own, 0.72);
     }
     // Who your selected fighters are going after.
     for (const id of store.squad) {
@@ -1572,7 +1579,9 @@ export class GameRenderer {
       const v = this.views.get(id);
       if (!p || !v || p.job?.type !== 'attack') continue;
       const tv = this.views.get(p.job.target);
-      if (tv) g.moveTo(v.root.x, v.root.y).lineTo(tv.root.x, tv.root.y).stroke({ width: 1.5 * sw, color: 0xff5040, alpha: 0.45 });
+      if (!tv) continue;
+      g.moveTo(v.root.x, v.root.y).lineTo(tv.root.x, tv.root.y).stroke({ width: 1.5 * sw, color: 0xff5040, alpha: 0.45 });
+      ui.reticle(-1 - p.job.target, tv.root.x, tv.root.y);
     }
     const om = this.orderMark;
     if (om) {
@@ -1588,8 +1597,8 @@ export class GameRenderer {
       const v = this.views.get(sel.id);
       const x = v ? v.root.x : (sel.x + 0.5) * TILE;
       const y = v ? v.root.y : (sel.y + 0.5) * TILE;
-      const r = TILE * 0.55;
-      g.rect(x - r, y - r, r * 2, r * 2).stroke({ width: 2 / this.world.scale.x, color: 0xffffff, alpha: 0.9 });
+      const foe = sel.kind === 'pawn' ? sel.faction !== store.me?.faction && !sel.species && hostile({ factions: m.factions } as unknown as World, store.me?.faction ?? 0, sel.faction) : false;
+      ui.bracket(sel.id, x, y, TILE * (sel.kind === 'building' ? (LANDMARK_SCALE[sel.def] ?? 1) * 0.55 : 0.55), foe ? MARK_TINT.foe : sel.kind === 'pawn' && sel.faction === store.me?.faction ? MARK_TINT.own : MARK_TINT.other, 1);
       if (sel.kind === 'pawn' && sel.path) {
         const pts = sel.path.cells.filter((_, i) => sel.path!.times[i] > store.estTick());
         if (pts.length) {
@@ -1600,7 +1609,7 @@ export class GameRenderer {
       }
     } else if (store.selectedCell !== null) {
       const c = store.selectedCell;
-      g.rect((c % m.w) * TILE, ((c / m.w) | 0) * TILE, TILE, TILE).stroke({ width: 2 / this.world.scale.x, color: 0xffffff, alpha: 0.6 });
+      ui.bracket(-2_000_000_000 - c, ((c % m.w) + 0.5) * TILE, (((c / m.w) | 0) + 0.5) * TILE, TILE * 0.5, MARK_TINT.other, 0.8);
     }
     this.input.drawPreview(g);
   }
@@ -1847,6 +1856,9 @@ export class GameRenderer {
     }
   }
 
+  /** A pawn drew down: heavy enough to feel. */
+  private felled = new Set<number>();
+
   /** Mark where a right-click order went. */
   flashOrder(x: number, y: number, attack: boolean): void {
     this.orderMark = { x, y, attack, born: performance.now() };
@@ -1872,6 +1884,10 @@ export class GameRenderer {
       }
       this.shots.push(shot);
       if (shot.hit && !stale) this.juice.hit(shot.shooter, shot.target, now);
+      if (!stale) {
+        this.worldUi.struck(shot.shooter, now);
+        this.worldUi.struck(shot.target, now);
+      }
       if (!stale) {
         const sv = this.views.get(shot.shooter)?.root;
         const wdef = weaponOf(shot.weapon);
