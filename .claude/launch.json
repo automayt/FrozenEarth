@@ -6,6 +6,13 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 5180
+    },
+    {
+      "name": "frozenearth-fresh",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "env": { "FE_PORT": "8105", "CLIENT_PORT": "5197", "FE_WORLD": "mountains" },
+      "port": 5197
     }
   ]
 }

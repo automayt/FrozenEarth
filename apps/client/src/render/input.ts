@@ -250,6 +250,10 @@ export class Input {
         e.preventDefault();
         chat.focus();
       }
+    } else if (k === '=' || k === '+' || k === '-') {
+      // Keyboard zoom, about the middle of the screen.
+      const c = this.el.getBoundingClientRect();
+      this.r.zoomAt(c.width / 2, c.height / 2, k === '-' ? 1 / 1.35 : 1.35);
     } else if (PANEL_KEYS[k] && store.me?.faction) {
       const panel = PANEL_KEYS[k];
       store.set({ panel: store.panel === panel ? 'none' : panel, menu: null });

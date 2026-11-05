@@ -23,6 +23,11 @@ import { Juice } from './juice';
 export const TILE = 32;
 /** Cells per culling chunk. */
 const CHUNK = 16;
+/** Camera scale limits. */
+const MIN_ZOOM = 0.15;
+const MAX_ZOOM = 3;
+/** Zoom easing time constant: about 95% of the way there in three of these. */
+const ZOOM_EASE_MS = 70;
 /** Bitmap text is generated at 2x and drawn at half scale so it stays sharp when zoomed. */
 /** How a settlement feels about you, as a colour. */
 export const DISPOSITION_COLOR = { friendly: 0x7ad07a, wary: 0xf0b43c, hostile: 0xf07a5a } as const;
@@ -139,6 +144,8 @@ export class GameRenderer {
   /** Rock layer as last drawn, to spot freshly mined cells. */
   private prevRock = new Uint8Array(0);
   private glide: { fx: number; fy: number; tx: number; ty: number; t0: number } | null = null;
+  /** Where the zoom is heading, and the screen point it closes in on. */
+  private zoomGoal: { s: number; sx: number; sy: number } | null = null;
   private lastFrame = performance.now();
   /** Frost over the frozen zone, one pixel a cell. */
   private frostMap: MapBitmap | null = null;
@@ -260,12 +267,31 @@ export class GameRenderer {
     this.glide = { fx: c.x, fy: c.y, tx: x, ty: y, t0: performance.now() };
   }
 
+  /** Zoom by a factor about a screen point. The camera eases there over a few frames; more wheel turns stack. */
   zoomAt(sx: number, sy: number, factor: number): void {
+    const from = this.zoomGoal?.s ?? this.world.scale.x;
+    this.zoomGoal = { s: Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, from * factor)), sx, sy };
+  }
+
+  /** Set the scale, keeping the world point under (sx, sy) where it is. */
+  private scaleAbout(sx: number, sy: number, s: number): void {
     const old = this.world.scale.x;
-    const s = Math.max(0.15, Math.min(3, old * factor));
     this.world.x = sx - ((sx - this.world.x) * s) / old;
     this.world.y = sy - ((sy - this.world.y) * s) / old;
     this.world.scale.set(s);
+  }
+
+  /** One frame of easing toward the zoom goal: a fixed share of the remaining distance (in log scale), whatever the frame rate. */
+  private easeZoom(dt: number): void {
+    const g = this.zoomGoal;
+    if (!g) return;
+    const old = this.world.scale.x;
+    let s = old * Math.pow(g.s / old, 1 - Math.exp(-dt / ZOOM_EASE_MS));
+    if (Math.abs(Math.log(g.s / s)) < 0.002) {
+      s = g.s;
+      this.zoomGoal = null;
+    }
+    this.scaleAbout(g.sx, g.sy, s);
   }
 
   // ---------------------------------------------------------------- per frame
@@ -288,6 +314,7 @@ export class GameRenderer {
       this.centerOn(this.glide.fx + (this.glide.tx - this.glide.fx) * e, this.glide.fy + (this.glide.ty - this.glide.fy) * e);
       if (k >= 1) this.glide = null;
     }
+    this.easeZoom(dt);
     this.input.update(this.app.ticker.deltaMS);
     this.ground?.tick(now);
 

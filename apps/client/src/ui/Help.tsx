@@ -21,7 +21,7 @@ const KEYS: { title: string; rows: [string, string][] }[] = [
     rows: [
       ['W A S D / arrows', 'Pan'],
       ['Right or middle drag', 'Pan'],
-      ['Mouse wheel', 'Zoom'],
+      ['Mouse wheel, + / -', 'Zoom'],
       ['H', 'Jump to your colony'],
       ['F', 'Jump to the selection'],
     ],
