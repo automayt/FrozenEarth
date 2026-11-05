@@ -343,6 +343,7 @@ export class GameRenderer {
     }
     for (const c of m.changedCells) this.prevRock[c] = m.rock[c];
     this.shadows.note(m, m.changedEnts, m.removedEnts, m.changedCells.size > 0);
+    sound.note(m, m.changedEnts, m.removedEnts);
     this.juice.frame(m, store.me?.faction ?? 0, m.changedEnts, m.removedEnts, now, (id) => {
       const v = this.views.get(id);
       return v && v.root.visible ? { x: v.root.x, y: v.root.y } : null;
@@ -1651,7 +1652,7 @@ export class GameRenderer {
       if (!stale) {
         const sv = this.views.get(shot.shooter)?.root;
         const wdef = weaponOf(shot.weapon);
-        sound.play(wdef.melee ? 'melee' : shot.weapon === 'bow' ? 'bow' : 'rifle', sv?.x ?? (shot.sx + 0.5) * TILE, sv?.y ?? (shot.sy + 0.5) * TILE);
+        sound.play((m.entities.get(shot.shooter) as Pawn | undefined)?.species ? 'bite' : wdef.melee ? 'melee' : shot.weapon === 'bow' ? 'bow' : 'rifle', sv?.x ?? (shot.sx + 0.5) * TILE, sv?.y ?? (shot.sy + 0.5) * TILE);
       }
       if (!shot.hit && ranged && !stale) {
         this.tweens.add(SHOT_FLY_MS, () => {}, () => {
@@ -1885,7 +1886,7 @@ export class GameRenderer {
       kind = 'snow';
       wind = 0.6;
     }
-    sound.ambience(Math.min(1, 0.12 + wind * 0.75 + frozenView * 0.3), kind === 'rain' ? 0.6 : kind === 'storm' ? 1 : 0);
+    sound.world(tick, kind, wind);
     this.weather.update(dt, kind, this.app.screen.width, this.app.screen.height, wind);
   }
 
