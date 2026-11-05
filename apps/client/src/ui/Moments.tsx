@@ -74,7 +74,7 @@ export function Moments() {
     if (!found) return;
     const shown: Moment = found;
     setMoment(shown);
-    sound.play(shown.tone === 'good' ? 'good' : shown.tone === 'bad' ? 'bad' : 'neutral');
+    sound.moment(shown.title, shown.tone);
     // Its own timer: later letters arriving mustn't keep it on screen.
     clearTimeout(timer.current);
     timer.current = setTimeout(() => setMoment((m) => (m?.key === shown.key ? null : m)), SHOW_MS);

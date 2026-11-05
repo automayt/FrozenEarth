@@ -16,7 +16,7 @@ const KEYS: Record<Channel, string> = {
 };
 
 /** What a new player hears. Music sits well under everything else. */
-export const DEFAULT_VOLUME: Record<Channel, number> = { master: 0.5, music: 0.6, ambience: 0.8, effects: 0.9, interface: 0.7 };
+export const DEFAULT_VOLUME: Record<Channel, number> = { master: 0.5, music: 0.6, ambience: 0.8, effects: 0.9, interface: 0.8 };
 
 export interface KeyValue {
   getItem(key: string): string | null;

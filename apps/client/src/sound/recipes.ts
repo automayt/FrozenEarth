@@ -35,7 +35,7 @@ export interface Recipe {
 }
 
 function paper(o: Out, level = 1): void {
-  burst(o, 0.05 * level, 0.22, 'bandpass', 2600, 1.2, 1100);
+  burst(o, 0.08 * level, 0.22, 'bandpass', 2600, 1.2, 1100);
 }
 
 const goodChime = (o: Out) => {
@@ -97,7 +97,13 @@ export const RECIPES: Record<Kind, Recipe> = {
       burst(o, 0.18, 0.5, 'highpass', 4000);
     },
   },
-  tend: { dur: 0.01, make() {} },
+  tend: {
+    dur: 0.14, takes: 2, gap: 240, prio: 1, spread: 0.1,
+    make(o) {
+      // Cloth being pulled tight.
+      burst(o, 0.06, 0.11, 'bandpass', 1900, 1, 1300);
+    },
+  },
 
   // ------------------------------------------------------------ fighting
   rifle: {
@@ -236,67 +242,67 @@ export const RECIPES: Record<Kind, Recipe> = {
   hover: {
     screen: true, dur: 0.03, gap: 45, spread: 0.06,
     make(o) {
-      tone(o, 0.016, 0.018, 2300, 'sine', 1700);
+      tone(o, 0.04, 0.018, 2300, 'sine', 1700);
     },
   },
   press: {
     screen: true, dur: 0.06, takes: 2, gap: 40, spread: 0.04,
     make(o) {
       // A small wooden tap: the warm body under the tick.
-      tone(o, 0.07, 0.035, 720, 'triangle', 420);
-      burst(o, 0.035, 0.016, 'bandpass', 2600, 2);
+      tone(o, 0.13, 0.035, 720, 'triangle', 420);
+      burst(o, 0.07, 0.016, 'bandpass', 2600, 2);
     },
   },
   select: {
     screen: true, dur: 0.05, gap: 60, spread: 0.04,
     make(o) {
-      tone(o, 0.045, 0.03, 980, 'triangle', 700);
+      tone(o, 0.08, 0.03, 980, 'triangle', 700);
     },
   },
   open: {
     screen: true, dur: 0.22, gap: 60,
     make(o) {
-      burst(o, 0.05, 0.17, 'bandpass', 500, 1.2, 1800);
-      tone(o, 0.05, 0.14, 392, 'triangle', 587);
+      burst(o, 0.08, 0.17, 'bandpass', 500, 1.2, 1800);
+      tone(o, 0.08, 0.14, 392, 'triangle', 587);
     },
   },
   close: {
     screen: true, dur: 0.2, gap: 60,
     make(o) {
-      burst(o, 0.045, 0.14, 'bandpass', 1500, 1.2, 420);
-      tone(o, 0.05, 0.12, 523, 'triangle', 330);
+      burst(o, 0.07, 0.14, 'bandpass', 1500, 1.2, 420);
+      tone(o, 0.08, 0.12, 523, 'triangle', 330);
     },
   },
   place: {
     screen: true, dur: 0.2, takes: 2, gap: 60, spread: 0.03,
     make(o) {
       // A peg going in: a knock, then a small clear note saying it took.
-      tone(o, 0.1, 0.08, 210, 'triangle', 120);
-      burst(o, 0.09, 0.05, 'bandpass', 1200, 2);
-      tone(o, 0.03, 0.12, 880, 'sine', undefined, 0.035);
+      tone(o, 0.14, 0.08, 210, 'triangle', 120);
+      burst(o, 0.12, 0.05, 'bandpass', 1200, 2);
+      tone(o, 0.05, 0.12, 880, 'sine', undefined, 0.035);
     },
   },
   mark: {
     screen: true, dur: 0.1, gap: 60, spread: 0.03,
     make(o) {
-      tone(o, 0.05, 0.05, 330, 'triangle', 240);
-      burst(o, 0.03, 0.03, 'bandpass', 1800, 2);
+      tone(o, 0.09, 0.05, 330, 'triangle', 240);
+      burst(o, 0.05, 0.03, 'bandpass', 1800, 2);
     },
   },
   refuse: {
     screen: true, dur: 0.28, gap: 180,
     make(o) {
       // Two dull thuds, the second lower: no.
-      tone(o, 0.11, 0.09, 175, 'triangle', 150);
-      tone(o, 0.11, 0.13, 131, 'triangle', 110, 0.11);
+      tone(o, 0.15, 0.09, 175, 'triangle', 150);
+      tone(o, 0.15, 0.13, 131, 'triangle', 110, 0.11);
     },
   },
   letter: {
     screen: true, dur: 0.65, gap: 1200,
     make(o) {
       paper(o);
-      tone(o, 0.05, 0.42, 784);
-      tone(o, 0.035, 0.5, 1175, 'sine', undefined, 0.09);
+      tone(o, 0.08, 0.42, 784);
+      tone(o, 0.055, 0.5, 1175, 'sine', undefined, 0.09);
     },
   },
   letterGood: {

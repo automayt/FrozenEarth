@@ -9,13 +9,13 @@ import { filter, gain, rand } from './synth';
  */
 
 /** Tuning: the level of each layer when it's fully present. */
-export const AMBIENCE_LEVEL = { wind: 0.34, whistle: 0.12, rain: 0.34, water: 0.34, fire: 0.42, insects: 0.1, crickets: 0.1 };
+export const AMBIENCE_LEVEL = { wind: 0.7, whistle: 0.24, rain: 0.34, water: 0.3, fire: 0.36, insects: 0.15, crickets: 0.15 };
 /** Tuning: calls per minute at full presence, the level they play at, and how widely they spread. */
 const CALLS = {
-  birds: { sample: 'birds', perMin: 11, level: 0.3, width: 0.8 },
-  wolves: { sample: 'wolves', perMin: 0.9, level: 0.3, width: 0.7 },
-  thunder: { sample: 'thunder', perMin: 1.3, level: 0.75, width: 0.5 },
-  ice: { sample: 'ice', perMin: 3, level: 0.22, width: 0.8 },
+  birds: { sample: 'call.birds', perMin: 11, level: 0.3, width: 0.8 },
+  wolves: { sample: 'call.wolves', perMin: 0.9, level: 0.3, width: 0.7 },
+  thunder: { sample: 'call.thunder', perMin: 1.3, level: 0.75, width: 0.5 },
+  ice: { sample: 'call.ice', perMin: 3, level: 0.34, width: 0.8 },
 } as const;
 /** Tuning: seconds for a layer to fade toward where it should be. */
 const FADE_S = 2.2;
@@ -28,17 +28,20 @@ const GUST_EVERY: [number, number] = [2.5, 7];
 const GUST_DEPTH = 0.55;
 
 /** One looping layer, started when first needed and stopped once it has been silent a while. */
-class Bed {
+export class Bed {
   private gain: GainNode;
   private pan: StereoPannerNode;
   private src: AudioBufferSourceNode | null = null;
   private idleSince: number | null = null;
+  private level = 0;
+  private panAt = 0;
 
   constructor(
     private ctx: BaseAudioContext,
     bus: AudioNode,
     private bank: Bank,
     private name: string,
+    private fade = FADE_S,
   ) {
     this.gain = gain(ctx, 0);
     this.pan = ctx.createStereoPanner();
@@ -61,8 +64,13 @@ class Bed {
       src.start(t, Math.random() * buffer.duration);
       this.src = src;
     }
-    this.gain.gain.setTargetAtTime(level, t, FADE_S);
-    this.pan.pan.setTargetAtTime(pan, t, FADE_S);
+    // Nothing changed: don't grow the parameter's timeline four times a second, forever.
+    if (Math.abs(level - this.level) > 1e-4 || Math.abs(pan - this.panAt) > 1e-3) {
+      this.level = level;
+      this.panAt = pan;
+      this.gain.gain.setTargetAtTime(level, t, this.fade);
+      this.pan.pan.setTargetAtTime(pan, t, this.fade);
+    }
     if (level > SILENT) {
       this.idleSince = null;
       return;
@@ -93,7 +101,7 @@ export class Ambience {
     private bank: Bank,
   ) {
     const bus = mixer.buses.ambience;
-    const bed = (name: string) => new Bed(ctx, bus, bank, name);
+    const bed = (name: string) => new Bed(ctx, bus, bank, `bed.${name}`);
     this.beds = { rain: bed('rain'), water: bed('water'), fire: bed('fire'), insects: bed('insects'), crickets: bed('crickets') };
     const low = filter(ctx, 'lowpass', 400, 0.5);
     const high = filter(ctx, 'bandpass', 1300, 4);
@@ -160,8 +168,8 @@ export class Ambience {
     }
   }
 
-  /** Everything still looping, for counting and for the page going to sleep. */
-  get beds_playing(): number {
+  /** How many loops are running: anything inaudible should have stopped. */
+  get looping(): number {
     return Object.values(this.beds).filter((b) => b.playing).length + (this.wind.src ? 1 : 0);
   }
 

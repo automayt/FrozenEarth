@@ -14,11 +14,15 @@ import { Ambience } from './sound/ambience';
 import { Bank } from './sound/bank';
 import { Volumes, type Channel } from './sound/levels';
 import { Mixer } from './sound/mixer';
+import { Music } from './sound/music';
 import type { Kind } from './sound/recipes';
 import { WORLD_SAMPLES } from './sound/samples';
-import { layerTargets, quietLayers, sampleScene, type Precip } from './sound/scene';
+import { layerTargets, quietLayers, sampleScene, type Precip, type Scene } from './sound/scene';
+import { cueForMoment, deathIn, Tension, tensionFrom, tensionTarget, type Cue } from './sound/score';
+import { SCORE_SAMPLES } from './sound/scoreSamples';
 import { commandSound, listenForPresses, uiChange, type UiState } from './sound/ui';
 import { INAUDIBLE, muffleAt, panAt, reach, Voices, type Ear } from './sound/voices';
+import { Watcher } from './sound/watch';
 
 export { CHANNELS, type Channel } from './sound/levels';
 
@@ -31,6 +35,12 @@ const SAMPLE_MS = 250;
 const HIDDEN_STOP_MS = 7000;
 /** World units per cell. */
 const CELL = 32;
+/** Tuning: a fight in earshot this recently still counts as fighting. */
+const FIGHT_MEMORY_MS = 6000;
+/** A banner this soon after its letter doesn't chime a second time. */
+const LETTER_CHIME_MS = 500;
+/** The sounds of blows, which raise the tension when they're close enough to hear. */
+const BLOWS = new Set<Kind>(['rifle', 'bow', 'melee', 'bite']);
 
 function readMuted(): boolean {
   try {
@@ -54,6 +64,12 @@ class Sound {
   private bank: Bank | null = null;
   private voices: Voices | null = null;
   private ambience: Ambience | null = null;
+  private music: Music | null = null;
+  private tension = new Tension();
+  private lastFight = -Infinity;
+  private raidHeard = false;
+  private lastLetter = -Infinity;
+  private watcher = new Watcher({ play: (kind, x, y) => this.play(kind, x, y), cue: (cue) => this.cue(cue) });
   private nextSample = 0;
   private hiddenTimer: ReturnType<typeof setTimeout> | undefined;
   private ear: Ear = { x: 0, y: 0, span: 1000 };
@@ -78,13 +94,16 @@ class Sound {
       this.bank = new Bank(ctx);
       this.voices = new Voices(ctx, this.mixer, this.bank);
       this.ambience = new Ambience(ctx, this.mixer, this.bank);
+      this.music = new Music(ctx, this.mixer, this.bank);
       this.applyVolume();
+      if (this.muted) void ctx.suspend();
       void this.prepare(this.bank);
     } catch {
       // No sound on this machine, then.
       this.ctx = null;
       this.voices = null;
       this.ambience = null;
+      this.music = null;
     }
   }
 
@@ -93,6 +112,7 @@ class Sound {
     try {
       await bank.renderEffects();
       await bank.renderAll(WORLD_SAMPLES);
+      await bank.renderAll(SCORE_SAMPLES);
     } catch {
       // Live recipes still work.
     }
@@ -154,7 +174,9 @@ class Sound {
       return;
     }
     const v = reach(x, y, this.ear);
-    if (v > INAUDIBLE) this.voices!.play(kind, v, panAt(x, this.ear), muffleAt(x, y, this.ear));
+    if (v <= INAUDIBLE) return;
+    if (BLOWS.has(kind)) this.lastFight = performance.now();
+    this.voices!.play(kind, v, panAt(x, this.ear), muffleAt(x, y, this.ear));
   }
 
   /**
@@ -163,28 +185,60 @@ class Sound {
    * the render loop, so it just turns the world's sound off.
    */
   world(tick: number, precip: Precip, wind: number): void {
-    if (!this.running || !this.ambience) return;
+    if (!this.running || !this.ambience || document.hidden) return;
     const now = performance.now();
     if (now < this.nextSample) return;
     this.nextSample = now + SAMPLE_MS;
     const m = store.mirror;
     if (!m.w) return;
     try {
+      const t = this.ctx!.currentTime;
       const scene = sampleScene(m, this.ear.x / CELL, this.ear.y / CELL, this.ear.span / CELL, tick, precip, wind);
-      this.ambience.update(this.ctx!.currentTime, layerTargets(scene), scene);
+      this.ambience.update(t, layerTargets(scene), scene);
+      this.score(t, now, tick, scene);
+      if (store.view) this.watcher.sample(m, tick, store.view, SAMPLE_MS / 1000);
     } catch (e) {
       console.warn('Sound: the world went quiet', e);
       this.ambience = null;
     }
   }
 
+  private score(t: number, now: number, tick: number, scene: Scene): void {
+    const danger = tensionFrom(store.mirror, store.me?.faction ?? 0, tick, now - this.lastFight < FIGHT_MEMORY_MS);
+    const level = this.tension.update(tensionTarget(danger), SAMPLE_MS / 1000);
+    const winter = scene.season === 'Winter' ? 0.7 : 0;
+    this.music?.update(t, level, { sparse: Math.max(winter, scene.frostNear, scene.frozen) });
+  }
+
+  /** What changed in the mirror this frame, for sounds that have to be worked out from it. */
+  note(m: typeof store.mirror, changed: ReadonlySet<number>, removed: ReadonlySet<number>): void {
+    if (this.running) this.watcher.note(m, changed, removed);
+  }
+
+  private cue(cue: Cue): boolean {
+    if (!this.running || !this.music) return false;
+    return this.music.stinger(cue, this.ctx!.currentTime);
+  }
+
+  /** A banner went up. The big ones get music; the rest, or if music can't be heard, a chime unless its letter just gave one. */
+  moment(title: string, tone: 'good' | 'bad' | 'neutral'): void {
+    const cue = cueForMoment(title, this.raidHeard);
+    if (cue === 'firstRaid') this.raidHeard = true;
+    const scored = !!cue && this.cue(cue) && this.volumes.get('music') >= 0.05;
+    if (!scored && performance.now() - this.lastLetter > LETTER_CHIME_MS) this.play(tone);
+  }
+
   /** The page was hidden or shown: don't keep the world playing to nobody. Letters still chime. */
   private hidden(on: boolean): void {
     clearTimeout(this.hiddenTimer);
     if (!on || !this.ctx || !this.ambience) return;
-    const { ctx, ambience } = this;
+    const { ctx, ambience, music } = this;
     ambience.update(ctx.currentTime, quietLayers(), { waterPan: 0, firePan: 0 });
-    this.hiddenTimer = setTimeout(() => ambience.stop(ctx.currentTime), HIDDEN_STOP_MS);
+    music?.sleep(ctx.currentTime);
+    this.hiddenTimer = setTimeout(() => {
+      ambience.stop(ctx.currentTime);
+      music?.stop(ctx.currentTime);
+    }, HIDDEN_STOP_MS);
   }
 
   /** A letter came in. Answers to our own commands have their own sound, by way of the toast they raise. */
@@ -193,6 +247,15 @@ class Sound {
       if (msg.tone === 'good') this.play('good');
       return;
     }
+    const death = deathIn(msg.text);
+    if (death) {
+      const w = store.mirror.w;
+      if (msg.at !== undefined && w) this.play('death', ((msg.at % w) + 0.5) * CELL, (Math.floor(msg.at / w) + 0.5) * CELL);
+      const mine = store.me && store.mirror.factions.get(store.me.faction)?.name === death.colony;
+      if (mine) this.cue('death');
+      else return;
+    }
+    this.lastLetter = performance.now();
     this.play(msg.tone === 'good' ? 'letterGood' : msg.tone === 'bad' ? 'letterBad' : 'letter');
   }
 

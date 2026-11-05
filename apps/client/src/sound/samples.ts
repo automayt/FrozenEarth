@@ -62,9 +62,9 @@ const fire: SampleDef = {
     for (let i = 0; i < 90; i++) {
       const p = panned(o, rand(-0.7, 0.7));
       const hard = Math.random() ** 3;
-      burst({ ...p, t: o.t + rand(0, 7.6) }, 0.1 + hard * 0.9, rand(0.004, 0.022), 'bandpass', rand(1200, 6500), 0.8);
+      burst({ ...p, t: o.t + rand(0, 7.6) }, 0.06 + hard * 0.3, rand(0.004, 0.022), 'bandpass', rand(1200, 6500), 0.8);
     }
-    for (let i = 0; i < 9; i++) burst({ ...o, t: o.t + rand(0, 7.4) }, rand(0.3, 0.6), rand(0.03, 0.07), 'lowpass', rand(500, 1100));
+    for (let i = 0; i < 9; i++) burst({ ...o, t: o.t + rand(0, 7.4) }, rand(0.1, 0.22), rand(0.03, 0.07), 'lowpass', rand(500, 1100));
   },
 };
 
@@ -207,7 +207,7 @@ function howl(o: Out, at: number, low: number, high: number, d: number, level: n
 }
 
 const wolves: SampleDef = {
-  dur: 9, takes: 3, channels: 1, rate: BED_RATE,
+  dur: 9, takes: 3, channels: 1, rate: 16000,
   build(base, take) {
     const far = filter(base.ctx, 'lowpass', 1300, 0.7);
     far.connect(base.dest);
@@ -219,8 +219,10 @@ const wolves: SampleDef = {
 };
 
 const thunder: SampleDef = {
-  dur: 7, takes: 2, channels: 2, rate: BED_RATE,
-  build(o) {
+  dur: 7, takes: 2, channels: 1, rate: 12000,
+  build(base) {
+    const o = { ...base, dest: gain(base.ctx, 3.5) };
+    o.dest.connect(base.dest);
     burst(o, 0.22, 0.5, 'lowpass', 900, 0.7, 180, 0.02);
     burst(o, 0.9, 3.2, 'lowpass', 190, 0.7, 50, 0.1);
     burst(o, 0.55, 2.2, 'lowpass', 150, 0.7, 45, 1.1);
@@ -240,4 +242,5 @@ const ice: SampleDef = {
   },
 };
 
-export const WORLD_SAMPLES: Record<string, SampleDef> = { water, fire, rain, insects, crickets, birds, wolves, thunder, ice };
+/** Prefixed so they can't collide with a short effect of the same name. */
+export const WORLD_SAMPLES: Record<string, SampleDef> = { 'bed.water': water, 'bed.fire': fire, 'bed.rain': rain, 'bed.insects': insects, 'bed.crickets': crickets, 'call.birds': birds, 'call.wolves': wolves, 'call.thunder': thunder, 'call.ice': ice };
