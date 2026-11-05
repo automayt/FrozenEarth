@@ -2,14 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { store, useStore } from '../store';
 import { myPlayer, setSpeed } from '../actions';
 import { rejoinCode } from '../net';
-
-/**
- * Pausing for help. Speed is shared and, with others online, every second paused comes out of a
- * daily pause budget. So help pauses the game only when you are the only one online (where
- * pausing is free and stops nobody), and resumes it on close. With others online the game keeps
- * running and the overlay says so, offering an explicit pause that spends your budget.
- */
-let resumeTo: number | null = null;
+import { useSoloPause } from './useSoloPause';
 
 function onlineCount(): number {
   return store.players.filter((p) => p.connected).length;
@@ -41,7 +34,7 @@ const KEYS: { title: string; rows: [string, string][] }[] = [
       ['R', 'Draft or undraft the selection (everyone, if none)'],
       ['Right-click', 'Drafted: move, attack, capture, steal, pick up a weapon'],
       ['Right-click', 'Otherwise: put the tool away, or deselect'],
-      ['Esc', 'Close the topmost thing: help, tool, menu, panel, selection'],
+      ['Esc', 'Close the topmost thing: help, tool, menu, panel, selection. With nothing left to close, the game menu'],
     ],
   },
   {
@@ -52,6 +45,7 @@ const KEYS: { title: string; rows: [string, string][] }[] = [
       ['Enter', 'Chat'],
       ['M', 'Mute sound'],
       ['?  or  F1', 'This help'],
+      ['F11', 'Fullscreen'],
     ],
   },
   {
@@ -87,23 +81,13 @@ export function Help() {
   useEffect(() => {
     if (s.help) box.current?.focus();
   }, [s.help]);
-  useEffect(() => {
-    const me = myPlayer();
-    if (s.help && online <= 1 && resumeTo === null && me && me.speed !== 0) {
-      resumeTo = me.speed;
-      setSpeed(0);
-    } else if (resumeTo !== null && (!s.help || online > 1)) {
-      // Closed, or someone joined (their arrival would start charging the pause to us): resume.
-      if (myPlayer()?.speed === 0) setSpeed(resumeTo);
-      resumeTo = null;
-    }
-  }, [s.help, online]);
+  const held = useSoloPause(s.help);
   if (!s.help) return null;
   const close = () => store.set({ help: false });
   const me = myPlayer();
   const others = online - 1;
   const status =
-    resumeTo !== null ? (
+    held ? (
       <p className="help-status">❚❚ Paused while you read (you're the only one online). Closing help resumes the game.</p>
     ) : others > 0 ? (
       <p className="help-status running">
@@ -178,7 +162,7 @@ function AnotherDevice() {
     <section className="rejoin">
       <h4>Play on another device</h4>
       <p className="small">
-        On the join screen of the other device, enter <b>{me.name}</b> and this rejoin code. Keep it to yourself: anyone with it can play your colony.
+        On the other device choose Join with a code, then enter <b>{me.name}</b> and this rejoin code. Keep it to yourself: anyone with it can play your colony.
       </p>
       <div className="rejoin-row">
         <code>{shown ? code : '•'.repeat(12)}</code>

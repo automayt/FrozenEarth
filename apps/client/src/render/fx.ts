@@ -287,8 +287,9 @@ export class Weather {
     this.drops = this.view.particleChildren as Drop[];
   }
 
-  update(dtMs: number, kind: Precip, w: number, h: number, wind: number): void {
-    const want = { none: 0, rain: 260, storm: 520, snow: 160, blizzard: 650, ash: 220 }[kind];
+  /** @param density share of the full number of drops to keep on screen */
+  update(dtMs: number, kind: Precip, w: number, h: number, wind: number, density = 1): void {
+    const want = Math.round({ none: 0, rain: 260, storm: 520, snow: 160, blizzard: 650, ash: 220 }[kind] * density);
     const drops = this.drops;
     const wet = kind === 'rain' || kind === 'storm';
     const a = getAtlas();

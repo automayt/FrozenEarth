@@ -271,7 +271,7 @@ class Sound {
     document.addEventListener('visibilitychange', () => this.hidden(document.hidden));
     store.subscribe(() => {
       const newest = store.toasts[store.toasts.length - 1];
-      const is: UiState = { panel: store.panel, menu: store.menu, help: store.help, selected: store.selected, toast: Math.max(newest?.id ?? 0, this.ui?.toast ?? 0), toastBad: newest?.tone === 'bad' };
+      const is: UiState = { panel: store.panel, menu: store.escMenu === 'closed' ? store.menu : `esc-${store.escMenu}`, help: store.help, selected: store.selected, toast: Math.max(newest?.id ?? 0, this.ui?.toast ?? 0), toastBad: newest?.tone === 'bad' };
       if (this.ui) for (const kind of uiChange(this.ui, is)) this.play(kind);
       this.ui = is;
     });

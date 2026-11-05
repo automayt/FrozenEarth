@@ -111,6 +111,14 @@ const PATHS: Record<string, ReactNode> = {
     </>
   ),
   close: <path d="m6.5 6.5 11 11M17.5 6.5l-11 11" />,
+  menu: (
+    <>
+      <path d="M5 6.5h14M5 12h14M5 17.5h14" />
+      <circle cx="9" cy="6.5" r="1.4" fill="currentColor" />
+      <circle cx="15" cy="12" r="1.4" fill="currentColor" />
+      <circle cx="9" cy="17.5" r="1.4" fill="currentColor" />
+    </>
+  ),
   chat: <path d="M4 5.5h16v10H10l-4.5 3.5v-3.5H4z" />,
   letter: (
     <>

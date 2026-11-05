@@ -240,10 +240,11 @@ export class Input {
     }
     if (!down) return;
     if (k === 'escape') {
-      // One layer at a time: the active tool, then an open menu or panel, then the selection.
+      // One layer at a time: the active tool, then an open menu or panel, then the selection, then the game menu.
       if (store.tool.kind !== 'select') store.set({ tool: { kind: 'select' } });
       else if (store.menu || store.panel !== 'none') store.set({ menu: null, panel: 'none' });
-      else store.set({ selected: null, selectedCell: null, squad: [] });
+      else if (store.selected !== null || store.selectedCell !== null || store.squad.length) store.set({ selected: null, selectedCell: null, squad: [] });
+      else store.set({ escMenu: 'open' });
     } else if (k === 'enter') {
       const chat = document.querySelector<HTMLInputElement>('.chat input');
       if (chat) {

@@ -4,6 +4,7 @@ import { dispositionOf, goodwillOf, lineValue, priceFactor, requestText, TICKS_P
 import { DISPOSITION_COLOR } from '../render/renderer';
 import { command } from '../net';
 import { store, useStore } from '../store';
+import { Roll } from './Roll';
 import { helpers } from '../actions';
 import { hex } from './util';
 import { settlementDeal, traderNear as traderAt } from './trade';
@@ -261,7 +262,7 @@ export function TradePanel() {
             return (
               <div key={r.id} className="request">
                 <span>
-                  They need <b>{requestText(r.item, r.count)}</b> <span className={have >= r.count ? 'good' : 'bad'}>(you have {have})</span> · {days >= 1 ? `${Math.ceil(days)}d` : `${Math.max(1, Math.round(days * 24))}h`} left · reward: {reward}
+                  They need <b>{requestText(r.item, r.count)}</b> <span className={have >= r.count ? 'good' : 'bad'}>(you have <Roll value={have} />)</span> · {days >= 1 ? `${Math.ceil(days)}d` : `${Math.max(1, Math.round(days * 24))}h`} left · reward: {reward}
                   {missing && <small className="muted request-why">{missing}</small>}
                 </span>
                 <button disabled={!!missing} onClick={() => command({ c: 'deliverRequest', settlement: target.faction, request: r.id })} title={missing || 'Hand it over'}>
