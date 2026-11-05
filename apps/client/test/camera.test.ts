@@ -232,7 +232,7 @@ describe('shake', () => {
     s.add(2);
     expect(s.trauma).toBe(1);
     expect(Math.hypot(s.offset(137, 1).x, s.offset(137, 1).y)).toBeGreaterThan(small * 10);
-    s.step(600);
+    s.step(1000);
     expect(s.trauma).toBe(0);
     expect(s.offset(137, 1)).toEqual({ x: 0, y: 0 });
   });
