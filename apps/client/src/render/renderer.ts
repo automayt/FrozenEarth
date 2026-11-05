@@ -1885,7 +1885,7 @@ export class GameRenderer {
       kind = 'snow';
       wind = 0.6;
     }
-    sound.ambience(Math.min(1, 0.12 + wind * 0.75 + frozenView * 0.3), kind === 'rain' ? 0.6 : kind === 'storm' ? 1 : 0);
+    sound.world(tick, kind, wind);
     this.weather.update(dt, kind, this.app.screen.width, this.app.screen.height, wind);
   }
 

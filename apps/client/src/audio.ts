@@ -1,28 +1,48 @@
 /**
- * Procedural sound: every effect is synthesised with Web Audio, so there are no audio files.
- * Sounds are attenuated by distance from the camera, rate-limited per kind, and the whole
- * thing stays silent until the first user gesture (browsers require that).
+ * Procedural sound: everything is synthesised with Web Audio, so there are no audio files. The
+ * whole thing stays silent until the first user gesture (browsers require that), and if audio is
+ * blocked or fails, every call here quietly does nothing and the game plays on.
+ *
+ * This file is the front door; the parts are in sound/. Mixer API for a settings screen:
+ *   sound.getVolume(channel), sound.setVolume(channel, v), sound.muted, sound.toggleMute(),
+ *   sound.onChange(fn), with channel one of CHANNELS: master, music, ambience, effects, interface.
  */
 
+import type { Command, GameMessage } from '@fe/sim';
+import { store } from './store';
+import { Ambience } from './sound/ambience';
+import { Bank } from './sound/bank';
 import { Volumes, type Channel } from './sound/levels';
 import { Mixer } from './sound/mixer';
+import type { Kind } from './sound/recipes';
+import { WORLD_SAMPLES } from './sound/samples';
+import { layerTargets, quietLayers, sampleScene, type Precip } from './sound/scene';
+import { commandSound, listenForPresses, uiChange, type UiState } from './sound/ui';
+import { INAUDIBLE, muffleAt, panAt, reach, Voices, type Ear } from './sound/voices';
+
+export { CHANNELS, type Channel } from './sound/levels';
 
 const MUTE_KEY = 'fe.muted';
+/** Long enough for the mute fade before the audio thread is put to sleep. */
+const MUTE_SLEEP_MS = 300;
+/** Tuning: how often the world is listened to. */
+const SAMPLE_MS = 250;
+/** Long enough for the beds to fade out when the page is hidden. */
+const HIDDEN_STOP_MS = 7000;
+/** World units per cell. */
+const CELL = 32;
 
-type Kind = 'stone' | 'wood' | 'leaf' | 'build' | 'soil' | 'craft' | 'steam' | 'tend' | 'rifle' | 'bow' | 'melee' | 'hit' | 'fall' | 'crumble' | 'rock' | 'fire' | 'click' | 'good' | 'bad' | 'neutral' | 'pop';
-
-function readNum(key: string, fallback: number): number {
+function readMuted(): boolean {
   try {
-    const v = localStorage.getItem(key);
-    return v === null ? fallback : Number(v);
+    return localStorage.getItem(MUTE_KEY) === '1';
   } catch {
-    return fallback;
+    return false;
   }
 }
 
-function write(key: string, value: string): void {
+function writeMuted(on: boolean): void {
   try {
-    localStorage.setItem(key, value);
+    localStorage.setItem(MUTE_KEY, on ? '1' : '0');
   } catch {
     // Storage blocked: the setting just won't persist.
   }
@@ -31,31 +51,51 @@ function write(key: string, value: string): void {
 class Sound {
   private ctx: AudioContext | null = null;
   private mixer: Mixer | null = null;
-  private noise: AudioBuffer | null = null;
-  private wind: { src: AudioBufferSourceNode; gain: GainNode; filter: BiquadFilterNode } | null = null;
-  private rain: { src: AudioBufferSourceNode; gain: GainNode } | null = null;
-  private last = new Map<Kind, number>();
-  private listener = { x: 0, y: 0, span: 1000 };
+  private bank: Bank | null = null;
+  private voices: Voices | null = null;
+  private ambience: Ambience | null = null;
+  private nextSample = 0;
+  private hiddenTimer: ReturnType<typeof setTimeout> | undefined;
+  private ear: Ear = { x: 0, y: 0, span: 1000 };
   private volumes = new Volumes();
-  muted = readNum(MUTE_KEY, 0) === 1;
+  private ui: UiState | null = null;
   private changeListeners = new Set<() => void>();
+  private sleepTimer: ReturnType<typeof setTimeout> | undefined;
+  muted = readMuted();
 
   /** Create the audio graph. Call from a user gesture. Safe to call repeatedly. */
   unlock(): void {
     if (this.ctx) {
-      if (this.ctx.state === 'suspended') void this.ctx.resume();
+      if (this.ctx.state === 'suspended' && !this.muted) void this.ctx.resume();
       return;
     }
-    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!Ctx) return;
-    const ctx = new Ctx();
-    this.ctx = ctx;
-    this.mixer = new Mixer(ctx);
-    this.applyVolume();
-    const len = ctx.sampleRate * 2;
-    this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
-    const data = this.noise.getChannelData(0);
-    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+    try {
+      const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = new Ctx({ latencyHint: 'balanced' });
+      this.ctx = ctx;
+      this.mixer = new Mixer(ctx);
+      this.bank = new Bank(ctx);
+      this.voices = new Voices(ctx, this.mixer, this.bank);
+      this.ambience = new Ambience(ctx, this.mixer, this.bank);
+      this.applyVolume();
+      void this.prepare(this.bank);
+    } catch {
+      // No sound on this machine, then.
+      this.ctx = null;
+      this.voices = null;
+      this.ambience = null;
+    }
+  }
+
+  /** Render the sounds in the background. Whatever isn't ready simply isn't heard yet. */
+  private async prepare(bank: Bank): Promise<void> {
+    try {
+      await bank.renderEffects();
+      await bank.renderAll(WORLD_SAMPLES);
+    } catch {
+      // Live recipes still work.
+    }
   }
 
   /** The master volume. */
@@ -78,8 +118,13 @@ class Sound {
 
   toggleMute(): void {
     this.muted = !this.muted;
-    write(MUTE_KEY, this.muted ? '1' : '0');
+    writeMuted(this.muted);
     this.applyVolume();
+    // Muted, nothing needs computing at all: let the audio thread rest.
+    clearTimeout(this.sleepTimer);
+    if (!this.ctx) return;
+    if (this.muted) this.sleepTimer = setTimeout(() => void this.ctx?.suspend(), MUTE_SLEEP_MS);
+    else void this.ctx.resume();
   }
 
   onChange(fn: () => void): () => void {
@@ -94,189 +139,82 @@ class Sound {
 
   /** Where the camera is, in world units, and how wide the view is. */
   setListener(x: number, y: number, span: number): void {
-    this.listener = { x, y, span: Math.max(200, span) };
+    this.ear = { x, y, span: Math.max(200, span) };
   }
 
-  /** 0..1 loudness for a sound at a world position. */
-  private reach(x?: number, y?: number): number {
-    if (x === undefined || y === undefined) return 1;
-    const d = Math.hypot(x - this.listener.x, y - this.listener.y);
-    // Zoomed far out, everything is a bit quieter.
-    const zoom = Math.min(1, 900 / this.listener.span);
-    return Math.max(0, 1 - d / (this.listener.span * 0.7)) * (0.35 + 0.65 * zoom);
+  private get running(): boolean {
+    return !!this.voices && !this.muted && this.ctx?.state === 'running';
   }
 
-  private ready(kind: Kind, minGapMs: number): boolean {
-    if (!this.ctx || !this.mixer || this.muted || this.ctx.state !== 'running') return false;
-    const now = performance.now();
-    if (now - (this.last.get(kind) ?? 0) < minGapMs) return false;
-    this.last.set(kind, now);
-    return true;
-  }
-
-  // ---------------------------------------------------------------- building blocks
-
-  /** A burst of filtered noise with a fast attack and exponential decay. */
-  private burst(gain: number, dur: number, type: BiquadFilterType, freq: number, q = 1, sweepTo?: number): void {
-    const ctx = this.ctx!;
-    const t = ctx.currentTime;
-    const src = ctx.createBufferSource();
-    src.buffer = this.noise;
-    src.playbackRate.value = 0.8 + Math.random() * 0.4;
-    const f = ctx.createBiquadFilter();
-    f.type = type;
-    f.frequency.setValueAtTime(freq, t);
-    if (sweepTo) f.frequency.exponentialRampToValueAtTime(sweepTo, t + dur);
-    f.Q.value = q;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(gain, t + 0.005);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    src.connect(f).connect(g).connect(this.mixer!.buses.effects);
-    src.start(t, Math.random() * 1.5, dur + 0.05);
-  }
-
-  /** A short pitched tone. */
-  private tone(gain: number, dur: number, freq: number, type: OscillatorType = 'sine', endFreq?: number, delay = 0): void {
-    const ctx = this.ctx!;
-    const t = ctx.currentTime + delay;
-    const o = ctx.createOscillator();
-    o.type = type;
-    o.frequency.setValueAtTime(freq, t);
-    if (endFreq) o.frequency.exponentialRampToValueAtTime(endFreq, t + dur);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(gain, t + 0.008);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g).connect(this.mixer!.buses.effects);
-    o.start(t);
-    o.stop(t + dur + 0.05);
-  }
-
-  // ---------------------------------------------------------------- effects
-
-  /** One-off sound at a world position (or non-positional if x/y omitted). */
+  /** One-off sound at a world position (or on the screen, if x/y are omitted). */
   play(kind: Kind, x?: number, y?: number): void {
-    const v = this.reach(x, y);
-    if (v <= 0.02) return;
-    const gaps: Partial<Record<Kind, number>> = { stone: 90, wood: 90, leaf: 120, build: 90, soil: 140, craft: 160, steam: 200, rifle: 40, bow: 50, melee: 50, hit: 40, fire: 60, pop: 70 };
-    if (!this.ready(kind, gaps[kind] ?? 30)) return;
-    switch (kind) {
-      case 'stone':
-        // Pick on rock: a bright click over a dull knock.
-        this.burst(0.35 * v, 0.05, 'highpass', 2500);
-        this.burst(0.5 * v, 0.12, 'lowpass', 500);
-        break;
-      case 'wood':
-        this.tone(0.25 * v, 0.09, 220 + Math.random() * 40, 'triangle', 140);
-        this.burst(0.3 * v, 0.07, 'bandpass', 900, 2);
-        break;
-      case 'leaf':
-        this.burst(0.18 * v, 0.18, 'highpass', 3000);
-        break;
-      case 'build':
-        this.tone(0.18 * v, 0.06, 520 + Math.random() * 80, 'square', 300);
-        this.burst(0.2 * v, 0.06, 'bandpass', 1400, 3);
-        break;
-      case 'soil':
-        this.burst(0.2 * v, 0.16, 'lowpass', 700);
-        break;
-      case 'craft':
-        this.burst(0.12 * v, 0.12, 'bandpass', 2200, 4);
-        break;
-      case 'steam':
-        this.burst(0.18 * v, 0.5, 'highpass', 4000);
-        break;
-      case 'tend':
-        break;
-      case 'rifle':
-        this.burst(0.7 * v, 0.03, 'highpass', 1500);
-        this.burst(0.5 * v, 0.35, 'lowpass', 900, 0.7, 120);
-        break;
-      case 'bow':
-        this.tone(0.25 * v, 0.18, 330, 'triangle', 180);
-        this.burst(0.12 * v, 0.12, 'bandpass', 1800, 2, 600);
-        break;
-      case 'melee':
-        this.burst(0.3 * v, 0.16, 'bandpass', 600, 1.5, 2400);
-        break;
-      case 'hit':
-        this.tone(0.3 * v, 0.1, 140, 'sine', 60);
-        this.burst(0.25 * v, 0.06, 'lowpass', 1200);
-        break;
-      case 'fall':
-        // Creak, then the crash.
-        this.tone(0.12 * v, 0.5, 90, 'sawtooth', 60);
-        setTimeout(() => this.ctx && this.burst(0.6 * v, 0.7, 'lowpass', 600, 0.7, 80), 480);
-        break;
-      case 'crumble':
-        this.burst(0.5 * v, 0.6, 'lowpass', 800, 0.7, 100);
-        this.burst(0.25 * v, 0.3, 'bandpass', 1500, 1);
-        break;
-      case 'rock':
-        this.burst(0.5 * v, 0.35, 'lowpass', 600, 0.8, 120);
-        break;
-      case 'fire':
-        this.burst(0.08 * v, 0.03 + Math.random() * 0.03, 'highpass', 2000 + Math.random() * 3000);
-        break;
-      case 'pop':
-        this.tone(0.08 * v, 0.06, 660, 'sine', 990);
-        break;
-      case 'click':
-        this.tone(0.08, 0.04, 880, 'sine', 660);
-        break;
-      case 'good':
-        this.tone(0.14, 0.35, 660, 'sine');
-        this.tone(0.12, 0.45, 990, 'sine', undefined, 0.12);
-        break;
-      case 'bad':
-        this.tone(0.16, 0.5, 220, 'triangle', 180);
-        this.tone(0.12, 0.6, 165, 'triangle', 140, 0.15);
-        break;
-      case 'neutral':
-        this.tone(0.1, 0.3, 520, 'sine');
-        break;
+    if (!this.running) return;
+    if (x === undefined || y === undefined) {
+      this.voices!.play(kind);
+      return;
+    }
+    const v = reach(x, y, this.ear);
+    if (v > INAUDIBLE) this.voices!.play(kind, v, panAt(x, this.ear), muffleAt(x, y, this.ear));
+  }
+
+  /**
+   * Called every frame from the renderer with the tick and the weather. A few times a second it
+   * looks at what's around the camera and steers the ambience. A failure here must never reach
+   * the render loop, so it just turns the world's sound off.
+   */
+  world(tick: number, precip: Precip, wind: number): void {
+    if (!this.running || !this.ambience) return;
+    const now = performance.now();
+    if (now < this.nextSample) return;
+    this.nextSample = now + SAMPLE_MS;
+    const m = store.mirror;
+    if (!m.w) return;
+    try {
+      const scene = sampleScene(m, this.ear.x / CELL, this.ear.y / CELL, this.ear.span / CELL, tick, precip, wind);
+      this.ambience.update(this.ctx!.currentTime, layerTargets(scene), scene);
+    } catch (e) {
+      console.warn('Sound: the world went quiet', e);
+      this.ambience = null;
     }
   }
 
-  /** Continuous wind and rain, eased toward the current weather. 0..1 each. */
-  ambience(wind: number, rain: number): void {
-    if (!this.ctx || !this.mixer || !this.noise) return;
-    const ctx = this.ctx;
-    const t = ctx.currentTime;
-    if (!this.wind) {
-      const src = ctx.createBufferSource();
-      src.buffer = this.noise;
-      src.loop = true;
-      const filter = ctx.createBiquadFilter();
-      filter.type = 'lowpass';
-      filter.frequency.value = 400;
-      const gain = ctx.createGain();
-      gain.gain.value = 0;
-      src.connect(filter).connect(gain).connect(this.mixer.buses.ambience);
-      src.start();
-      this.wind = { src, gain, filter };
+  /** The page was hidden or shown: don't keep the world playing to nobody. Letters still chime. */
+  private hidden(on: boolean): void {
+    clearTimeout(this.hiddenTimer);
+    if (!on || !this.ctx || !this.ambience) return;
+    const { ctx, ambience } = this;
+    ambience.update(ctx.currentTime, quietLayers(), { waterPan: 0, firePan: 0 });
+    this.hiddenTimer = setTimeout(() => ambience.stop(ctx.currentTime), HIDDEN_STOP_MS);
+  }
+
+  /** A letter came in. Answers to our own commands have their own sound, by way of the toast they raise. */
+  letter(msg: GameMessage): void {
+    if (msg.reply) {
+      if (msg.tone === 'good') this.play('good');
+      return;
     }
-    if (!this.rain) {
-      const src = ctx.createBufferSource();
-      src.buffer = this.noise;
-      src.loop = true;
-      src.playbackRate.value = 1.3;
-      const filter = ctx.createBiquadFilter();
-      filter.type = 'highpass';
-      filter.frequency.value = 1800;
-      const gain = ctx.createGain();
-      gain.gain.value = 0;
-      src.connect(filter).connect(gain).connect(this.mixer.buses.ambience);
-      src.start();
-      this.rain = { src, gain };
-    }
-    // Gusts: the wind's level and pitch wander slowly.
-    const gust = 0.75 + 0.25 * Math.sin(t * 0.7) * Math.sin(t * 0.23 + 1);
-    this.wind.gain.gain.setTargetAtTime(0.18 * wind * gust, t, 0.8);
-    this.wind.filter.frequency.setTargetAtTime(250 + 500 * wind * gust, t, 0.8);
-    this.rain.gain.gain.setTargetAtTime(0.12 * rain, t, 0.8);
+    this.play(msg.tone === 'good' ? 'letterGood' : msg.tone === 'bad' ? 'letterBad' : 'letter');
+  }
+
+  /** The player gave an order. */
+  command(c: Command['c']): void {
+    const kind = commandSound(c);
+    if (kind) this.play(kind);
+  }
+
+  /** Wire up the interface: every control in the page, and the store for panels and refusals. */
+  listen(): void {
+    listenForPresses((kind) => this.play(kind));
+    document.addEventListener('visibilitychange', () => this.hidden(document.hidden));
+    store.subscribe(() => {
+      const newest = store.toasts[store.toasts.length - 1];
+      const is: UiState = { panel: store.panel, menu: store.menu, help: store.help, selected: store.selected, toast: Math.max(newest?.id ?? 0, this.ui?.toast ?? 0), toastBad: newest?.tone === 'bad' };
+      if (this.ui) for (const kind of uiChange(this.ui, is)) this.play(kind);
+      this.ui = is;
+    });
   }
 }
 
 export const sound = new Sound();
+
+if (typeof document !== 'undefined') sound.listen();

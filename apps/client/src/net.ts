@@ -133,14 +133,14 @@ function handle(msg: ServerMsg): void {
       // A chime for letters that matter to us.
       for (const m of msg.d.msgs) {
         if (m.faction !== 0 && m.faction !== store.me?.faction) continue;
-        if (m.tone !== 'neutral') sound.play(m.tone);
+        sound.letter(m);
         // Answers to our own commands (refusals, results) pop up where they can't be missed.
         if (m.reply && m.faction) {
           const w = store.mirror.w;
           store.toast(m.text, m.tone, m.at !== undefined && w ? { x: m.at % w, y: Math.floor(m.at / w) } : undefined);
         }
       }
-      if (msg.d.choices?.some((c) => c.faction === store.me?.faction && !store.mirror.choices.some((o) => o.id === c.id))) sound.play('neutral');
+      if (msg.d.choices?.some((c) => c.faction === store.me?.faction && !store.mirror.choices.some((o) => o.id === c.id))) sound.play('letter');
       store.mirror.applyDelta(msg.d);
       store.setServerTick(msg.d.tick);
       store.time = msg.time;
@@ -172,6 +172,7 @@ export function send(msg: ClientMsg): void {
 }
 
 export function command(cmd: Command): void {
+  sound.command(cmd.c);
   send({ t: 'cmd', cmd });
 }
 
