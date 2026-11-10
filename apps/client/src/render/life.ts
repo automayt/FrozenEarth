@@ -128,6 +128,41 @@ export class Life {
     this.updateLeaves(dt, now, o, near && !frozen && cal.season === 'Fall' && o.dark < 0.6);
   }
 
+  /** Something crashed down: a few birds burst up from around it. */
+  startle(x: number, y: number): void {
+    if (this.flock) return;
+    const speed = 95 + Math.random() * 40;
+    const angle = Math.random() * Math.PI * 2;
+    this.launch(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed, speed, 3 + Math.floor(Math.random() * 3));
+  }
+
+  private launch(x: number, y: number, vx: number, vy: number, speed: number, n: number): void {
+    const birds: Bird[] = [];
+    const t = tex();
+    for (let k = 0; k < n; k++) {
+      // A loose V behind the leader.
+      const side = k === 0 ? 0 : k % 2 ? 1 : -1;
+      const rank = Math.ceil(k / 2);
+      const back = -rank * 16;
+      const across = side * rank * 13 + (Math.random() - 0.5) * 6;
+      const ux = vx / speed;
+      const uy = vy / speed;
+      const body = new Sprite(t.bird);
+      body.anchor.set(0.5);
+      body.tint = 0x2a2a30;
+      body.scale.set(0.62 + Math.random() * 0.12);
+      const shadow = new Sprite(t.bird);
+      shadow.anchor.set(0.5);
+      shadow.tint = 0x000000;
+      shadow.alpha = 0.16;
+      shadow.scale.set(body.scale.x * 1.05);
+      this.air.addChild(body);
+      this.shadows.addChild(shadow);
+      birds.push({ body, shadow, phase: Math.random() * 6.28, dx: ux * back - uy * across, dy: uy * back + ux * across });
+    }
+    this.flock = { birds, x, y, vx, vy };
+  }
+
   private updateFlock(dt: number, now: number, o: LifeInput, allowed: boolean): void {
     const f = this.flock;
     if (!f) {
@@ -141,31 +176,7 @@ export class Life {
       const vy = Math.sin(angle) * speed;
       const x = fromLeft ? o.x0 - 60 : o.x1 + 60;
       const y = o.y0 + (o.y1 - o.y0) * (0.2 + Math.random() * 0.6);
-      const n = 3 + Math.floor(Math.random() * 5);
-      const birds: Bird[] = [];
-      const t = tex();
-      for (let k = 0; k < n; k++) {
-        // A loose V behind the leader.
-        const side = k === 0 ? 0 : k % 2 ? 1 : -1;
-        const rank = Math.ceil(k / 2);
-        const back = -rank * 16;
-        const across = side * rank * 13 + (Math.random() - 0.5) * 6;
-        const ux = vx / speed;
-        const uy = vy / speed;
-        const body = new Sprite(t.bird);
-        body.anchor.set(0.5);
-        body.tint = 0x2a2a30;
-        body.scale.set(0.62 + Math.random() * 0.12);
-        const shadow = new Sprite(t.bird);
-        shadow.anchor.set(0.5);
-        shadow.tint = 0x000000;
-        shadow.alpha = 0.16;
-        shadow.scale.set(body.scale.x * 1.05);
-        this.air.addChild(body);
-        this.shadows.addChild(shadow);
-        birds.push({ body, shadow, phase: Math.random() * 6.28, dx: ux * back - uy * across, dy: uy * back + ux * across });
-      }
-      this.flock = { birds, x, y, vx, vy };
+      this.launch(x, y, vx, vy, speed, 3 + Math.floor(Math.random() * 5));
       return;
     }
     f.x += f.vx * dt;

@@ -17,6 +17,8 @@ export interface Settings {
   shadows: boolean;
   /** Birds, fireflies and falling leaves. */
   wildlife: boolean;
+  /** Footprints, breath in the cold, campfire smoke. */
+  details: boolean;
   screenShake: boolean;
   reducedMotion: boolean;
   /** Pan when the mouse rests against the edge of the screen. */
@@ -27,12 +29,12 @@ export interface Settings {
 }
 
 export type Quality = 'low' | 'medium' | 'high';
-export type GraphicsKey = 'plantSway' | 'weather' | 'shadows' | 'wildlife';
+export type GraphicsKey = 'plantSway' | 'weather' | 'shadows' | 'wildlife' | 'details';
 
 export const QUALITY: Record<Quality, Pick<Settings, GraphicsKey>> = {
-  low: { plantSway: false, weather: 'light', shadows: false, wildlife: false },
-  medium: { plantSway: true, weather: 'light', shadows: true, wildlife: false },
-  high: { plantSway: true, weather: 'full', shadows: true, wildlife: true },
+  low: { plantSway: false, weather: 'light', shadows: false, wildlife: false, details: false },
+  medium: { plantSway: true, weather: 'light', shadows: true, wildlife: false, details: true },
+  high: { plantSway: true, weather: 'full', shadows: true, wildlife: true, details: true },
 };
 
 export const UI_SCALE_MIN = 0.8;
@@ -62,7 +64,7 @@ export function sanitize(raw: unknown, base: Settings = defaults()): Settings {
   const r = raw as Record<string, unknown>;
   const scale = r.uiScale;
   if (typeof scale === 'number' && Number.isFinite(scale)) out.uiScale = Math.max(UI_SCALE_MIN, Math.min(UI_SCALE_MAX, Math.round(scale * 20) / 20));
-  for (const k of ['plantSway', 'shadows', 'wildlife', 'screenShake', 'reducedMotion', 'edgeScroll', 'bigMoments', 'fullscreen'] as const) {
+  for (const k of ['plantSway', 'shadows', 'wildlife', 'details', 'screenShake', 'reducedMotion', 'edgeScroll', 'bigMoments', 'fullscreen'] as const) {
     const v = r[k];
     if (typeof v === 'boolean') out[k] = v;
   }
@@ -91,7 +93,7 @@ function save(s: Settings): void {
 export function qualityOf(s: Settings): Quality | null {
   for (const q of ['low', 'medium', 'high'] as const) {
     const p = QUALITY[q];
-    if (p.plantSway === s.plantSway && p.weather === s.weather && p.shadows === s.shadows && p.wildlife === s.wildlife) return q;
+    if (p.plantSway === s.plantSway && p.weather === s.weather && p.shadows === s.shadows && p.wildlife === s.wildlife && p.details === s.details) return q;
   }
   return null;
 }

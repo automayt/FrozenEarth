@@ -1,4 +1,4 @@
-import { Assets, Graphics, Texture, type Renderer } from 'pixi.js';
+import { Assets, Graphics, Rectangle, Texture, type Renderer } from 'pixi.js';
 import { ANIMALS, BUILDINGS, ITEMS, PLANTS } from '@fe/defs';
 
 /** Texture resolution in pixels for procedurally drawn sprites. */
@@ -152,6 +152,20 @@ export class TextureBank {
         for (const [x, y, r] of [[24, 36, 9], [38, 34, 9], [31, 24, 9], [30, 42, 7], [42, 44, 6]]) g.circle(x, y, r).fill(shade(c, 0.9 + (x % 3) * 0.08)).stroke({ width: 1.5, color: shade(c, 0.5) });
       }
     });
+  }
+
+  /** The bottom `step` / `steps` of a building's art, for one going up. */
+  riseFrame(def: string, step: number, steps: number): Texture {
+    const key = `rise_${def}_${step}`;
+    let t = this.cache.get(key);
+    if (!t) {
+      const whole = this.building(def);
+      const f = whole.frame;
+      const h = Math.max(1, Math.round((f.height * step) / steps));
+      t = new Texture({ source: whole.source, frame: new Rectangle(f.x, f.y + f.height - h, f.width, h) });
+      this.cache.set(key, t);
+    }
+    return t;
   }
 
   building(def: string): Texture {

@@ -6,7 +6,7 @@ import { rollCells } from '../src/ui/Roll';
 import { tabTitle } from '../src/ui/TabTitle';
 import { splitHotkey } from '../src/ui/Tooltip';
 
-const base: Settings = { uiScale: 1, ...QUALITY.high, screenShake: true, reducedMotion: false, edgeScroll: true, bigMoments: true, fullscreen: false };
+const base: Settings = { uiScale: 1, ...QUALITY.high, screenShake: true, reducedMotion: false, details: true, edgeScroll: true, bigMoments: true, fullscreen: false };
 
 describe('settings', () => {
   it('survives anything found in storage', () => {

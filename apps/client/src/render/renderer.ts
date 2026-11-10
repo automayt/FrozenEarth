@@ -1,7 +1,7 @@
 import { Application, BitmapText, Container, Graphics, GraphicsContext, Sprite, TextStyle } from 'pixi.js';
 import { ANIMALS, BUILDINGS, LANDMARKS, maxHp, PLANTS, ROCKS, TERRAINS, WEAPON_KEYS, weaponOf, type LandmarkKind, type TerrainDef } from '@fe/defs';
 import { PawnGlide, pawnPosition } from '@fe/protocol';
-import { DESIG, FROST_BAND, MIN_COLONY_GAP, pactOf, SHOT_FIELDS, calendar, dispositionOf, GUARD_REACH, hostile, NOISE, SETTLEMENT_WATCH, stealthMult, frostLevel, frostRadius, hash2, outdoorTempAt, weaponFor, type Construct, type Entity, type Pawn, type World, constructCost, type Building } from '@fe/sim';
+import { DESIG, FROST_BAND, MIN_COLONY_GAP, pactOf, SHOT_FIELDS, calendar, dispositionOf, GUARD_REACH, hostile, NOISE, SETTLEMENT_WATCH, stealthMult, frostLevel, frostRadius, hash2, outdoorTempAt, weaponFor, type Construct, type Entity, type Pawn, type World, constructCost, constructWork, type Building } from '@fe/sim';
 import { ease, Particles, Tweens, Weather, type Precip } from './fx';
 import { sound } from '../audio';
 import { fog } from './fog';
@@ -22,6 +22,8 @@ import { Juice } from './juice';
 import { cameraRequests, DragTracker, edgeResist, edgeSpring, flightPose, followStep, keepOnMap, mayTakeCamera, MOMENT_HOLD_MS, MOMENT_SKIP_MS, PanBody, panRange, panSpeedFor, planFlight, Shake, shakeFalloff, type Flight } from './camera';
 import { cameraSettings } from './cameraSettings';
 import { MARK_TINT, WorldUi } from './worldui';
+import { BREATH_BELOW, breathGap, FELL_MS, fellAngle, fellPose, footingOf, gentleSwing, GENTLE_STRIKE, GENTLE_SWING_MS, grazeDip, heavySwing, HEAVY_STRIKE, HEAVY_SWING_MS, passed, REBOUND_MS, RISE_STEPS, riseStep, SETTLE_MS, siteStage } from './motion';
+import { Tracks } from './tracks';
 
 /** World units per cell. */
 export const TILE = 32;
@@ -71,6 +73,13 @@ const MUZZLE_MS = 70;
 const HEAVY_HIT = 0.17;
 /** Nearest threats each colonist's cover is shown against. */
 const COVER_THREATS = 3;
+/** How long a stump stays, and the most kept at once. */
+const STUMP_MS = 90000;
+const MAX_STUMPS = 60;
+/** World length of the trunk shape, stretched to the fall. */
+const TRUNK_LEN = 32;
+/** Where the goods for a building site pile up, in the order they arrive. */
+const PILE_AT: [number, number][] = [[9, 9], [-9, 10], [9, -7]];
 
 interface EntityView {
   root: Container;
@@ -100,6 +109,26 @@ interface EntityView {
   label?: BitmapText;
   /** The cell a pawn is standing and working at this frame. */
   workCell?: number | null;
+  /** How far through a swing a working pawn was last frame (0..1), to catch the moment the tool lands. */
+  swing?: number;
+  /** Which foot comes down next. */
+  foot?: boolean;
+  nextBreath?: number;
+  nextGlance?: number;
+  /** A shove on the rig: a lunge, a recoil, a blow taken. */
+  kick?: { x: number; y: number; at: number; ms: number };
+  /** Lying down, asleep or hurt. The view is rebuilt when this changes, so the fall is played then. */
+  lying?: boolean;
+  /** A building site: what's up so far, the plank that climbs with it, and how far up it's drawn and heading. */
+  rise?: Sprite;
+  plank?: Container;
+  riseShown?: number;
+  riseGoal?: number;
+  /** A door's leaf and its resting scale, how far open it is (0..1), and until when something holds it. */
+  leaf?: Sprite;
+  leafScale?: number;
+  open?: number;
+  openUntil?: number;
 }
 
 /** What a working pawn is working on, and what that throws up. */
@@ -133,6 +162,8 @@ export class GameRenderer {
     fog: new Container(),
     /** Frost over the frozen zone: whitens ground, buildings and trees alike. */
     frost: new Container(),
+    /** Footprints and ripples: over the frost they're pressed into, under the night. */
+    tracks: new Container(),
     /** Night shade with pools of light; pawns and markers sit above it. */
     night: new Container(),
     pawns: new Container(),
@@ -145,6 +176,7 @@ export class GameRenderer {
   private lastShotDrain = 0;
   private orderMark: { x: number; y: number; attack: boolean; born: number } | null = null;
   private particles = new Particles();
+  private tracks = new Tracks();
   /** Barks over colonists and gains floating up from felled trees and mined rock. */
   private juice = new Juice();
   private tweens = new Tweens();
@@ -197,6 +229,21 @@ export class GameRenderer {
   private springs = new Set<number>();
   private landmarkSig = '';
   private nextSteam = 0;
+  /** Lit campfires on view, and the next wisp of smoke. */
+  private hearths = new Set<number>();
+  private nextHearth = 0;
+  /** Doors, and building sites whose building has started going up. */
+  private doors = new Map<number, EntityView>();
+  private sites = new Map<number, EntityView>();
+  /** Cells whose site just finished, so what replaces it settles in rather than pops. */
+  private raised = new Set<number>();
+  /** Where the last axe blow on each tree came from, by the tree's cell: it falls the other way. */
+  private cutters = new Map<number, { x: number; y: number }>();
+  /** Oldest first. */
+  private stumps: { root: Container; until: number }[] = [];
+  /** Outdoor temperature and the frost line, this frame. */
+  private airTemp = 20;
+  private frostNow = 2;
   /** Shared geometry for the small shapes on entity views (see shape()). */
   private shapes = new Map<string, GraphicsContext>();
   private pawnIds = new Set<number>();
@@ -240,6 +287,7 @@ export class GameRenderer {
     this.layers.pawns.sortableChildren = true;
     this.layers.ui.addChild(this.settlementGfx, this.marks.view, this.ui);
     this.layers.fx.addChild(this.fireGfx, this.particles.view, this.shotGfx);
+    this.layers.tracks.addChild(this.tracks.view);
     this.layers.frost.addChild(this.frostRing);
     this.lighting = new Lighting(this.layers, this.layers.night, this.night);
     this.shadows = new Shadows(this.app.renderer, this.tex);
@@ -650,6 +698,8 @@ export class GameRenderer {
     if (!this.built && m.entities.size) this.built = true;
 
     const tick = store.estTick();
+    this.airTemp = outdoorTempAt(tick, m.coldOffset, m.conditions);
+    this.frostNow = frostRadius(tick, m.frost);
     if (fog.update(now)) this.drawFog();
     const me = store.me?.faction;
     {
@@ -672,6 +722,13 @@ export class GameRenderer {
       v.root.visible = e.faction === me || !fog.hidden(Math.round(pos.y) * m.w + Math.round(pos.x));
       this.animatePawn(e, v, now);
       this.worldUi.pawn(e, v.root.x, v.root.y, v.root.visible, id === store.selected, v.workCell ?? null);
+      if (this.doors.size && v.root.visible) {
+        this.holdDoor(Math.round(pos.y) * m.w + Math.round(pos.x), now);
+        if (e.path) {
+          this.holdDoor(e.path.cells[e.path.idx], now);
+          this.holdDoor(e.path.cells[e.path.idx + 1], now);
+        }
+      }
     }
     if (now >= this.nextSteam && this.springs.size) {
       // Warm water breathing out into the cold.
@@ -682,6 +739,15 @@ export class GameRenderer {
         this.particles.burst(v.root.x + (Math.random() - 0.5) * TILE, v.root.y + (Math.random() - 0.5) * TILE * 0.6, { count: 1, color: 0xeef6f8, speed: 4, size: 5, grow: 12, life: 2200, lift: 16, alpha: 0.32 });
       }
     }
+    if (settings.details && now >= this.nextHearth && this.hearths.size) {
+      this.nextHearth = now + 340;
+      this.hearthSmoke();
+    }
+    this.swingDoors(now, dt);
+    this.raiseSites(dt);
+    this.clearStumps(now);
+    this.tracks.view.visible = settings.details;
+    this.tracks.update(dt);
     this.cullChunks();
     this.drawFrost(tick);
     // Too small to see when zoomed out, and it touches every visible plant.
@@ -716,6 +782,11 @@ export class GameRenderer {
     let lean = 0;
     let sx = 1;
     let sy = 1;
+    let kx = 0;
+    let ky = 0;
+    let busy = false;
+    const swung = v.swing;
+    v.swing = undefined;
     if (e.asleep || e.downed) {
       // Slow breathing; a "z" now and then for sleepers.
       const b = Math.sin(now / 700 + e.id) * 0.04;
@@ -728,10 +799,13 @@ export class GameRenderer {
       }
     } else if (moved > 0.02) {
       // About one step per cell (half a cycle): faster and the walk frames flicker past.
-      v.phase = ((v.phase ?? 0) + (moved / TILE) * Math.PI * 1.2) % (Math.PI * 2);
-      bob = -Math.abs(Math.sin(v.phase)) * 3.2;
+      const stride = v.phase ?? 0;
+      v.phase = (stride + (moved / TILE) * Math.PI * 1.2) % (Math.PI * 2);
+      bob = -Math.abs(Math.sin(v.phase)) * (e.species === 'hare' ? 7 : 3.2);
       lean = Math.sin(v.phase) * 0.06;
       this.setWalkFrame(v, v.phase);
+      if (Math.floor(stride / Math.PI) !== Math.floor(v.phase / Math.PI)) this.footfall(e, v, dx, dy);
+      busy = true;
     } else {
       this.setWalkFrame(v, -1);
       const work = this.workTarget(e);
@@ -742,23 +816,229 @@ export class GameRenderer {
         const ty = Math.floor(work.cell / store.mirror.w) + 0.5;
         if (Math.abs(tx * TILE - x) > 2) v.facing = tx * TILE > x ? 1 : -1;
         const gentle = work.fx === 'soil' || work.fx === 'tend' || work.fx === 'craft';
-        const swing = Math.sin((now / 1000) * (gentle ? 7 : 11) + e.id);
+        const p = ((now + e.id * 137) / (gentle ? GENTLE_SWING_MS : HEAVY_SWING_MS)) % 1;
+        const swing = gentle ? gentleSwing(p) : heavySwing(p);
+        const down = Math.max(0, swing);
         lean = swing * (work.fx === 'tend' || work.fx === 'craft' ? 0.08 : 0.22);
-        bob = -Math.max(0, swing) * 1.5;
-        if (now >= (v.nextFx ?? 0)) {
-          this.workParticles(work.fx, tx * TILE, ty * TILE);
-          v.nextFx = now + 280 + Math.random() * 200;
+        bob = -down * 1.5;
+        if (!gentle) {
+          // The whole body goes into a heavy blow.
+          const wx = tx * TILE - x;
+          const wy = ty * TILE - y;
+          const d = Math.hypot(wx, wy) || 1;
+          kx = (wx / d) * down * 2.5;
+          ky = (wy / d) * down * 2.5;
+          sx = 1 + down * 0.05;
+          sy = 1 - down * 0.05;
         }
+        // Chips fly, and the sound comes, as the tool lands.
+        if (swung !== undefined && passed(swung, p, gentle ? GENTLE_STRIKE : HEAVY_STRIKE)) this.strike(work, tx * TILE, ty * TILE, x, y);
+        v.swing = p;
+        busy = true;
+      } else if (v.animal) {
+        const dip = grazeDip(now / 1000, e.id);
+        lean = dip * 0.16;
+        bob = dip * 1.2;
       } else {
-        // Idle: a slight sway.
+        // Idle: a slight sway, and now and then a look the other way.
         lean = Math.sin(now / 900 + e.id) * 0.02;
+        if (!e.drafted && now >= (v.nextGlance ?? 0)) {
+          if (v.nextGlance !== undefined && Math.random() < 0.5) v.facing = -(v.facing ?? 1);
+          v.nextGlance = now + 3000 + Math.random() * 6000;
+        }
+      }
+    }
+    const kick = v.kick;
+    if (kick) {
+      const k = (now - kick.at) / kick.ms;
+      if (k >= 1) v.kick = undefined;
+      else if (k > 0) {
+        kx += kick.x * Math.sin(k * Math.PI);
+        ky += kick.y * Math.sin(k * Math.PI);
       }
     }
     const facing = v.facing ?? 1;
-    rig.position.y = bob;
+    rig.position.set(kx, bob + ky);
     rig.rotation = lean * facing;
     rig.scale.set(facing * sx, sy);
     if (v.body) v.body.tint = (v.flashUntil ?? 0) > now ? 0xff7060 : (v.baseTint ?? 0xffffff);
+    if (now >= (v.nextBreath ?? 0)) {
+      v.nextBreath = now + breathGap(busy, !!e.asleep, Math.random());
+      this.breathe(e, v, x, y);
+    }
+  }
+
+  /** Air you can see, on a cold day. */
+  private breathe(e: Pawn, v: EntityView, x: number, y: number): void {
+    if (!settings.details || !v.root.visible || this.world.scale.x < 0.55 || !this.onView(x / TILE - 0.5, y / TILE - 0.5, 1.1) || !this.coldAt(x, y)) return;
+    const facing = v.facing ?? 1;
+    const size = e.species ? (ANIMALS[e.species]?.size ?? 1) : 1;
+    const out = v.lying ? 0.34 : e.species ? 0.42 * size : 0.3;
+    const up = v.lying ? 0.02 : e.species ? 0.18 * size : 0.24;
+    this.particles.burst(x + facing * TILE * out, y - TILE * up, { count: 2, color: 0xeaf2fa, speed: 13, size: 1.3 * Math.sqrt(size), grow: 5, life: 1050, lift: 4, drag: 1.2, alpha: 0.2, angle: facing > 0 ? 0 : Math.PI, spread: 0.7 });
+  }
+
+  private coldAt(x: number, y: number): boolean {
+    const m = store.mirror;
+    const cx = Math.floor(x / TILE);
+    const cy = Math.floor(y / TILE);
+    const room = m.rooms.get(m.roomAt[cy * m.w + cx]);
+    if (room) return room.temp < BREATH_BELOW;
+    return this.airTemp < BREATH_BELOW || frostLevel(cx, cy, m.w, m.h, this.frostNow) > 0.3;
+  }
+
+  /** A foot comes down: a print if the ground takes one, a ring on shallow water. */
+  private footfall(e: Pawn, v: EntityView, dx: number, dy: number): void {
+    const m = store.mirror;
+    const x = v.root.x;
+    const y = v.root.y + TILE * 0.3;
+    if (!settings.details || !v.root.visible || this.world.scale.x < 0.35 || !this.onView(x / TILE - 0.5, y / TILE - 0.5, 1.1)) return;
+    const cx = Math.floor(x / TILE);
+    const cy = Math.floor(v.root.y / TILE);
+    if (!m.inBounds(cx, cy)) return;
+    const c = cy * m.w + cx;
+    const wet = this.precip === 'rain' || this.precip === 'storm';
+    const footing = footingOf(TERRAINS[m.terrain[c]].key, frostLevel(cx, cy, m.w, m.h, this.frostNow), m.roomAt[c] !== 0, wet);
+    if (!footing) return;
+    const size = e.species ? Math.max(0.55, Math.min(1.1, (ANIMALS[e.species]?.size ?? 1) * 0.8)) : 1;
+    if (footing === 'water') {
+      this.tracks.ripple(x, y, size);
+      this.particles.burst(x, y, { count: 3, color: 0xdcecf4, speed: 22, size: 1, life: 300, gravity: 110, lift: 12, alpha: 0.7 });
+      return;
+    }
+    const angle = Math.atan2(dy, dx);
+    v.foot = !v.foot;
+    const side = (v.foot ? 3.2 : -3.2) * size;
+    this.tracks.print(x - Math.sin(angle) * side, y + Math.cos(angle) * side, angle, footing, size);
+    if (footing === 'snow') this.particles.burst(x, y, { count: 2, color: 0xf2f7ff, speed: 16, size: 1.2, life: 320, gravity: 70, alpha: 0.7 });
+  }
+
+  /** The tool lands: chips, the sound, and whatever it hit gives a little. */
+  private strike(work: { cell: number; fx: WorkFx; id?: number }, tx: number, ty: number, x: number, y: number): void {
+    this.workParticles(work.fx, tx, ty);
+    if (work.fx === 'wood') {
+      this.cutters.set(work.cell, { x, y });
+      if (this.cutters.size > 64) this.cutters.delete(this.cutters.keys().next().value!);
+    }
+    const t = work.id ? this.views.get(work.id) : undefined;
+    if (!t || settings.reducedMotion || !t.root.parent?.visible) return;
+    if (work.fx === 'build') {
+      this.tweens.add(150, (k) => t.root.scale.set(1 + 0.05 * (1 - k)), undefined, t.root);
+      return;
+    }
+    const s = t.root.children[0];
+    if (!s || (work.fx !== 'wood' && work.fx !== 'leaf')) return;
+    const d = Math.hypot(tx - x, ty - y) || 1;
+    const ux = (tx - x) / d;
+    const uy = (ty - y) / d;
+    const power = work.fx === 'wood' ? 2.6 : 1.5;
+    this.tweens.add(220, (k) => {
+      const a = power * (1 - k) * Math.sin(k * Math.PI * 5);
+      s.position.set(ux * a, uy * a);
+    }, undefined, s);
+  }
+
+  /** Someone at this cell or stepping into it: if it's a door, it stands open a moment. */
+  private holdDoor(cell: number | undefined, now: number): void {
+    if (cell === undefined) return;
+    const v = this.doors.get(store.mirror.buildingAt[cell]);
+    if (v) v.openUntil = now + 300;
+  }
+
+  /** Doors swing on their hinge at the left: open fast, close a little slower. */
+  private swingDoors(now: number, dt: number): void {
+    for (const v of this.doors.values()) {
+      const goal = (v.openUntil ?? 0) > now ? 1 : 0;
+      const was = v.open ?? 0;
+      if (was === goal) continue;
+      let o = was + (goal - was) * (1 - Math.exp(-dt / (goal ? 55 : 120)));
+      if (Math.abs(goal - o) < 0.01) o = goal;
+      v.open = o;
+      const f = 1 - 0.8 * o;
+      v.leaf!.scale.x = v.leafScale! * f;
+      v.leaf!.x = (-TILE / 2) * (1 - f);
+    }
+  }
+
+  /** Buildings climb toward what the builders have done, however far apart the updates come. */
+  private raiseSites(dt: number): void {
+    for (const v of this.sites.values()) {
+      const goal = v.riseGoal!;
+      const was = v.riseShown!;
+      if (was === goal) continue;
+      let s = was + (goal - was) * (1 - Math.exp(-dt / 140));
+      if (Math.abs(goal - s) < 0.002) s = goal;
+      v.riseShown = s;
+      this.setRise(v, s);
+    }
+  }
+
+  private setRise(v: EntityView, share: number): void {
+    const step = riseStep(share);
+    const rise = v.rise!;
+    rise.visible = share > 0.005;
+    rise.texture = this.tex.riseFrame(v.def, step, RISE_STEPS);
+    rise.width = TILE;
+    rise.height = (TILE * step) / RISE_STEPS;
+    if (v.plank) v.plank.y = TILE / 2 - rise.height;
+  }
+
+  private hearthSmoke(): void {
+    for (const id of this.hearths) {
+      const v = this.views.get(id);
+      if (!v || !v.root.parent?.visible) continue;
+      const { x, y } = v.root;
+      this.particles.burst(x + (Math.random() - 0.5) * 6, y - 8, { count: 1, color: [0x8a8680, 0xa8a49c], speed: 5, size: 2.6, grow: 8, life: 2600, lift: 20, alpha: 0.2, drag: 0.3 });
+      if (Math.random() < 0.25) this.particles.burst(x, y - 4, { count: 1, color: [0xffb040, 0xff7020], speed: 14, size: 1, life: 900, lift: 36, drag: 1 });
+    }
+  }
+
+  /** The way a hit looks on the bodies involved: the striker goes in or kicks back, the struck gives. */
+  private shove(s: ShotFx, now: number): void {
+    const a = this.views.get(s.shooter);
+    const b = this.views.get(s.target);
+    if (!a || !b || a === b || settings.reducedMotion) return;
+    const dx = b.root.x - a.root.x;
+    const dy = b.root.y - a.root.y;
+    const d = Math.hypot(dx, dy) || 1;
+    const ux = dx / d;
+    const uy = dy / d;
+    const melee = weaponOf(s.weapon).melee;
+    a.kick = melee ? { x: ux * 8, y: uy * 8, at: now, ms: 190 } : { x: -ux * 2.6, y: -uy * 2.6, at: now, ms: 130 };
+    if (s.hit) b.kick = { x: ux * 4, y: uy * 4, at: now + (melee ? 60 : SHOT_FLY_MS), ms: 170 };
+  }
+
+  /** A body going down, or getting up. Its view was just rebuilt lying (or standing), so this plays the way there. */
+  private topple(v: EntityView, hurt: boolean): void {
+    const body = v.body!;
+    if (!v.lying) {
+      this.tweens.add(300, (k) => (body.rotation = (Math.PI / 2) * (1 - ease.outQuad(k))), undefined, body);
+      return;
+    }
+    const rest = body.rotation;
+    this.tweens.add(
+      hurt ? 240 : 360,
+      (k) => (body.rotation = rest * (hurt ? ease.inQuad(k) : ease.outQuad(k))),
+      () => {
+        if (hurt) this.particles.burst(v.root.x, v.root.y + TILE * 0.25, { count: 5, color: 0xb8b0a0, speed: 24, size: 2.4, grow: 5, life: 460, lift: 6, alpha: 0.4 });
+      },
+      body,
+    );
+  }
+
+  /** A pawn's view is rebuilt whenever it picks something up or lies down: it mustn't lose its stride or its bearings. */
+  private carryOver(old: EntityView, v: EntityView): void {
+    v.facing = old.facing;
+    v.phase = old.phase;
+    v.lastX = old.lastX;
+    v.lastY = old.lastY;
+    v.swing = old.swing;
+    v.foot = old.foot;
+    v.kick = old.kick;
+    v.flashUntil = old.flashUntil;
+    v.nextBreath = old.nextBreath;
+    v.nextGlance = old.nextGlance;
+    v.nextZ = old.nextZ;
   }
 
   /** Swap the body texture for walk-cycle frames, if the art exists. phase < 0 = standing. */
@@ -770,7 +1050,7 @@ export class GameRenderer {
   }
 
   /** The cell a pawn is working on right now, if it's standing next to it. */
-  private workTarget(e: Pawn): { cell: number; fx: WorkFx } | null {
+  private workTarget(e: Pawn): { cell: number; fx: WorkFx; id?: number } | null {
     const j = e.job;
     if (!j || e.path) return null;
     const m = store.mirror;
@@ -780,6 +1060,7 @@ export class GameRenderer {
     };
     let cell = -1;
     let fx: WorkFx = 'build';
+    let id: number | undefined;
     switch (j.type) {
       case 'mine':
         cell = j.cell;
@@ -787,12 +1068,14 @@ export class GameRenderer {
         break;
       case 'cut': {
         cell = cellOf(j.target);
+        id = j.target;
         const t = m.entities.get(j.target);
         fx = t && t.kind === 'plant' && PLANTS[t.def]?.tree ? 'wood' : 'leaf';
         break;
       }
       case 'build':
         cell = cellOf(j.target);
+        id = j.target;
         break;
       case 'sow':
         cell = j.cell;
@@ -817,12 +1100,13 @@ export class GameRenderer {
     if (cell < 0) return null;
     const px = cell % m.w;
     const py = Math.floor(cell / m.w);
-    return Math.max(Math.abs(px - e.x), Math.abs(py - e.y)) <= 1 ? { cell, fx } : null;
+    return Math.max(Math.abs(px - e.x), Math.abs(py - e.y)) <= 1 ? { cell, fx, id } : null;
   }
 
   private workParticles(fx: WorkFx, x: number, y: number): void {
     const p = this.particles;
     sound.play(fx, x, y);
+    if (!this.onView(x / TILE - 0.5, y / TILE - 0.5, 1.2)) return;
     switch (fx) {
       case 'stone':
         p.burst(x, y, { count: 4, color: [0x8a8580, 0xa8a49c], speed: 60, size: 1.6, life: 450, gravity: 120, chips: true });
@@ -1044,9 +1328,13 @@ export class GameRenderer {
     this.views.delete(id);
     this.pawnIds.delete(id);
     this.springs.delete(id);
+    this.hearths.delete(id);
+    this.doors.delete(id);
+    this.sites.delete(id);
     this.pawnGlide.forget(id);
     if (leaving) this.felled.delete(id);
     const root = v.root;
+    if (leaving && v.riseGoal !== undefined) this.raised.add(Math.floor(root.y / TILE) * this.mapW + Math.floor(root.x / TILE));
     if (!leaving || !this.built || !root.visible || !root.parent?.visible) {
       root.destroy({ children: true });
       return;
@@ -1054,24 +1342,14 @@ export class GameRenderer {
     if (v.kind === 'building' && v.battered) this.shakeAt(root.x, root.y, 0.55);
     const kill = () => root.destroy({ children: true });
     if (v.kind === 'plant' && PLANTS[v.def]?.tree) {
-      // Timber: the tree tips over from its base and fades, shedding leaves.
-      const s = root.children[0] as Sprite | undefined;
-      if (s) {
-        const h = s.height;
-        s.anchor.set(0.5, 0.92);
-        s.position.y = h * 0.42;
+      this.fellTree(v, root, kill);
+    } else if (v.kind === 'construct') {
+      // The last of the scaffolding comes away as the building takes over.
+      if ((v.riseGoal ?? 0) > 0.5) {
+        this.particles.burst(root.x, root.y + 8, { count: 7, color: 0xb8ac98, speed: 34, size: 3, grow: 7, life: 620, lift: 6, alpha: 0.4 });
+        if (v.plank) this.particles.burst(root.x, root.y, { count: 8, color: [0x8a6a42, 0xb08a58], speed: 62, size: 2, life: 560, gravity: 150, chips: true });
       }
-      const dir = Math.random() < 0.5 ? -1 : 1;
-      sound.play('fall', root.x, root.y);
-      this.particles.burst(root.x, root.y, { count: 10, color: [0x4a8030, 0x6aa040, 0x2f5a2a], speed: 50, size: 2, life: 900, gravity: 40, chips: true });
-      this.tweens.add(
-        800,
-        (k) => {
-          if (s) s.rotation = dir * ease.inQuad(k) * 1.45;
-          root.alpha = k < 0.6 ? 1 : 1 - (k - 0.6) / 0.4;
-        },
-        kill,
-      );
+      kill();
     } else if (v.kind === 'building') {
       // Collapse into a puff of dust and debris.
       sound.play('crumble', root.x, root.y);
@@ -1086,6 +1364,118 @@ export class GameRenderer {
     } else {
       kill();
     }
+  }
+
+  /**
+   * Timber: seen from above, the crown swings out from the stump along the line of the fall and the
+   * trunk is laid bare behind it. It lands with a crash of leaves and snow or dust, rebounds, and
+   * fades, leaving the stump and whatever wood it gave.
+   */
+  private fellTree(v: EntityView, root: Container, kill: () => void): void {
+    const m = store.mirror;
+    const crown = root.children[0] as Sprite | undefined;
+    const cx = Math.floor(root.x / TILE);
+    const cy = Math.floor(root.y / TILE);
+    const cell = cy * m.w + cx;
+    const by = this.cutters.get(cell);
+    this.cutters.delete(cell);
+    sound.play('fall', root.x, root.y);
+    if (!crown) return kill();
+    root.label = 'fallen';
+    const size = crown.width;
+    const length = size * 1.45;
+    let angle = fellAngle(root.x, root.y, by, Math.random());
+    // Never off the edge of the world.
+    if (!m.inBounds(Math.floor((root.x + Math.cos(angle) * length) / TILE), Math.floor((root.y + Math.sin(angle) * length) / TILE))) angle += Math.PI;
+    const leaves = v.def === 'pine' ? [0x2f5a3a, 0x3f6a4a, 0x254a30] : [0x4a8030, 0x6aa040, 0x2f5a2a];
+    this.leaveStump(cx, cy, size);
+    this.particles.burst(root.x, root.y, { count: 8, color: leaves, speed: 45, size: 2, life: 800, gravity: 40, chips: true });
+    // In the frame of the fall, so "along" is x. The crown turns back to keep its art as it was.
+    const along = new Container();
+    along.rotation = angle;
+    const trunk = this.shape('trunk', (g) => {
+      g.poly([0, -4, TRUNK_LEN, -2.4, TRUNK_LEN, 2.4, 0, 4]).fill(0x5a4030);
+      g.poly([0, -3.4, TRUNK_LEN, -2, TRUNK_LEN, -0.8, 0, -1]).fill({ color: 0x7a5a40, alpha: 0.8 });
+    });
+    trunk.scale.set(0, size / (TILE * 1.5));
+    const box = new Container();
+    crown.position.set(0, 0);
+    crown.rotation = -angle;
+    box.addChild(crown);
+    along.addChild(trunk, box);
+    root.addChild(along);
+    const total = FELL_MS + REBOUND_MS + SETTLE_MS;
+    let landed = false;
+    this.tweens.add(
+      total,
+      (k) => {
+        const ms = k * total;
+        const p = fellPose(ms);
+        box.x = length * p.reach;
+        box.scale.set(p.squash, 1 + (1 - p.squash) * 0.2);
+        trunk.scale.x = (length * p.reach) / TRUNK_LEN;
+        root.alpha = p.alpha;
+        if (!landed && ms >= FELL_MS) {
+          landed = true;
+          this.treeLands(root.x, root.y, angle, length, leaves, size >= TILE * 1.1);
+        }
+      },
+      kill,
+    );
+  }
+
+  private treeLands(x: number, y: number, angle: number, length: number, leaves: number[], big: boolean): void {
+    const m = store.mirror;
+    const ux = Math.cos(angle);
+    const uy = Math.sin(angle);
+    const tipX = x + ux * length;
+    const tipY = y + uy * length;
+    const snow = frostLevel(Math.floor(tipX / TILE), Math.floor(tipY / TILE), m.w, m.h, this.frostNow) >= 0.25;
+    for (const t of [0.4, 0.7, 1]) {
+      this.particles.burst(x + ux * length * t, y + uy * length * t, { count: 5, color: snow ? [0xf4f8ff, 0xdfeaf4] : [0xb8ac98, 0x9a8e7c], speed: 46, size: 3.2, grow: 7, life: 800, lift: 6, alpha: snow ? 0.7 : 0.4, drag: 2.5 });
+    }
+    this.particles.burst(tipX, tipY, { count: 14, color: leaves, speed: 85, size: 2.2, life: 1000, gravity: 70, chips: true });
+    if (!big) return;
+    this.shakeAt(tipX, tipY, 0.14);
+    if (settings.wildlife && this.lighting.dark < 0.35 && !snow && Math.random() < 0.4) this.life.startle(tipX, tipY);
+  }
+
+  private leaveStump(cx: number, cy: number, size: number): void {
+    const root = new Container();
+    root.label = 'stump';
+    root.position.set((cx + 0.5) * TILE, (cy + 0.5) * TILE);
+    root.scale.set(0.6 + 0.6 * (size / (TILE * 1.5)));
+    root.addChild(
+      this.shape('stump', (g) => {
+        g.ellipse(0, 2.6, 8, 6.4).fill(0x4a3424);
+        g.ellipse(0, 0, 7.6, 6).fill(0xb08a58).stroke({ width: 1.2, color: 0x5a3f28 });
+        g.ellipse(0, 0, 4.6, 3.6).stroke({ width: 0.8, color: 0x8a6a42, alpha: 0.8 });
+        g.circle(0, 0, 1.4).fill(0x8a6a42);
+      }),
+    );
+    this.place('floorThings', root, cx, cy);
+    this.stumps.push({ root, until: performance.now() + STUMP_MS });
+    if (this.stumps.length > MAX_STUMPS) this.stumps.shift()!.root.destroy({ children: true });
+  }
+
+  private clearStumps(now: number): void {
+    while (this.stumps.length && this.stumps[0].until <= now) {
+      const { root } = this.stumps.shift()!;
+      this.tweens.add(1200, (k) => (root.alpha = 1 - k), () => root.destroy({ children: true }));
+    }
+  }
+
+  /** A finished building takes its weight: down and back, rather than the pop of something appearing. */
+  private settle(root: Container): void {
+    this.tweens.add(
+      300,
+      (k) => {
+        const q = Math.sin(k * Math.PI) * (1 - k) * 0.22;
+        root.scale.set(1 + q * 0.6, 1 - q);
+      },
+      () => root.scale.set(1),
+      root,
+    );
   }
 
   /** Arrivals pop in with a little overshoot. */
@@ -1138,7 +1528,8 @@ export class GameRenderer {
       case 'construct': {
         const total = Object.values(constructCost(e)).reduce((a, b) => a + b, 0);
         const got = Object.values(e.delivered).reduce((a, b) => a + b, 0);
-        return `c:${e.def}:${got >= total}:${e.kit ? 'k' : ''}`;
+        const { ready, pile } = siteStage(total, got, e.progress, constructWork(e));
+        return `c:${e.def}:${ready}:${pile}:${e.kit ? 'k' : ''}`;
       }
       case 'pawn':
         return `w:${e.faction}:${e.name}:${e.tamed ?? 0}:${e.taming ?? 0}:${e.hunted ?? 0}:${e.asleep ? 1 : 0}:${e.carrying?.def ?? ''}:${e.weapon}:${e.drafted ? 1 : 0}:${e.downed ? 1 : 0}:${e.prisoner}`;
@@ -1148,6 +1539,7 @@ export class GameRenderer {
   private updateView(e: Entity): void {
     const key = this.viewKey(e);
     const old = this.views.get(e.id);
+    if (old && e.kind === 'construct' && old.riseGoal !== undefined) old.riseGoal = Math.min(1, e.progress / constructWork(e));
     if (old && old.key === key) return;
     if (old && e.kind === 'item' && old.kind === 'item' && old.def === e.def && old.root.x === (e.x + 0.5) * TILE && old.root.y === (e.y + 0.5) * TILE) {
       // A stack growing or shrinking as haulers come and go: update it in place rather than rebuild.
@@ -1221,12 +1613,16 @@ export class GameRenderer {
         if (d.door) {
           const color = store.mirror.factions.get(e.faction)?.color ?? 0xffffff;
           root.addChild(this.shape(`door:${color}`, (g) => g.rect(-TILE / 2, TILE / 2 - 4, TILE, 3).fill(color)));
+          v.leaf = s;
+          v.leafScale = s.scale.x;
+          this.doors.set(e.id, v);
         }
+        if (e.def === 'campfire') this.hearths.add(e.id);
         this.place(d.floorTerrain ? 'floorThings' : 'buildings', root, e.x, e.y);
         break;
       }
       case 'construct':
-        this.drawConstruct(root, e);
+        this.drawConstruct(root, e, v);
         this.place('buildings', root, e.x, e.y);
         break;
       case 'pawn':
@@ -1236,8 +1632,13 @@ export class GameRenderer {
         break;
     }
     this.views.set(e.id, v);
+    if (old && e.kind === 'pawn') {
+      this.carryOver(old, v);
+      if (this.built && v.body && !!v.lying !== !!old.lying) this.topple(v, !!e.downed);
+    }
     if (!old && this.built) {
       if (e.kind === 'pawn') this.tweens.add(400, (k) => (root.alpha = k), undefined, root);
+      else if (e.kind === 'building' && this.raised.delete(e.y * store.mirror.w + e.x)) this.settle(root);
       else this.popIn(root);
       if (e.kind === 'building') sound.play('pop', root.x, root.y);
     }
@@ -1321,15 +1722,19 @@ export class GameRenderer {
     flag(j.dest.x, j.dest.y, 0xf0c050);
   }
 
-  private drawConstruct(root: Container, e: Construct): void {
+  /**
+   * A building site, in stages: the blueprint with its goods piling up beside it, then the building
+   * itself rising from the ground as the work goes on (walls and doors inside a scaffold).
+   */
+  private drawConstruct(root: Container, e: Construct, v: EntityView): void {
     const cost = constructCost(e);
     const total = Object.values(cost).reduce((a, b) => a + b, 0);
     const got = Object.values(e.delivered).reduce((a, b) => a + b, 0);
-    const ready = got >= total;
+    const { ready, pile, rise } = siteStage(total, got, e.progress, constructWork(e));
     const ghost = new Sprite(this.tex.building(e.def));
     ghost.anchor.set(0.5);
     ghost.width = ghost.height = TILE;
-    ghost.alpha = ready ? 0.65 : 0.3;
+    ghost.alpha = ready ? 0.24 : 0.3;
     ghost.tint = ready ? 0xd8c8a0 : 0x8ac8ff;
     const frame = this.shape(`cframe:${ready}`, (g) =>
       g
@@ -1338,6 +1743,33 @@ export class GameRenderer {
         .stroke({ width: 1.5, color: ready ? 0xc8a878 : 0x8ac8ff, alpha: 0.9 }),
     );
     root.addChild(frame, ghost);
+    const goods = Object.keys(cost).find((k) => e.delivered[k]);
+    for (let k = 0; goods && k < pile; k++) {
+      const s = new Sprite(this.tex.item(goods));
+      s.anchor.set(0.5);
+      s.width = s.height = TILE * 0.5;
+      s.position.set(...PILE_AT[k]);
+      root.addChild(s);
+    }
+    if (!ready) return;
+    const up = new Sprite(this.tex.riseFrame(e.def, riseStep(rise), RISE_STEPS));
+    up.anchor.set(0.5, 1);
+    up.y = TILE / 2;
+    root.addChild(up);
+    v.rise = up;
+    v.riseShown = v.riseGoal = rise;
+    if (BUILDINGS[e.def]?.wall) {
+      root.addChild(
+        this.shape('scaffold', (g) => {
+          g.moveTo(-TILE / 2 + 3, -TILE / 2 + 1).lineTo(TILE / 2 - 3, TILE / 2 - 1).moveTo(TILE / 2 - 3, -TILE / 2 + 1).lineTo(-TILE / 2 + 3, TILE / 2 - 1).stroke({ width: 1, color: 0x6a5032, alpha: 0.55 });
+          g.moveTo(-TILE / 2 + 3, -TILE / 2 + 1).lineTo(-TILE / 2 + 3, TILE / 2 - 1).moveTo(TILE / 2 - 3, -TILE / 2 + 1).lineTo(TILE / 2 - 3, TILE / 2 - 1).stroke({ width: 2, color: 0x8a6a42 });
+        }),
+      );
+      v.plank = this.shape('plank', (g) => g.rect(-TILE / 2 + 1, -1.5, TILE - 2, 3).fill(0xb08a58).stroke({ width: 0.8, color: 0x5a3f28 }));
+      root.addChild(v.plank);
+    }
+    this.sites.set(e.id, v);
+    this.setRise(v, rise);
   }
 
   /**
@@ -1386,6 +1818,7 @@ export class GameRenderer {
     if (e.downed) {
       body.rotation = Math.PI / 2;
       body.tint = 0xd07070;
+      v.lying = true;
     }
     const rig = new Container();
     rig.addChild(body);
@@ -1441,6 +1874,7 @@ export class GameRenderer {
     if (e.asleep || e.downed) {
       body.rotation = Math.PI / 2;
       body.alpha = 0.85;
+      v.lying = true;
     }
     if (e.downed) body.tint = 0xd07070;
     // Body, weapon and load ride on a rig so they can bob and swing together.
@@ -1886,6 +2320,7 @@ export class GameRenderer {
         shot.wideY = (hash2(shot.target, Math.floor(now), 9) - 0.5) * TILE * 1.6;
       }
       this.shots.push(shot);
+      if (!stale) this.shove(shot, now);
       if (shot.hit && !stale) this.juice.hit(shot.shooter, shot.target, now);
       if (!stale) {
         this.worldUi.struck(shot.shooter, now);
@@ -1969,8 +2404,21 @@ export class GameRenderer {
     const g = this.fireGfx;
     g.clear();
     const m = store.mirror;
-    if (!m.fireCells.size) return;
     const t = performance.now() / 120;
+    if (settings.details) {
+      for (const id of this.hearths) {
+        const v = this.views.get(id);
+        if (!v || !v.root.parent?.visible) continue;
+        const { x, y } = v.root;
+        g.circle(x, y + 1, 8 * (0.88 + 0.12 * Math.sin(t + id * 1.7))).fill({ color: 0xff7a20, alpha: 0.26 });
+        // Three tongues of flame, licking up at their own pace.
+        for (let k = 0; k < 3; k++) {
+          const a = k * 2.1 + id;
+          const lick = 0.7 + 0.3 * Math.sin(t * 1.6 + a);
+          g.ellipse(x + Math.cos(a) * 3, y - 2 - 3 * lick, 2.3, 4.6 * lick).fill({ color: k ? 0xff9a30 : 0xffd060, alpha: 0.8 });
+        }
+      }
+    }
     for (const c of m.fireCells) {
       const level = m.fire[c];
       const x = ((c % m.w) + 0.5) * TILE;

@@ -149,6 +149,9 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
         <Row label="Birds and fireflies">
           <Toggle on={s.wildlife} label="Birds and fireflies" onChange={(wildlife) => set({ wildlife })} />
         </Row>
+        <Row label="Footprints, breath and smoke">
+          <Toggle on={s.details} label="Footprints, breath and smoke" onChange={(details) => set({ details })} />
+        </Row>
       </section>
       <AudioSection />
     </div>

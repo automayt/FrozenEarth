@@ -162,11 +162,11 @@ export const RECIPES: Record<Kind, Recipe> = {
 
   // ------------------------------------------------------------ the world giving way
   fall: {
-    dur: 1.25, takes: 2, gap: 200, cap: 2, prio: 3, spread: 0.08,
+    dur: 1.4, takes: 2, gap: 200, cap: 2, prio: 3, spread: 0.08,
     make(o) {
-      // Creak, then the crash.
-      tone(o, 0.12, 0.5, 90, 'sawtooth', 60, 0, 900);
-      burst(o, 0.6, 0.7, 'lowpass', 600, 0.7, 80, 0.48);
+      // Creak, then the crash, as the tree meets the ground (FELL_MS).
+      tone(o, 0.12, 0.6, 90, 'sawtooth', 60, 0, 900);
+      burst(o, 0.6, 0.7, 'lowpass', 600, 0.7, 80, 0.62);
     },
   },
   crumble: {

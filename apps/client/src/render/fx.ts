@@ -41,12 +41,15 @@ function getAtlas(): Atlas {
   c.width = 64;
   c.height = 16;
   const g = c.getContext('2d')!;
+  // Dot: radius 7 in a 16 x 16 cell, soft at the edge so smoke, breath and dust don't read as discs.
+  const soft = g.createRadialGradient(8, 8, 0, 8, 8, 7.5);
+  soft.addColorStop(0, 'rgba(255,255,255,1)');
+  soft.addColorStop(0.55, 'rgba(255,255,255,0.85)');
+  soft.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = soft;
+  g.fillRect(0, 0, 16, 16);
   g.fillStyle = '#fff';
   g.strokeStyle = '#fff';
-  // Dot: radius 7 in a 16 x 16 cell.
-  g.beginPath();
-  g.arc(8, 8, 7, 0, Math.PI * 2);
-  g.fill();
   // Chip: diamond 16 wide, 8 tall.
   g.beginPath();
   g.moveTo(18, 8);
