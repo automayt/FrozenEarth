@@ -116,3 +116,10 @@ export function grazeDip(seconds: number, id: number): number {
   const p = (seconds * 0.17 + id * 0.37) % 1;
   return p < 0.24 ? Math.sin((p / 0.24) * Math.PI) : 0;
 }
+
+/** A stack is drawn at one of five fill levels: 1 is a fifth full or less, 5 is full. Empty stacks are gone. */
+export const PILE_LEVELS = 5;
+
+export function pileLevel(count: number, limit: number): number {
+  return Math.max(1, Math.min(PILE_LEVELS, Math.ceil((count / Math.max(1, limit)) * PILE_LEVELS)));
+}

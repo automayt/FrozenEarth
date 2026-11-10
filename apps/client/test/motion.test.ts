@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { breathGap, FELL_MS, fellAngle, fellPose, footingOf, grazeDip, heavySwing, HEAVY_STRIKE, passed, REBOUND_MS, RISE_STEPS, riseStep, SETTLE_MS, siteStage } from '../src/render/motion';
+import { breathGap, pileLevel, PILE_LEVELS, FELL_MS, fellAngle, fellPose, footingOf, grazeDip, heavySwing, HEAVY_STRIKE, passed, REBOUND_MS, RISE_STEPS, riseStep, SETTLE_MS, siteStage } from '../src/render/motion';
 
 describe('the swing of a tool', () => {
   it('winds up, then lands at the strike and comes back to rest', () => {
@@ -97,5 +97,23 @@ describe('small rhythms', () => {
     expect(down / 600).toBeGreaterThan(0.1);
     expect(down / 600).toBeLessThan(0.4);
     expect(grazeDip(1, 0)).not.toBe(grazeDip(1, 1));
+  });
+});
+
+describe('how full a stack looks', () => {
+  it('goes up a level every fifth of a full stack', () => {
+    expect(pileLevel(75, 75)).toBe(PILE_LEVELS);
+    expect(pileLevel(60, 75)).toBe(4);
+    expect(pileLevel(61, 75)).toBe(5);
+    expect(pileLevel(45, 75)).toBe(3);
+    expect(pileLevel(30, 75)).toBe(2);
+    expect(pileLevel(15, 75)).toBe(1);
+  });
+
+  it('shows even one of something, and never more than full', () => {
+    expect(pileLevel(1, 75)).toBe(1);
+    expect(pileLevel(200, 75)).toBe(PILE_LEVELS);
+    expect(pileLevel(1, 1)).toBe(PILE_LEVELS);
+    expect(pileLevel(3, 5)).toBe(3);
   });
 });

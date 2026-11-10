@@ -1,0 +1,452 @@
+{
+  "item_wood_1": {
+    "seed": 2101,
+    "prompt": "A single cut wooden log lying on its side, brown bark, pale round cut ends, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 0
+    },
+    "post": "--fill 0.55"
+  },
+  "item_wood_2": {
+    "seed": 2102,
+    "prompt": "Two cut wooden logs lying side by side, brown bark, pale round cut ends, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 1
+    },
+    "post": "--fill 0.66"
+  },
+  "item_wood_3": {
+    "seed": 2103,
+    "prompt": "A small stack of four cut wooden logs, brown bark, pale round cut ends, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 0
+    },
+    "post": "--fill 0.76"
+  },
+  "item_wood_4": {
+    "seed": 2104,
+    "prompt": "A neat stack of seven cut wooden logs in two layers, brown bark, pale round cut ends, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 0
+    },
+    "post": "--fill 0.84"
+  },
+  "item_wood_5": {
+    "seed": 2105,
+    "prompt": "A big neat woodpile of many cut wooden logs stacked in three layers, brown bark, pale round cut ends, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 1
+    },
+    "post": "--fill 0.9"
+  },
+  "item_stone_1": {
+    "seed": 2111,
+    "prompt": "A single rough cut grey stone block, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 0
+    },
+    "post": "--fill 0.55"
+  },
+  "item_stone_2": {
+    "seed": 2112,
+    "prompt": "Two rough cut grey stone blocks side by side, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 1
+    },
+    "post": "--fill 0.66"
+  },
+  "item_stone_3": {
+    "seed": 2113,
+    "prompt": "A small pile of four rough cut grey stone blocks, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 0
+    },
+    "post": "--fill 0.76"
+  },
+  "item_stone_4": {
+    "seed": 2114,
+    "prompt": "A neat stack of seven rough cut grey stone blocks in two layers, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 1
+    },
+    "post": "--fill 0.84"
+  },
+  "item_stone_5": {
+    "seed": 2115,
+    "prompt": "A big neat stack of many rough cut grey stone blocks in three layers, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 1
+    },
+    "post": "--fill 0.9"
+  },
+  "item_steel_1": {
+    "seed": 2121,
+    "prompt": "A single shiny steel bar, a grey-blue metal ingot, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 0
+    },
+    "post": "--fill 0.55"
+  },
+  "item_steel_2": {
+    "seed": 2122,
+    "prompt": "Two rectangular shiny steel ingots lying side by side, grey-blue metal bars with flat bevelled tops, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 100,
+      "index": 0
+    },
+    "post": "--fill 0.66"
+  },
+  "item_steel_3": {
+    "seed": 2123,
+    "prompt": "A small stack of four shiny steel bars, grey-blue metal ingots, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 1
+    },
+    "post": "--fill 0.76"
+  },
+  "item_steel_4": {
+    "seed": 2124,
+    "prompt": "A neat stack of seven shiny steel bars stacked crosswise, grey-blue metal ingots, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 0
+    },
+    "post": "--fill 0.84"
+  },
+  "item_steel_5": {
+    "seed": 2125,
+    "prompt": "A big neat stack of many shiny steel bars stacked crosswise in several layers, grey-blue metal ingots, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 0
+    },
+    "post": "--fill 0.9"
+  },
+  "item_cloth_1": {
+    "seed": 2131,
+    "prompt": "A single folded piece of beige linen cloth, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 1
+    },
+    "post": "--fill 0.55"
+  },
+  "item_cloth_2": {
+    "seed": 2132,
+    "prompt": "Two folded pieces of beige linen cloth, one on top of the other, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 0
+    },
+    "post": "--fill 0.66"
+  },
+  "item_cloth_3": {
+    "seed": 2133,
+    "prompt": "A small stack of four folded beige linen cloth pieces, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 0
+    },
+    "post": "--fill 0.76"
+  },
+  "item_cloth_4": {
+    "seed": 2134,
+    "prompt": "A neat stack of six folded beige linen cloth pieces, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 0
+    },
+    "post": "--fill 0.84"
+  },
+  "item_cloth_5": {
+    "seed": 2135,
+    "prompt": "A tall neat stack of many folded beige linen cloth pieces, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 0
+    },
+    "post": "--fill 0.9"
+  },
+  "item_berries_1": {
+    "seed": 2141,
+    "prompt": "A few round dark purple-blue berries, about five, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 0
+    },
+    "post": "--fill 0.55"
+  },
+  "item_berries_2": {
+    "seed": 2142,
+    "prompt": "A small handful of round dark purple-blue berries, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 0
+    },
+    "post": "--fill 0.66"
+  },
+  "item_berries_3": {
+    "seed": 2143,
+    "prompt": "A small heap of round dark purple-blue berries, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 1
+    },
+    "post": "--fill 0.76"
+  },
+  "item_berries_4": {
+    "seed": 2144,
+    "prompt": "A heap of round dark purple-blue berries, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 1
+    },
+    "post": "--fill 0.84"
+  },
+  "item_berries_5": {
+    "seed": 2145,
+    "prompt": "A big heap of round dark purple-blue berries, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 0
+    },
+    "post": "--fill 0.9"
+  },
+  "item_rice_1": {
+    "seed": 2151,
+    "prompt": "A small half-empty burlap sack of white rice, folded over at the top, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 0
+    },
+    "post": "--fill 0.55"
+  },
+  "item_rice_2": {
+    "seed": 2152,
+    "prompt": "A small open burlap sack full of white rice grains, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 1
+    },
+    "post": "--fill 0.66"
+  },
+  "item_rice_3": {
+    "seed": 2153,
+    "prompt": "Two burlap sacks of white rice side by side, one open, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 1
+    },
+    "post": "--fill 0.76"
+  },
+  "item_rice_4": {
+    "seed": 2154,
+    "prompt": "Three burlap sacks of white rice grouped together, one open, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 0
+    },
+    "post": "--fill 0.84"
+  },
+  "item_rice_5": {
+    "seed": 2155,
+    "prompt": "A pile of four full burlap sacks of white rice, one open on top, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 1
+    },
+    "post": "--fill 0.9"
+  },
+  "item_corn_1": {
+    "seed": 2161,
+    "prompt": "A single yellow corn cob with peeled-back green husk, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 0
+    },
+    "post": "--fill 0.55"
+  },
+  "item_corn_2": {
+    "seed": 2162,
+    "prompt": "Two yellow corn cobs with peeled-back green husks, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 0
+    },
+    "post": "--fill 0.66"
+  },
+  "item_corn_3": {
+    "seed": 2163,
+    "prompt": "A small pile of four yellow corn cobs with peeled-back green husks, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 1
+    },
+    "post": "--fill 0.76"
+  },
+  "item_corn_4": {
+    "seed": 2164,
+    "prompt": "A pile of six yellow corn cobs with peeled-back green husks, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 1
+    },
+    "post": "--fill 0.84"
+  },
+  "item_corn_5": {
+    "seed": 2165,
+    "prompt": "A big heap of many yellow corn cobs with peeled-back green husks, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 1
+    },
+    "post": "--fill 0.9"
+  },
+  "item_potato_1": {
+    "seed": 2171,
+    "prompt": "Two brown potatoes, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 0
+    },
+    "post": "--fill 0.55"
+  },
+  "item_potato_2": {
+    "seed": 2172,
+    "prompt": "Four brown potatoes piled together, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 0
+    },
+    "post": "--fill 0.66"
+  },
+  "item_potato_3": {
+    "seed": 2173,
+    "prompt": "A small heap of brown potatoes, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 1
+    },
+    "post": "--fill 0.76"
+  },
+  "item_potato_4": {
+    "seed": 2174,
+    "prompt": "A heap of brown potatoes, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 1
+    },
+    "post": "--fill 0.84"
+  },
+  "item_potato_5": {
+    "seed": 2175,
+    "prompt": "A big heap of brown potatoes, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 0
+    },
+    "post": "--fill 0.9"
+  },
+  "item_simple_meal_1": {
+    "seed": 2181,
+    "prompt": "A single wooden bowl of hearty brown stew with chunks of meat and vegetables, seen from above, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 1
+    },
+    "post": "--fill 0.55"
+  },
+  "item_simple_meal_2": {
+    "seed": 2182,
+    "prompt": "Exactly two wooden bowls of hearty brown stew with visible chunks of meat and vegetables, side by side, seen from above, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 100,
+      "index": 3
+    },
+    "post": "--fill 0.66"
+  },
+  "item_simple_meal_3": {
+    "seed": 2183,
+    "prompt": "Three wooden bowls of hearty brown stew grouped together, seen from above, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 1
+    },
+    "post": "--fill 0.76"
+  },
+  "item_simple_meal_4": {
+    "seed": 2184,
+    "prompt": "Four wooden bowls of hearty brown stew grouped together, seen from above, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 0
+    },
+    "post": "--fill 0.84"
+  },
+  "item_simple_meal_5": {
+    "seed": 2185,
+    "prompt": "Five wooden bowls of hearty brown stew grouped together on a wooden tray, seen from above, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 0
+    },
+    "post": "--fill 0.9"
+  },
+  "item_survival_meal_1": {
+    "seed": 2191,
+    "prompt": "A single compact military survival ration pack: a small olive green rectangular sealed packaged box, no writing, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 0
+    },
+    "post": "--fill 0.55"
+  },
+  "item_survival_meal_2": {
+    "seed": 2192,
+    "prompt": "Two olive green military survival ration packs, small sealed rectangular boxes, one leaning on the other, no writing, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 1
+    },
+    "post": "--fill 0.66"
+  },
+  "item_survival_meal_3": {
+    "seed": 2193,
+    "prompt": "A small stack of three olive green military survival ration packs, sealed rectangular boxes, no writing, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 1
+    },
+    "post": "--fill 0.76"
+  },
+  "item_survival_meal_4": {
+    "seed": 2194,
+    "prompt": "A stack of five olive green military survival ration packs, sealed rectangular boxes, no writing, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 0
+    },
+    "post": "--fill 0.84"
+  },
+  "item_survival_meal_5": {
+    "seed": 2195,
+    "prompt": "A neat pile of many olive green military survival ration packs, sealed rectangular boxes, no writing, slight top-down angle, compact arrangement",
+    "pick": {
+      "seed_offset": 0,
+      "index": 1
+    },
+    "post": "--fill 0.9"
+  }
+}

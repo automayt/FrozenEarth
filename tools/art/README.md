@@ -197,3 +197,9 @@ python tools/art/ground_ice.py <scratch>/ground_raw/ice_proc.png 512 11
 python tools/art/ground_finalize.py tools/art/ground.json <scratch>/ground_raw apps/client/public/sprites
 ```
 (Every pick was rendered with the prompt now in `ground.json`; other offsets in between used older wordings.)
+
+## Stacks by fill level
+`piles.json` holds the stack art drawn by how full a stack is: `item_<def>_1` (a fifth full or less) to
+`item_<def>_5` (full). Each level's `post` sets `--fill`, so a single log comes out smaller in its frame
+than a full woodpile. Generate and finalize it like `sprites.json`. Items without level art fall back to
+their `item_<def>` art, shrunk by level (`PILE_SHRINK` in `apps/client/src/render/textures.ts`).

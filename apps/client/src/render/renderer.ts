@@ -1,5 +1,5 @@
 import { Application, BitmapText, Container, Graphics, GraphicsContext, Sprite, TextStyle } from 'pixi.js';
-import { ANIMALS, BUILDINGS, LANDMARKS, maxHp, PLANTS, ROCKS, TERRAINS, WEAPON_KEYS, weaponOf, type LandmarkKind, type TerrainDef } from '@fe/defs';
+import { ANIMALS, BUILDINGS, ITEMS, LANDMARKS, maxHp, PLANTS, ROCKS, TERRAINS, WEAPON_KEYS, weaponOf, type LandmarkKind, type TerrainDef } from '@fe/defs';
 import { PawnGlide, pawnPosition } from '@fe/protocol';
 import { DESIG, FROST_BAND, MIN_COLONY_GAP, pactOf, SHOT_FIELDS, calendar, dispositionOf, GUARD_REACH, hostile, NOISE, SETTLEMENT_WATCH, stealthMult, frostLevel, frostRadius, hash2, outdoorTempAt, weaponFor, type Construct, type Entity, type Pawn, type World, constructCost, constructWork, type Building } from '@fe/sim';
 import { ease, Particles, Tweens, Weather, type Precip } from './fx';
@@ -22,7 +22,7 @@ import { Juice } from './juice';
 import { cameraRequests, DragTracker, edgeResist, edgeSpring, flightPose, followStep, keepOnMap, mayTakeCamera, MOMENT_HOLD_MS, MOMENT_SKIP_MS, PanBody, panRange, panSpeedFor, planFlight, Shake, shakeFalloff, type Flight } from './camera';
 import { cameraSettings } from './cameraSettings';
 import { MARK_TINT, WorldUi } from './worldui';
-import { BREATH_BELOW, breathGap, FELL_MS, fellAngle, fellPose, footingOf, gentleSwing, GENTLE_STRIKE, GENTLE_SWING_MS, grazeDip, heavySwing, HEAVY_STRIKE, HEAVY_SWING_MS, passed, REBOUND_MS, RISE_STEPS, riseStep, SETTLE_MS, siteStage } from './motion';
+import { BREATH_BELOW, breathGap, pileLevel, FELL_MS, fellAngle, fellPose, footingOf, gentleSwing, GENTLE_STRIKE, GENTLE_SWING_MS, grazeDip, heavySwing, HEAVY_STRIKE, HEAVY_SWING_MS, passed, REBOUND_MS, RISE_STEPS, riseStep, SETTLE_MS, siteStage } from './motion';
 import { Tracks } from './tracks';
 
 /** World units per cell. */
@@ -117,6 +117,8 @@ interface EntityView {
   nextGlance?: number;
   /** A shove on the rig: a lunge, a recoil, a blow taken. */
   kick?: { x: number; y: number; at: number; ms: number };
+  /** An item stack's fill level (render/motion.ts pileLevel), to notice it crossing into another. */
+  pile?: number;
   /** Lying down, asleep or hurt. The view is rebuilt when this changes, so the fall is played then. */
   lying?: boolean;
   /** A building site: what's up so far, the plank that climbs with it, and how far up it's drawn and heading. */
@@ -1465,6 +1467,22 @@ export class GameRenderer {
     }
   }
 
+  /** A stack changed how full it looks: a bump as goods land on it, a sag and a few crumbs as they're taken. */
+  private restack(v: EntityView, grew: boolean): void {
+    const root = v.root;
+    if (!this.built || !root.parent?.visible) return;
+    this.tweens.add(
+      grew ? 220 : 260,
+      (k) => {
+        const q = Math.sin(k * Math.PI) * (1 - k) * (grew ? 0.16 : 0.12);
+        root.scale.set(1 + q * (grew ? 0.5 : 1), 1 + (grew ? q : -q));
+      },
+      () => root.scale.set(1),
+      root,
+    );
+    if (!grew) this.particles.burst(root.x, root.y + 6, { count: 4, color: [ITEMS[v.def]?.color ?? 0x999999, 0xb8ac98], speed: 38, size: 1.5, life: 380, gravity: 120, chips: true });
+  }
+
   /** A finished building takes its weight: down and back, rather than the pop of something appearing. */
   private settle(root: Container): void {
     this.tweens.add(
@@ -1532,7 +1550,7 @@ export class GameRenderer {
         return `c:${e.def}:${ready}:${pile}:${e.kit ? 'k' : ''}`;
       }
       case 'pawn':
-        return `w:${e.faction}:${e.name}:${e.tamed ?? 0}:${e.taming ?? 0}:${e.hunted ?? 0}:${e.asleep ? 1 : 0}:${e.carrying?.def ?? ''}:${e.weapon}:${e.drafted ? 1 : 0}:${e.downed ? 1 : 0}:${e.prisoner}`;
+        return `w:${e.faction}:${e.name}:${e.tamed ?? 0}:${e.taming ?? 0}:${e.hunted ?? 0}:${e.asleep ? 1 : 0}:${e.carrying ? `${e.carrying.def}${pileLevel(e.carrying.count, ITEMS[e.carrying.def]?.stackLimit ?? 1)}` : ''}:${e.weapon}:${e.drafted ? 1 : 0}:${e.downed ? 1 : 0}:${e.prisoner}`;
     }
   }
 
@@ -1543,9 +1561,18 @@ export class GameRenderer {
     if (old && old.key === key) return;
     if (old && e.kind === 'item' && old.kind === 'item' && old.def === e.def && old.root.x === (e.x + 0.5) * TILE && old.root.y === (e.y + 0.5) * TILE) {
       // A stack growing or shrinking as haulers come and go: update it in place rather than rebuild.
-      (old.root.children[0] as Sprite).tint = e.rot >= 0.5 ? 0xa0b070 : 0xffffff;
+      const s = old.root.children[0] as Sprite;
+      s.tint = e.rot >= 0.5 ? 0xa0b070 : 0xffffff;
       this.setCountLabel(old, e.count);
       old.key = key;
+      const pile = this.tex.pile(e.def, e.count);
+      if (pile.level !== old.pile) {
+        const grew = pile.level > (old.pile ?? 0);
+        old.pile = pile.level;
+        s.texture = pile.texture;
+        s.width = s.height = TILE * 0.9 * pile.scale;
+        this.restack(old, grew);
+      }
       return;
     }
     if (old) this.removeView(e.id);
@@ -1568,9 +1595,11 @@ export class GameRenderer {
         break;
       }
       case 'item': {
-        const s = new Sprite(this.tex.item(e.def));
+        const pile = this.tex.pile(e.def, e.count);
+        const s = new Sprite(pile.texture);
         s.anchor.set(0.5);
-        s.width = s.height = TILE * 0.9;
+        s.width = s.height = TILE * 0.9 * pile.scale;
+        v.pile = pile.level;
         if (e.rot >= 0.5) s.tint = 0xa0b070;
         root.addChild(s);
         this.setCountLabel(v, e.count);
@@ -1911,9 +1940,10 @@ export class GameRenderer {
       );
     }
     if (e.carrying) {
-      const c = new Sprite(this.tex.item(e.carrying.def));
+      const load = this.tex.pile(e.carrying.def, e.carrying.count);
+      const c = new Sprite(load.texture);
       c.anchor.set(0.5);
-      c.width = c.height = TILE * 0.45;
+      c.width = c.height = TILE * 0.5 * load.scale;
       c.position.set(TILE * 0.3, -TILE * 0.05);
       rig.addChild(c);
     }

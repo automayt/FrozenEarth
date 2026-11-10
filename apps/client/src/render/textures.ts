@@ -1,11 +1,15 @@
 import { Assets, Graphics, Rectangle, Texture, type Renderer } from 'pixi.js';
 import { ANIMALS, BUILDINGS, ITEMS, PLANTS } from '@fe/defs';
+import { pileLevel } from './motion';
 
 /** Texture resolution in pixels for procedurally drawn sprites. */
 const S = 64;
 
 /** Generated art that doesn't fit the top-down view; the procedural version is used instead. */
 const ART_SKIP = new Set(['building_door']);
+
+/** How much a stack's full art shrinks at each fill level, for items without their own art per level. */
+const PILE_SHRINK = [0.6, 0.7, 0.8, 0.9, 1];
 
 function shade(color: number, f: number): number {
   const r = Math.max(0, Math.min(255, ((color >> 16) & 255) * f));
@@ -152,6 +156,16 @@ export class TextureBank {
         for (const [x, y, r] of [[24, 36, 9], [38, 34, 9], [31, 24, 9], [30, 42, 7], [42, 44, 6]]) g.circle(x, y, r).fill(shade(c, 0.9 + (x % 3) * 0.08)).stroke({ width: 1.5, color: shade(c, 0.5) });
       }
     });
+  }
+
+  /**
+   * A stack of `count`, drawn by how full it is: its own art for that level (item_wood_1 ... item_wood_5)
+   * where there is some, else the full stack shrunk to suit.
+   */
+  pile(def: string, count: number): { texture: Texture; scale: number; level: number } {
+    const level = pileLevel(count, ITEMS[def]?.stackLimit ?? 1);
+    const art = this.art.get(`item_${def}_${level}`);
+    return art ? { texture: art, scale: 1, level } : { texture: this.item(def), scale: PILE_SHRINK[level - 1], level };
   }
 
   /** The bottom `step` / `steps` of a building's art, for one going up. */
